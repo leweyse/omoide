@@ -271,6 +271,17 @@ def guard_paths() -> None:
                 f"inside the read-only Omarchy package tree", 1)
 
 
+# What counts as a scheduled alarm. sync_timers has the same rule in Python as
+# its `dead` check, and cmd_show spells it out inline; keeping one SQL copy stops
+# the read paths from disagreeing with the scheduler about what is pending.
+#
+# The JOIN is load-bearing beyond the WHERE clause: a reminder whose item no
+# longer exists is dropped by it. Those should not exist -- the FK cascades --
+# but counting them told the bar about notifications that could never arrive.
+LIVE_REMINDER = ("FROM reminders r JOIN items i ON i.id = r.item_id "
+                 "WHERE r.status = 'pending' AND i.status = 'active' "
+                 "AND i.completed_at IS NULL")
+
 def connect(*, write: bool = True) -> sqlite3.Connection:
     guard_paths()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -2119,10 +2130,10 @@ def cmd_state(args) -> int:
         "SUM(ai_status = 'failed') AS failed FROM memories WHERE status = 'ready'"
     ).fetchone()
     pending = conn.execute(
-        "SELECT COUNT(*) AS n FROM reminders WHERE status = 'pending'").fetchone()["n"]
+        "SELECT COUNT(*) AS n " + LIVE_REMINDER).fetchone()["n"]
     upcoming = conn.execute(
-        "SELECT i.title, r.fire_at FROM reminders r JOIN items i ON i.id = r.item_id "
-        "WHERE r.status = 'pending' ORDER BY r.fire_at LIMIT 1").fetchone()
+        "SELECT i.title, r.fire_at " + LIVE_REMINDER
+        + " ORDER BY r.fire_at LIMIT 1").fetchone()
     emit({
         "memories": int(row["memories"] or 0),
         "enriching": int(row["pending"] or 0),
