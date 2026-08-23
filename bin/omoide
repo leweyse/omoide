@@ -1,0 +1,2952 @@
+#!/usr/bin/env python3
+# omarchy:summary=Capture screenshots, notes and voice memos into Omoide
+# omarchy:group=omoide
+# omarchy:hidden=true
+"""Omoide helper CLI.
+
+Everything that touches disk lives here: SQLite, blobs, thumbnails, the AI
+enrichment pass, systemd reminder timers, and the derived index the QML side
+renders from. The QML plugin is deliberately thin -- it spawns this and reads
+JSON back, the same split Omarchy uses for omarchy.agents and omarchy.dropbox.
+
+Exit codes:
+  0  success
+  1  usage or runtime error
+  2  nothing to do (a cancelled capture, an empty submit)
+  3  the database is newer than this code understands -- refusing to write
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+# --- paths ------------------------------------------------------------------
+#
+# Data is the user's and survives uninstall: the database and the blobs.
+# State is derived and is always removed on uninstall: the index cache the QML
+# reads, and the rollback copies install/uninstall take while writing files
+# they do not own.
+
+HOME = Path.home()
+
+# Plain XDG for data, deliberately NOT under an "omarchy" subdirectory:
+# ~/.local/share/omarchy is a symlink to the read-only package tree
+# (/usr/share/omarchy) on a stock install, so writing there would fail -- and
+# would be writing into a package directory even if it did not.
+XDG_DATA = Path(os.environ.get("XDG_DATA_HOME") or (HOME / ".local/share"))
+XDG_STATE = Path(os.environ.get("XDG_STATE_HOME") or (HOME / ".local/state"))
+XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or (HOME / ".config"))
+
+DATA_DIR = Path(os.environ.get("OMOIDE_DATA_DIR",
+                               XDG_DATA / "omoide"))
+STATE_DIR = Path(os.environ.get("OMOIDE_STATE_DIR",
+                                XDG_STATE / "omarchy/omoide"))
+DB_PATH = DATA_DIR / "memories.db"
+BLOB_DIR = DATA_DIR / "blobs"
+INDEX_PATH = STATE_DIR / "index.json"
+
+# Our own settings, in our own file.
+#
+# The agent block used to live inline on the bar-widget entry in shell.json, and
+# writing it there meant racing the shell: it hot-reloads that file AND rewrites
+# it from memory, so a direct write could be silently reverted seconds later. A
+# file with exactly one writer needs none of that -- temp-and-rename is simply
+# atomic, and the reloadConfig call it used to need is gone.
+#
+# shell.json is still READ for the bar-widget settings the shell injects
+# (defaultAction, captureMode). Those are the platform's own extension point and
+# are written only by `omarchy bar set` or the shell's updateEntryInline.
+CONFIG_PATH = Path(os.environ.get("OMOIDE_CONFIG",
+                                  XDG_CONFIG / "omoide/config.json"))
+
+LOG_PATH = STATE_DIR / "omoide.log"
+LOG_MAX_BYTES = 256 * 1024   # a few thousand lines; days of ordinary use
+
+PLUGIN_DIR = Path(__file__).resolve().parent.parent
+PLUGIN_ID = "leweyse.omoide"
+IPC_TARGET = "omoide"
+
+SCHEMA_VERSION = 1          # what this code understands
+INDEX_VERSION = 3           # bump when index.json's shape changes
+
+SHELL_JSON = Path(os.environ.get("OMOIDE_SHELL_JSON",
+                                 HOME / ".config/omarchy/shell.json"))
+HYPR_BINDINGS = HOME / ".config/hypr/bindings.lua"
+MARK_BEGIN = "-- >>> omoide (managed) >>>"
+MARK_END = "-- <<< omoide (managed) <<<"
+DEFAULT_ACCEL = "SUPER + CTRL + M"   # M for memory; E is Omarchy's emoji picker
+
+GLYPH = "\U000f0a37"  # 󰨷 -- nf-md-lightbulb_on_outline
+
+
+# --- small helpers ----------------------------------------------------------
+
+def now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def iso(dt: datetime) -> str:
+    """UTC, second precision, always with a Z. Every stored timestamp uses this."""
+    return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    # A stored timestamp always carries its zone: iso() writes UTC with a Z.
+    # So a value arriving without one came from a person -- typed into the date
+    # fields, or passed on the command line -- and a person means local time.
+    # Reading it as UTC put every hand-edited reminder out by the offset.
+    return dt if dt.tzinfo else dt.astimezone()
+
+
+def new_id(prefix: str = "") -> str:
+    """Sortable and filesystem-safe: a timestamp plus enough entropy."""
+    stamp = now().strftime("%Y%m%dT%H%M%S")
+    return f"{prefix}{stamp}-{uuid.uuid4().hex[:6]}"
+
+
+def which(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def has(name: str) -> bool:
+    return which(name) is not None
+
+
+def log(event: str, **fields) -> None:
+    """Append one line about something that happened.
+
+    Size-capped rather than truncated per run. The failure worth reading is
+    usually the previous one, so wiping the file on each capture means the
+    evidence is gone by the time anyone looks; keeping the tail preserves
+    several captures' worth of history for a quarter of a megabyte.
+
+    Never records note or OCR text, only lengths. This is for debugging the
+    plugin, not a second copy of what the user captured.
+
+    Failures here are swallowed: logging must never take a capture down.
+    """
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if LOG_PATH.exists() and LOG_PATH.stat().st_size > LOG_MAX_BYTES:
+            tail = LOG_PATH.read_bytes()[-(LOG_MAX_BYTES // 2):]
+            # Drop the partial first line so the file always starts mid-nothing.
+            LOG_PATH.write_bytes(b"--- trimmed ---\n" + tail.split(b"\n", 1)[-1])
+        parts = []
+        for key, value in fields.items():
+            text = str(value).replace("\n", " ").strip()
+            parts.append(f'{key}="{text}"' if (" " in text or not text) else f"{key}={text}")
+        with LOG_PATH.open("a") as handle:
+            handle.write(f"{iso(now())} {event} {' '.join(parts)}\n")
+    except OSError:
+        pass
+
+
+def one_line(text: str | None, limit: int = 300) -> str:
+    """Provider output flattened for a log line or an error column."""
+    flat = " ".join((text or "").split())
+    return flat[:limit]
+
+
+def run(cmd: list[str], *, check: bool = False, timeout: float | None = None,
+        stdin_text: str | None = None) -> subprocess.CompletedProcess:
+    """Run argv. Never a shell string -- user text is always an argv element."""
+    return subprocess.run(cmd, capture_output=True, text=True, check=check,
+                          timeout=timeout, input=stdin_text)
+
+
+def notify(headline: str, body: str = "", *, exec_cmd: str | None = None,
+           image: str | None = None, urgency: str | None = None) -> None:
+    """Desktop notification via Omarchy's wrapper, never notify-send directly.
+
+    The wrapper adds the DND-bypass and glyph hints, and --exec is how a toast
+    becomes clickable (the shell keeps a copy and runs it via bash -lc).
+    """
+    binary = which("omarchy-notification-send")
+    if not binary:
+        omarchy_path = os.environ.get("OMARCHY_PATH", "/usr/share/omarchy")
+        candidate = Path(omarchy_path) / "bin/omarchy-notification-send"
+        binary = str(candidate) if candidate.exists() else None
+    if not binary:
+        return
+    cmd = [binary, "-g", GLYPH]
+    if urgency:
+        cmd += ["-u", urgency]
+    if image:
+        cmd += ["--image", image]
+    if exec_cmd:
+        cmd += ["--exec", exec_cmd]
+    cmd.append(headline)
+    if body:
+        cmd.append(body)
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def shell_ipc(*args: str, quiet: bool = True) -> subprocess.CompletedProcess | None:
+    """Call into the running omarchy-shell. Best-effort: the shell may be down."""
+    binary = which("omarchy-shell")
+    if not binary:
+        return None
+    cmd = [binary]
+    if quiet:
+        cmd.append("-q")
+    cmd += list(args)
+    try:
+        return run(cmd, timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+
+def open_space_cmd(memory_id: str | None = None, section: str | None = None) -> str:
+    """A bash -lc string for --exec that opens the Space window.
+
+    Quoted with shlex because it is handed to a shell, unlike our argv calls.
+    """
+    import shlex
+    payload: dict = {}
+    if memory_id:
+        payload["id"] = memory_id
+    if section:
+        payload["section"] = section
+    return "omarchy-shell -q %s openSpace %s" % (
+        shlex.quote(IPC_TARGET), shlex.quote(json.dumps(payload)))
+
+
+def die(message: str, code: int = 1) -> "NoReturn":  # type: ignore[valid-type]
+    print(f"omoide: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def emit(payload) -> None:
+    """All machine-readable output goes through here, so stdout stays JSON."""
+    json.dump(payload, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+# --- database ---------------------------------------------------------------
+
+def migrations() -> list[tuple[int, Path]]:
+    found = []
+    for path in sorted((PLUGIN_DIR / "sql/migrations").glob("*.sql")):
+        match = re.match(r"^(\d+)", path.name)
+        if match:
+            found.append((int(match.group(1)), path))
+    return sorted(found)
+
+
+def guard_paths() -> None:
+    """Refuse to write into the Omarchy package tree.
+
+    ~/.local/share/omarchy is a symlink to /usr/share/omarchy on a stock
+    install, which is exactly the kind of surprise that turns a data directory
+    into an attempt to write a read-only package.
+    """
+    for label, path in (("data", DATA_DIR), ("state", STATE_DIR),
+                       ("config", CONFIG_PATH.parent)):
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if str(resolved).startswith("/usr/"):
+            die(f"refusing to use {resolved} as the {label} directory: that is "
+                f"inside the read-only Omarchy package tree", 1)
+
+
+def connect(*, write: bool = True) -> sqlite3.Connection:
+    guard_paths()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BLOB_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+
+    if version > SCHEMA_VERSION:
+        # A rolled-back checkout writing against a schema it does not
+        # understand corrupts data silently. Fail loudly instead.
+        conn.close()
+        die(f"database schema is v{version} but this version of the plugin only "
+            f"understands v{SCHEMA_VERSION}. Update the plugin, or move "
+            f"{DB_PATH} aside. Refusing to write.", 3)
+
+    if version < SCHEMA_VERSION and write:
+        pending = [(n, p) for n, p in migrations() if n > version]
+        if pending:
+            backup = STATE_DIR / f"memories.db.pre-v{SCHEMA_VERSION}"
+            if DB_PATH.exists() and version > 0:
+                shutil.copy2(DB_PATH, backup)
+            for number, path in pending:
+                conn.executescript(path.read_text())
+                conn.execute(f"PRAGMA user_version = {number}")
+            conn.commit()
+            if backup.exists():
+                backup.unlink()   # clean on success; no litter left behind
+            # v4 added attachment dimensions. SQL cannot read a PNG header, so
+            # the rows that predate the column are measured here, once.
+            if version < 4:
+                backfill_dimensions(conn)
+
+    return conn
+
+
+# --- settings ---------------------------------------------------------------
+#
+# Settings live inline on the bar-widget entry in shell.json. The shell injects
+# them into the widget; the CLI has to read them itself. Reads are free; writes
+# go through `omarchy bar set` -- except setup-ai, which is a sanctioned
+# exception and writes atomically (see write_ai_settings).
+
+# Injected into the bar widget by the shell. Read-only from here.
+DEFAULT_SETTINGS = {
+    "defaultAction": "screenshot",
+    "captureMode": "smart",
+}
+
+# Ours, in CONFIG_PATH.
+DEFAULT_AI = {
+    "enabled": False,
+    "provider": "claude",
+    "command": [],
+    "model": "",
+    "visionMode": "ocr",
+    "timeoutMs": 45000,
+}
+
+AI_PRESETS = {
+    # Headless, prompt-on-stdin invocations. Each must run to completion
+    # without a TTY and print the answer on stdout.
+    "claude":   ["claude", "-p"],
+    "codex":    ["codex", "exec", "--skip-git-repo-check", "-"],
+    "opencode": ["opencode", "run"],
+    "gemini":   ["gemini", "-p"],
+    "ollama":   ["ollama", "run"],          # model appended
+    "aichat":   ["aichat"],
+}
+
+VISION_CAPABLE = {"claude", "codex", "gemini"}
+
+
+def read_shell_json() -> dict:
+    try:
+        return json.loads(SHELL_JSON.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def ai_settings() -> dict:
+    """The agent block, merged over the shipped defaults.
+
+    A missing file is not an error: it means nothing has been configured, which
+    is the shipped state.
+    """
+    merged = json.loads(json.dumps(DEFAULT_AI))
+    try:
+        stored = json.loads(CONFIG_PATH.read_text())
+    except (OSError, json.JSONDecodeError):
+        return merged
+    for key, value in (stored.get("ai") or {}).items():
+        merged[key] = value
+    return merged
+
+
+def write_ai_settings(ai: dict) -> None:
+    """Replace the agent block. Atomic, and with only one writer, safe.
+
+    Anything else already in the file is preserved, so a future setting added
+    beside `ai` does not get dropped by a change to this one.
+    """
+    guard_paths()
+    try:
+        config = json.loads(CONFIG_PATH.read_text())
+        if not isinstance(config, dict):
+            config = {}
+    except (OSError, json.JSONDecodeError):
+        config = {}
+    config["ai"] = ai
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
+    tmp.replace(CONFIG_PATH)
+
+
+def settings() -> dict:
+    """Our widget's inline settings, deep-merged over the shipped defaults.
+
+    Never assume a key is present: shell.json is user-owned and Omarchy does
+    not merge defaults back in, so a new setting simply appears absent on an
+    existing install.
+    """
+    merged = json.loads(json.dumps(DEFAULT_SETTINGS))
+    config = read_shell_json()
+    entry = None
+    for section in ("left", "center", "right"):
+        for candidate in (config.get("bar", {}).get("layout", {}).get(section) or []):
+            if isinstance(candidate, dict) and candidate.get("id") == PLUGIN_ID:
+                entry = candidate
+                break
+    if not entry:
+        for candidate in config.get("plugins") or []:
+            if isinstance(candidate, dict) and candidate.get("id") == PLUGIN_ID:
+                entry = candidate
+    if entry:
+        for key, value in entry.items():
+            if key == "id":
+                continue
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key].update(value)
+            else:
+                merged[key] = value
+    return merged
+
+
+# --- deterministic date grammar --------------------------------------------
+#
+# The fallback when AI is off or fails. Deliberately small and predictable:
+# it is better to miss a date than to invent one, because a wrong date becomes
+# a real notification at a real time.
+
+_UNITS = {
+    "min": "minutes", "mins": "minutes", "minute": "minutes", "minutes": "minutes",
+    "m": "minutes",
+    "h": "hours", "hr": "hours", "hrs": "hours", "hour": "hours", "hours": "hours",
+    "d": "days", "day": "days", "days": "days",
+    "w": "weeks", "week": "weeks", "weeks": "weeks",
+}
+
+_WEEKDAYS = {
+    "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2, "thursday": 3, "thu": 3, "thurs": 3,
+    "friday": 4, "fri": 4, "saturday": 5, "sat": 5, "sunday": 6, "sun": 6,
+}
+
+
+def _apply_time(base: datetime, hour: int, minute: int) -> datetime:
+    return base.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _parse_clock(text: str) -> tuple[int, int] | None:
+    match = re.search(r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text, re.I)
+    if match:
+        hour = int(match.group(1)) % 12
+        if match.group(3).lower() == "pm":
+            hour += 12
+        return hour, int(match.group(2) or 0)
+    match = re.search(r"\b(?:at\s+)?([01]?\d|2[0-3]):([0-5]\d)\b", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return None
+
+
+def parse_when(text: str, *, reference: datetime | None = None) -> datetime | None:
+    """Best-effort natural-language date. Returns None rather than guessing."""
+    if not text:
+        return None
+    reference = (reference or now()).astimezone()
+    lowered = text.lower()
+
+    match = re.search(r"\bin\s+(\d+)\s*([a-z]+)\b", lowered)
+    if match and match.group(2) in _UNITS:
+        return reference + timedelta(**{_UNITS[match.group(2)]: int(match.group(1))})
+
+    match = re.search(r"\b(\d{4})-(\d{2})-(\d{2})(?:[ tT](\d{2}):(\d{2}))?\b", text)
+    if match:
+        year, month, day = (int(match.group(i)) for i in (1, 2, 3))
+        hour = int(match.group(4) or 9)
+        minute = int(match.group(5) or 0)
+        try:
+            return reference.replace(year=year, month=month, day=day, hour=hour,
+                                     minute=minute, second=0, microsecond=0)
+        except ValueError:
+            # A date that does not exist -- 30 February, 25:00. The date fields
+            # use an input mask, which enforces digits and nothing else, so this
+            # is reachable from the UI and must not raise.
+            return None
+
+    # Day-first, matching the editor's fields and the European locale this runs
+    # in. Without it a "24/08/2026 09:00" fell through to the bare-clock branch
+    # below and silently resolved to the next 09:00, ignoring the date entirely.
+    match = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?\b",
+                      text)
+    if match:
+        day, month, year = (int(match.group(i)) for i in (1, 2, 3))
+        hour = int(match.group(4) or 9)
+        minute = int(match.group(5) or 0)
+        try:
+            return reference.replace(year=year, month=month, day=day, hour=hour,
+                                     minute=minute, second=0, microsecond=0)
+        except ValueError:
+            return None
+
+    clock = _parse_clock(lowered)
+    base = None
+
+    if re.search(r"\btonight\b", lowered):
+        base, clock = reference, clock or (20, 0)
+    elif re.search(r"\btomorrow\b", lowered):
+        base = reference + timedelta(days=1)
+    elif re.search(r"\btoday\b", lowered):
+        base = reference
+    else:
+        for name, index in _WEEKDAYS.items():
+            if re.search(rf"\b{name}\b", lowered):
+                ahead = (index - reference.weekday()) % 7 or 7
+                base = reference + timedelta(days=ahead)
+                break
+
+    if base is None:
+        # A bare time with no day means the next occurrence of that time.
+        if clock:
+            candidate = _apply_time(reference, *clock)
+            return candidate if candidate > reference else candidate + timedelta(days=1)
+        return None
+
+    return _apply_time(base, *(clock or (9, 0)))
+
+
+_REMIND_PREFIX = re.compile(
+    r"^\s*(?:please\s+)?remind\s+me\s+(?:to\s+|that\s+|about\s+)?", re.I)
+_TRAILING_WHEN = re.compile(
+    r"\b(later\s+today|tonight|tomorrow|today|in\s+\d+\s*[a-z]+|"
+    r"on\s+\w+|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|next\s+\w+|"
+    r"mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|"
+    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b", re.I)
+
+
+def todo_from_note(note: str) -> dict | None:
+    """Turn 'remind me to call Ana tomorrow at 3pm' into a to-do, or nothing.
+
+    Only fires on an explicit 'remind me' -- inferring intent from arbitrary
+    prose is exactly the guesswork the model is for.
+    """
+    if not note or not _REMIND_PREFIX.search(note):
+        return None
+    title = _REMIND_PREFIX.sub("", note).strip()
+    when = parse_when(note)
+    cleaned = _TRAILING_WHEN.sub("", title).strip(" ,.;:-")
+    return {
+        "title": (cleaned or title or "Reminder").strip(),
+        "due_at": iso(when) if when else None,
+        "suggested": False,   # the user asked for this one explicitly
+    }
+
+
+# --- AI ---------------------------------------------------------------------
+
+KNOWN_BLOCK_TYPES = {"source", "image", "note", "summary", "list",
+                     "event", "todos", "text", "quote", "code"}
+# Renderer-owned labels. If a model sends one as a list heading it is dropped,
+# so headings cannot drift in wording or language between captures.
+CANONICAL_LABELS = {"summary", "event date", "to-dos", "todos", "to dos"}
+
+
+def resolve_provider(ai: dict) -> list[str] | None:
+    """argv for the configured model, or None when AI is off/unconfigured.
+
+    Never guesses: with nothing configured the caller falls back to the
+    deterministic path rather than picking a CLI that happens to be installed.
+    """
+    if not ai.get("enabled"):
+        return None
+    command = ai.get("command") or []
+    if command:
+        return [str(part) for part in command]
+    preset = AI_PRESETS.get(str(ai.get("provider") or ""))
+    if not preset:
+        return None
+    argv = list(preset)
+    if ai.get("provider") == "ollama":
+        argv.append(str(ai.get("model") or "llama3.2"))
+    elif ai.get("model"):
+        argv += ["--model", str(ai["model"])]
+    if not has(argv[0]):
+        return None
+    return argv
+
+
+def extract_json(text: str) -> dict | None:
+    """Pull the first balanced JSON object out of a model's stdout.
+
+    Models wrap JSON in prose and fences, and some CLIs wrap it again in their
+    own envelope, so a bare json.loads is not enough.
+    """
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            # Some CLIs return {"result": "<the actual answer>"}.
+            for key in ("result", "response", "output", "content", "text"):
+                inner = parsed.get(key)
+                if isinstance(inner, str) and inner.strip():
+                    nested = extract_json(inner)
+                    if nested is not None:
+                        return nested
+            if "blocks" in parsed or "title" in parsed:
+                return parsed
+    except json.JSONDecodeError:
+        pass
+
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                try:
+                    candidate = json.loads(text[start:index + 1])
+                except json.JSONDecodeError:
+                    start = -1
+                    continue
+                if isinstance(candidate, dict):
+                    return candidate
+    return None
+
+
+def _clean_text(value) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def validate_blocks(raw_blocks) -> list[dict]:
+    """Drop anything malformed rather than storing it.
+
+    The main quality risk with a generous prompt is an over-eager model that
+    emits an empty list on every capture, so emptiness is a validation failure,
+    not something to render as a blank card.
+    """
+    result: list[dict] = []
+    if not isinstance(raw_blocks, list):
+        return result
+
+    for raw in raw_blocks:
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("type") or "").strip().lower()
+        if kind not in KNOWN_BLOCK_TYPES:
+            continue
+        # note and image are inserted by the capture, never by the model.
+        if kind in ("note", "image"):
+            continue
+
+        if kind == "source":
+            url = _clean_text(raw.get("url"))
+            match = re.match(r"^(https?)://([^/\s]+)", url, re.I)
+            if not match:
+                continue
+            result.append({"type": "source", "payload": {
+                "url": url,
+                "domain": match.group(2).lower(),
+                "title": _clean_text(raw.get("title")),
+                "byline": _clean_text(raw.get("byline")),
+                "chip": _clean_text(raw.get("chip")),
+            }})
+
+        elif kind in ("summary", "text", "quote", "code"):
+            body = str(raw.get("text") or "").strip()
+            if not body:
+                continue
+            payload = {"text": body}
+            if kind == "quote":
+                payload["attribution"] = _clean_text(raw.get("attribution"))
+            if kind == "code":
+                payload["language"] = _clean_text(raw.get("language"))
+            result.append({"type": kind, "payload": payload})
+
+        elif kind == "list":
+            items = []
+            for entry in (raw.get("items") or []):
+                if isinstance(entry, str):
+                    text_value = _clean_text(entry)
+                    if text_value:
+                        items.append({"label": "", "text": text_value})
+                elif isinstance(entry, dict):
+                    text_value = _clean_text(entry.get("text"))
+                    if text_value:
+                        items.append({"label": _clean_text(entry.get("label")),
+                                      "text": text_value})
+            if not items:
+                continue
+            heading = _clean_text(raw.get("heading"))
+            if heading.lower().rstrip(":") in CANONICAL_LABELS:
+                heading = ""
+            result.append({"type": "list", "payload": {
+                "heading": heading,
+                "ordered": bool(raw.get("ordered")),
+                "items": items,
+            }})
+
+        elif kind == "event":
+            starts = parse_iso(raw.get("start") or raw.get("starts_at"))
+            if not starts:
+                continue
+            ends = parse_iso(raw.get("end") or raw.get("ends_at"))
+            result.append({"type": "event", "item": {
+                "kind": "event",
+                "title": _clean_text(raw.get("title")) or "Event",
+                "starts_at": iso(starts),
+                "ends_at": iso(ends) if ends else None,
+                "all_day": 1 if raw.get("all_day") else 0,
+                "location": _clean_text(raw.get("location")),
+                "map_url": _clean_text(raw.get("map_url")),
+                "remind": raw.get("remind") or [],
+                "suggested": raw.get("suggested", True),
+            }})
+
+        elif kind == "todos":
+            items = []
+            for entry in (raw.get("items") or []):
+                if not isinstance(entry, dict):
+                    continue
+                title = _clean_text(entry.get("title"))
+                if not title:
+                    continue
+                due = parse_iso(entry.get("due_at"))
+                items.append({
+                    "kind": "todo",
+                    "title": title,
+                    "due_at": iso(due) if due else None,
+                    "remind": entry.get("remind") or [],
+                    # Default to suggested when the flag is missing, so an
+                    # under-specified response errs toward scheduling nothing.
+                    "suggested": entry.get("suggested", True),
+                })
+            if not items:
+                continue
+            result.append({"type": "todos", "items": items})
+
+    return result
+
+
+def build_prompt(note: str, ocr_text: str, image_path: str | None,
+                 vision: bool) -> str:
+    template = (PLUGIN_DIR / "prompts/enrich.txt").read_text()
+    local = now().astimezone()
+    context = {
+        "note": note or "",
+        "ocr_text": "" if vision else (ocr_text or "")[:8000],
+        "image_path": image_path if vision else "",
+        "now_iso": iso(local),
+        "now_local": local.strftime("%A %d %B %Y, %H:%M"),
+        "timezone": str(local.tzinfo),
+    }
+    return template + "\n\nINPUT:\n" + json.dumps(context, ensure_ascii=False, indent=2)
+
+
+def apply_enrichment(conn: sqlite3.Connection, memory_id: str,
+                     enriched: dict) -> int:
+    """Write an agent's answer onto a memory. Returns how many items it created.
+
+    Shared by commit and enrich so a retry produces exactly what a first pass
+    would. Blocks land with origin 'ai', which is what lets a retry tell its own
+    output apart from the capture's and the user's.
+    """
+    title = _clean_text(enriched.get("title"))
+    lede = _clean_text(enriched.get("lede"))
+    if title:
+        conn.execute("UPDATE memories SET title = ? WHERE id = ?", (title, memory_id))
+    if lede:
+        conn.execute("UPDATE memories SET lede = ? WHERE id = ?", (lede, memory_id))
+    for tag in (enriched.get("tags") or [])[:8]:
+        tag = _clean_text(tag).lower()
+        if tag:
+            conn.execute("INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?,?)",
+                         (memory_id, tag))
+
+    created = 0
+    for block in validate_blocks(enriched.get("blocks")):
+        if block["type"] == "todos":
+            block_id = add_block(conn, memory_id, "todos", {"item_ids": []})
+            ids = [create_item(conn, memory_id, block_id, spec)
+                   for spec in block["items"]]
+            created += len(ids)
+            conn.execute("UPDATE blocks SET payload = ? WHERE id = ?",
+                         (json.dumps({"item_ids": ids}), block_id))
+        elif block["type"] == "event":
+            block_id = add_block(conn, memory_id, "event", {"item_id": ""})
+            item_id = create_item(conn, memory_id, block_id, block["item"])
+            created += 1
+            conn.execute("UPDATE blocks SET payload = ? WHERE id = ?",
+                         (json.dumps({"item_id": item_id}), block_id))
+        else:
+            add_block(conn, memory_id, block["type"], block["payload"])
+
+    # Cleared, so a reason from an earlier attempt cannot outlive it.
+    conn.execute("UPDATE memories SET ai_status = 'ok', ai_error = NULL "
+                 "WHERE id = ?", (memory_id,))
+    return created
+
+
+def run_ai(note: str, ocr_text: str, image_path: str | None,
+           ai: dict) -> tuple[dict | None, str]:
+    """Enrich, or say why not.
+
+    Returns (data, reason). Every failure path used to return a bare None, so
+    a provider that was never configured, one that exited non-zero, and one
+    that timed out were indistinguishable to the caller and to the user.
+
+    Still deliberately broad: nothing here may take a capture down with it.
+    The difference is that the reason now survives.
+    """
+    argv = resolve_provider(ai)
+    if not argv:
+        log("ai.skip", reason="no provider resolved")
+        return None, "no agent is configured"
+
+    vision = (str(ai.get("visionMode")) == "image"
+              and bool(image_path)
+              and (ai.get("provider") in VISION_CAPABLE or bool(ai.get("command"))))
+    if vision and ai.get("provider") == "claude" and not ai.get("command"):
+        # The prompt names a file; claude needs Read to open it, and nothing else.
+        argv = argv + ["--allowed-tools", "Read"]
+
+    timeout = max(5.0, float(ai.get("timeoutMs") or 45000) / 1000.0)
+    started = time.monotonic()
+    log("ai.start", argv=" ".join(argv), vision=vision, timeout=timeout,
+        note_len=len(note or ""), ocr_len=len(ocr_text or ""))
+
+    try:
+        prompt = build_prompt(note, ocr_text, image_path, vision)
+        proc = run(argv, timeout=timeout, stdin_text=prompt)
+    except subprocess.TimeoutExpired:
+        log("ai.timeout", seconds=round(time.monotonic() - started, 1))
+        return None, f"{argv[0]} did not answer within {timeout:.0f}s"
+    except Exception as exc:
+        log("ai.exception", kind=type(exc).__name__, detail=one_line(str(exc)))
+        return None, f"{type(exc).__name__}: {one_line(str(exc), 200)}"
+
+    elapsed = round(time.monotonic() - started, 1)
+    if proc.returncode != 0:
+        detail = one_line(proc.stderr) or one_line(proc.stdout) or "no output"
+        log("ai.exit", rc=proc.returncode, seconds=elapsed, detail=detail)
+        return None, f"{argv[0]} exited {proc.returncode}: {detail}"
+
+    data = extract_json(proc.stdout)
+    if not data:
+        log("ai.unparsed", seconds=elapsed, out_len=len(proc.stdout or ""),
+            head=one_line(proc.stdout, 160))
+        return None, f"{argv[0]} replied without a JSON object"
+
+    log("ai.ok", seconds=elapsed, blocks=len(data.get("blocks") or []),
+        tags=len(data.get("tags") or []))
+    return data, ""
+
+
+# --- blocks and items -------------------------------------------------------
+
+def next_position(conn: sqlite3.Connection, memory_id: str) -> int:
+    row = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 AS n FROM blocks "
+                       "WHERE memory_id = ?", (memory_id,)).fetchone()
+    return int(row["n"])
+
+
+def add_block(conn: sqlite3.Connection, memory_id: str, kind: str,
+              payload: dict, origin: str = "ai") -> str:
+    block_id = new_id()
+    conn.execute(
+        "INSERT INTO blocks (id, memory_id, position, type, payload, origin) "
+        "VALUES (?,?,?,?,?,?)",
+        (block_id, memory_id, next_position(conn, memory_id), kind,
+         json.dumps(payload, ensure_ascii=False), origin))
+    return block_id
+
+
+def create_item(conn: sqlite3.Connection, memory_id: str, block_id: str | None,
+                spec: dict, source: str = "ai") -> str:
+    item_id = new_id()
+    # An inferred to-do is a SUGGESTION: no alarm, and it waits in its own
+    # section of Tasks until the user accepts it. Only what the note actually
+    # asked for becomes a live to-do straight away.
+    #
+    # This is the middle ground between the two things that were wrong before:
+    # creating them active put tasks in the list nobody asked for, and hiding
+    # them behind a "+" on the memory page meant nobody ever saw them.
+    inferred = bool(spec.get("suggested", True))
+    kind = spec.get("kind", "todo")
+    # Only a TO-DO waits to be accepted. An event is a fact the capture states,
+    # not a task landing in someone's list, so it goes straight into the
+    # calendar surfaces -- it just gets no ALARM unless the note asked for one.
+    # Suggesting events instead kept them out of For you entirely.
+    status = "suggested" if (inferred and kind == "todo") else "active"
+    conn.execute(
+        "INSERT INTO items (id, memory_id, block_id, kind, title, notes, due_at,"
+        " starts_at, ends_at, all_day, location, map_url, status, source, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (item_id, memory_id, block_id, kind,
+         spec.get("title") or "Untitled", spec.get("notes"), spec.get("due_at"),
+         spec.get("starts_at"), spec.get("ends_at"),
+         1 if spec.get("all_day") else 0, spec.get("location"), spec.get("map_url"),
+         status, source, iso(now())))
+
+    anchor = parse_iso(spec.get("due_at") or spec.get("starts_at"))
+    requested = spec.get("remind") or []
+
+    if kind == "event":
+        # An event gets a reminder whether or not the note asked for one. Being
+        # told before a thing you are going to is the reason for capturing it,
+        # and this is what every calendar does. Half an hour is the usual
+        # default; the model can override it with its own `remind`.
+        if not requested and anchor:
+            requested = [{"offset_min": -30}]
+    elif inferred:
+        # A to-do is the other way round. Nothing the model merely inferred puts
+        # a notification on someone's machine -- it waits in Suggested until the
+        # user accepts it, and promoting it is what schedules the alarm.
+        requested = []
+    elif not requested and anchor:
+        # An explicit dated to-do gets one alarm at its due time.
+        requested = [{"offset_min": 0}]
+
+    for entry in requested:
+        if not isinstance(entry, dict):
+            continue
+        absolute = parse_iso(entry.get("at"))
+        offset = entry.get("offset_min")
+        if absolute:
+            fire_at, offset = absolute, None
+        elif anchor and offset is not None:
+            try:
+                fire_at = anchor + timedelta(minutes=int(offset))
+            except (TypeError, ValueError):
+                continue
+        else:
+            continue
+        conn.execute(
+            "INSERT INTO reminders (id, item_id, fire_at, trigger_offset_min, status)"
+            " VALUES (?,?,?,?,'pending')",
+            (new_id(), item_id, iso(fire_at),
+             None if offset is None else int(offset)))
+    return item_id
+
+
+# --- systemd timers ---------------------------------------------------------
+#
+# One transient unit per reminders row, never per item: an item with two alarms
+# gets two units, an item with none gets zero. Transient means nothing on disk,
+# which is also why sync_timers has to rebuild them after a reboot.
+
+FIRE_SCRIPT = (
+    'omarchy-notification-send -g "$4" -u normal --exec "$3" "$1" "$2"; '
+    'omarchy-shell -q omoide refresh >/dev/null 2>&1 || true'
+)
+
+
+def unit_name(reminder_id: str) -> str:
+    return f"omoide-reminder-{reminder_id}"
+
+
+def unit_active(unit: str) -> bool:
+    proc = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
+                "--plain", f"{unit}.timer"])
+    return bool(proc.stdout.strip())
+
+
+def schedule(conn: sqlite3.Connection, reminder: sqlite3.Row) -> None:
+    fire_at = parse_iso(reminder["fire_at"])
+    if not fire_at:
+        return
+    item = conn.execute("SELECT i.*, m.id AS mid FROM items i "
+                        "JOIN memories m ON m.id = i.memory_id "
+                        "WHERE i.id = ?", (reminder["item_id"],)).fetchone()
+    if not item:
+        return
+    unit = unit_name(reminder["id"])
+    local = fire_at.astimezone()
+    body_parts = [local.strftime("%H:%M %d %b")]
+    if item["location"]:
+        body_parts.append(item["location"])
+    proc = run([
+        "systemd-run", "--user", "--quiet", "--collect",
+        f"--on-calendar={local.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"--unit={unit}",
+        "bash", "-c", FIRE_SCRIPT, "bash",
+        item["title"], " · ".join(body_parts),
+        open_space_cmd(item["mid"]), GLYPH,
+    ])
+    if proc.returncode == 0:
+        conn.execute("UPDATE reminders SET unit = ? WHERE id = ?",
+                     (unit, reminder["id"]))
+
+
+def stop_unit(unit: str | None) -> None:
+    if unit:
+        run(["systemctl", "--user", "stop", f"{unit}.timer"])
+        run(["systemctl", "--user", "stop", f"{unit}.service"])
+
+
+def sweep_orphan_units(conn: sqlite3.Connection) -> int:
+    """Stop timers whose reminder row is gone.
+
+    sync_timers only reconciles units it can find a row for, so a unit outlived
+    its row whenever the row was deleted rather than cancelled -- a purged
+    database, a memory deleted while the shell was down, a throwaway test. The
+    unit stays active and eventually fires a notification pointing at a memory
+    that no longer exists, and nothing short of `uninstall` ever cleared it.
+    """
+    listed = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
+                  "--plain", "omoide-reminder-*"])
+    live = {row["id"] for row in conn.execute(
+        "SELECT id FROM reminders WHERE status = 'pending'")}
+    stopped = set()
+    for line in (listed.stdout or "").splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        unit = parts[0]
+        # omoide-reminder-<id>.timer / .service
+        base = unit.rsplit(".", 1)[0]
+        reminder_id = base[len("omoide-reminder-"):]
+        if reminder_id and reminder_id not in live and reminder_id not in stopped:
+            stop_unit(base)
+            stopped.add(reminder_id)
+    return len(stopped)
+
+
+def sync_timers(conn: sqlite3.Connection) -> dict:
+    """Reconcile reminder rows against systemd units.
+
+    Only active items are scheduled, so cancelling an item cancels its alarms.
+    An inferred to-do never reaches here with an alarm attached: create_item
+    gives it none, which is what keeps the agent from putting a notification on
+    someone's machine at a time they did not ask for.
+    """
+    created = cancelled = fired = 0
+    current = now()
+
+    rows = conn.execute(
+        "SELECT r.*, i.status AS item_status, i.completed_at, i.due_at, i.starts_at "
+        "FROM reminders r JOIN items i ON i.id = r.item_id").fetchall()
+
+    for row in rows:
+        dead = (row["status"] != "pending"
+                or row["item_status"] != "active"
+                or row["completed_at"] is not None)
+        fire_at = parse_iso(row["fire_at"])
+
+        if dead:
+            if row["unit"]:
+                stop_unit(row["unit"])
+                conn.execute("UPDATE reminders SET unit = NULL WHERE id = ?", (row["id"],))
+                cancelled += 1
+            continue
+
+        if fire_at and fire_at <= current:
+            conn.execute("UPDATE reminders SET status = 'fired', unit = NULL "
+                         "WHERE id = ?", (row["id"],))
+            stop_unit(row["unit"])
+            fired += 1
+            continue
+
+        if not row["unit"] or not unit_active(row["unit"]):
+            schedule(conn, row)
+            created += 1
+
+    conn.commit()
+    orphans = sweep_orphan_units(conn)
+    return {"created": created, "cancelled": cancelled, "fired": fired,
+            "orphansStopped": orphans}
+
+
+def reschedule_item(conn: sqlite3.Connection, item_id: str) -> None:
+    """Recompute relative alarms after an item's time moved, then re-sync.
+
+    trigger_offset_min is kept rather than baked away precisely so this works,
+    and so a calendar export can emit the original relative TRIGGER.
+    """
+    item = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    if not item:
+        return
+    anchor = parse_iso(item["due_at"] or item["starts_at"])
+    if anchor:
+        for row in conn.execute("SELECT * FROM reminders WHERE item_id = ? AND "
+                                "trigger_offset_min IS NOT NULL", (item_id,)):
+            fire_at = anchor + timedelta(minutes=int(row["trigger_offset_min"]))
+            conn.execute("UPDATE reminders SET fire_at = ? WHERE id = ?",
+                         (iso(fire_at), row["id"]))
+            stop_unit(row["unit"])
+            conn.execute("UPDATE reminders SET unit = NULL WHERE id = ?", (row["id"],))
+    conn.commit()
+
+
+# --- search index and the QML cache ----------------------------------------
+
+def block_text(block: sqlite3.Row) -> str:
+    try:
+        payload = json.loads(block["payload"])
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    parts = [payload.get("text") or "", payload.get("heading") or "",
+             payload.get("title") or "", payload.get("url") or ""]
+    for entry in payload.get("items") or []:
+        if isinstance(entry, dict):
+            parts += [entry.get("label") or "", entry.get("text") or ""]
+    return " ".join(part for part in parts if part)
+
+
+def refresh_fts(conn: sqlite3.Connection, memory_id: str | None = None) -> None:
+    if memory_id:
+        conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,))
+        targets = conn.execute("SELECT * FROM memories WHERE id = ?", (memory_id,)).fetchall()
+    else:
+        conn.execute("DELETE FROM memories_fts")
+        targets = conn.execute("SELECT * FROM memories").fetchall()
+
+    for memory in targets:
+        blocks = conn.execute("SELECT * FROM blocks WHERE memory_id = ? ORDER BY position",
+                              (memory["id"],)).fetchall()
+        body = " ".join(filter(None, (block_text(block) for block in blocks)))
+        titles = " ".join(row["title"] for row in conn.execute(
+            "SELECT title FROM items WHERE memory_id = ?", (memory["id"],)))
+        # Tags belong in the index: they are what the model decided this capture
+        # is about, and they are the labels on the filter chips -- so typing one
+        # should find the same memories the chip does.
+        tags = " ".join(row["tag"] for row in conn.execute(
+            "SELECT tag FROM tags WHERE memory_id = ?", (memory["id"],)))
+        conn.execute(
+            "INSERT INTO memories_fts (memory_id, title, lede, body, ocr_text) "
+            "VALUES (?,?,?,?,?)",
+            (memory["id"], memory["title"] or "", memory["lede"] or "",
+             " ".join(filter(None, (body, titles, tags))), memory["ocr_text"] or ""))
+    conn.commit()
+
+
+def memory_kind(conn: sqlite3.Connection, memory_id: str) -> str:
+    """What the capture is, from what it actually holds."""
+    kinds = {row["kind"] for row in conn.execute(
+        "SELECT kind FROM attachments WHERE memory_id = ?", (memory_id,))}
+    if "audio" in kinds:
+        return "voice"
+    if "image" in kinds:
+        return "screenshot"
+    return "note"
+
+
+def memory_card(conn: sqlite3.Connection, memory: sqlite3.Row) -> dict:
+    thumb = conn.execute(
+        "SELECT thumb_path, rel_path, width, height FROM attachments "
+        "WHERE memory_id = ? AND kind = 'image' ORDER BY rowid LIMIT 1",
+        (memory["id"],)).fetchone()
+    tags = [row["tag"] for row in conn.execute(
+        "SELECT tag FROM tags WHERE memory_id = ? ORDER BY tag", (memory["id"],))]
+    open_todos = conn.execute(
+        "SELECT COUNT(*) AS n FROM items WHERE memory_id = ? AND kind = 'todo' "
+        "AND status = 'active' AND completed_at IS NULL", (memory["id"],)).fetchone()["n"]
+    return {
+        "id": memory["id"],
+        "title": memory["title"] or "",
+        "lede": memory["lede"] or "",
+        "createdAt": memory["created_at"],
+        "aiStatus": memory["ai_status"],
+        "kind": memory_kind(conn, memory["id"]),
+        "collections": [row["name"] for row in conn.execute(
+            "SELECT c.name FROM collections c JOIN memory_collections mc "
+            "ON mc.collection_id = c.id WHERE mc.memory_id = ? ORDER BY c.name",
+            (memory["id"],))],
+        "domain": source_domain(conn, memory["id"]) or "",
+        "tags": tags,
+        "openTodos": int(open_todos),
+        "thumb": str(DATA_DIR / thumb["thumb_path"]) if thumb and thumb["thumb_path"]
+                 else (str(DATA_DIR / thumb["rel_path"]) if thumb else ""),
+        # 0 means unknown, and every caller falls back rather than dividing by it.
+        "aspect": aspect_of(thumb),
+    }
+
+
+def aspect_of(row: sqlite3.Row | None) -> float:
+    """Width over height, or 0 when the attachment was never measured."""
+    if not row or not row["width"] or not row["height"]:
+        return 0.0
+    return round(row["width"] / row["height"], 4)
+
+
+# How a domain is shown on a chip. Anything not listed falls back to its
+# registrable name, so a new site needs no code.
+DOMAIN_LABELS = {
+    "x.com": "X", "twitter.com": "X", "github.com": "GitHub",
+    "youtube.com": "YouTube", "youtu.be": "YouTube",
+    "instagram.com": "Instagram", "reddit.com": "Reddit",
+    "news.ycombinator.com": "Hacker News", "lu.ma": "Luma",
+}
+
+KIND_LABELS = {"screenshot": "Screenshot", "note": "Note", "voice": "Voice"}
+
+
+def domain_label(domain: str) -> str:
+    if domain in DOMAIN_LABELS:
+        return DOMAIN_LABELS[domain]
+    parts = [p for p in domain.split(".") if p not in ("www", "com", "org", "net", "io")]
+    return parts[-1].capitalize() if parts else domain
+
+
+def build_facets(cards: list[dict]) -> list[dict]:
+    """Filter chips, counted.
+
+    Three sources, all already in the data: what the capture is, where it came
+    from, and what the model tagged it. Nothing extra is asked of the model --
+    the tags it already returns are the smart part.
+
+    Facets with a single member are dropped: a chip that narrows six memories
+    down to one is a worse way to find it than scrolling.
+    """
+    counts: dict[str, dict] = {}
+
+    def bump(facet_id: str, label: str, group: str) -> None:
+        entry = counts.setdefault(facet_id, {"id": facet_id, "label": label,
+                                             "group": group, "count": 0})
+        entry["count"] += 1
+
+    for card in cards:
+        kind = card.get("kind") or "note"
+        bump(f"kind:{kind}", KIND_LABELS.get(kind, kind.capitalize()), "kind")
+        domain = card.get("domain") or ""
+        if domain:
+            bump(f"source:{domain}", domain_label(domain), "source")
+        for tag in (card.get("tags") or [])[:4]:
+            bump(f"tag:{tag}", tag, "tag")
+
+    facets = [f for f in counts.values() if f["count"] > 1]
+    # Kinds first, then sources, then tags; by count within each group.
+    order = {"kind": 0, "source": 1, "tag": 2}
+    facets.sort(key=lambda f: (order[f["group"]], -f["count"], f["label"].lower()))
+    return facets[:24]
+
+
+def build_index(conn: sqlite3.Connection) -> dict:
+    memories = [memory_card(conn, row) for row in conn.execute(
+        "SELECT * FROM memories WHERE status = 'ready' ORDER BY created_at DESC LIMIT 500")]
+
+    events = []
+    for row in conn.execute(
+            "SELECT i.*, m.title AS memory_title FROM items i "
+            "JOIN memories m ON m.id = i.memory_id "
+            "WHERE i.kind = 'event' AND i.status = 'active' "
+            "ORDER BY i.starts_at LIMIT 50"):
+        source = conn.execute(
+            "SELECT payload FROM blocks WHERE memory_id = ? AND type = 'source' LIMIT 1",
+            (row["memory_id"],)).fetchone()
+        domain = ""
+        if source:
+            try:
+                domain = json.loads(source["payload"]).get("domain", "")
+            except json.JSONDecodeError:
+                pass
+        thumb = conn.execute(
+            "SELECT thumb_path FROM attachments WHERE memory_id = ? AND kind = 'image' "
+            "LIMIT 1", (row["memory_id"],)).fetchone()
+        events.append({
+            "id": row["id"], "memoryId": row["memory_id"], "title": row["title"],
+            "startsAt": row["starts_at"], "endsAt": row["ends_at"],
+            "allDay": bool(row["all_day"]), "location": row["location"] or "",
+            "domain": domain,
+            "thumb": str(DATA_DIR / thumb["thumb_path"]) if thumb and thumb["thumb_path"] else "",
+        })
+
+    todos = [{
+        "id": row["id"], "memoryId": row["memory_id"], "title": row["title"],
+        "dueAt": row["due_at"], "completedAt": row["completed_at"],
+        "status": row["status"],
+    } for row in conn.execute(
+        "SELECT * FROM items WHERE kind = 'todo' AND status = 'active' "
+        # Open ones only. A ticked-off to-do was appearing in the For you list
+        # under a heading that says "No open to-dos" when empty, and inflating
+        # the bar badge, which counts this list.
+        "AND completed_at IS NULL "
+        "ORDER BY due_at IS NULL, due_at LIMIT 200")]
+
+    # Its own list, not mixed into `todos`: the bar badge and the For you digest
+    # count what the user has accepted, and a suggestion is not that yet.
+    suggestions = [{
+        "id": row["id"], "memoryId": row["memory_id"], "title": row["title"],
+        "dueAt": row["due_at"], "completedAt": None, "status": row["status"],
+    } for row in conn.execute(
+        "SELECT * FROM items WHERE kind = 'todo' AND status = 'suggested' "
+        "ORDER BY created_at DESC LIMIT 200")]
+
+    # Up to four thumbnails per collection, so a tile can show what is in it
+    # rather than just how many. The tile referenced a `cover` field that was
+    # never emitted, so collections have always drawn empty.
+    collections = []
+    for row in conn.execute(
+            "SELECT c.id, c.name, COUNT(mc.memory_id) AS n FROM collections c "
+            "LEFT JOIN memory_collections mc ON mc.collection_id = c.id "
+            "GROUP BY c.id ORDER BY c.name"):
+        thumbs = [str(DATA_DIR / t["thumb_path"]) for t in conn.execute(
+            "SELECT a.thumb_path FROM attachments a "
+            "JOIN memory_collections mc ON mc.memory_id = a.memory_id "
+            "JOIN memories m ON m.id = a.memory_id "
+            "WHERE mc.collection_id = ? AND a.kind = 'image' "
+            "AND a.thumb_path IS NOT NULL AND m.status = 'ready' "
+            "ORDER BY m.created_at DESC LIMIT 4", (row["id"],))]
+        collections.append({
+            "id": row["id"], "name": row["name"], "count": row["n"],
+            "thumbs": thumbs,
+        })
+
+    today_end = now().astimezone().replace(hour=23, minute=59, second=59)
+    def _today(values, key):
+        count = 0
+        for entry in values:
+            when = parse_iso(entry.get(key))
+            if when and when <= today_end and not entry.get("completedAt"):
+                count += 1
+        return count
+
+    counts = conn.execute(
+        "SELECT SUM(ai_status = 'pending') AS pending, SUM(ai_status = 'failed') AS failed "
+        "FROM memories").fetchone()
+
+    return {
+        "version": INDEX_VERSION,
+        "generatedAt": iso(now()),
+        # The bar menu gates its voice entry on this. It was only in `state`,
+        # so the menu read undefined and fell through to "available" -- offering
+        # dictation on a machine with no dictation installed.
+        "voiceAvailable": has("voxtype"),
+        "facets": build_facets(memories),
+        "pendingCount": int(counts["pending"] or 0),
+        "failedCount": int(counts["failed"] or 0),
+        "memoryCount": len(memories),
+        "digest": {"events": _today(events, "startsAt"), "todos": _today(todos, "dueAt")},
+        "memories": memories,
+        "events": events,
+        "todos": todos,
+        "suggestions": suggestions,
+        "collections": collections,
+    }
+
+
+def write_index(conn: sqlite3.Connection) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = build_index(conn)
+    tmp = INDEX_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n")
+    tmp.replace(INDEX_PATH)   # atomic: the watcher never sees a half-written file
+
+
+# --- capture ----------------------------------------------------------------
+
+# --- screenshot -------------------------------------------------------------
+#
+# Our own picker rather than omarchy-capture-screenshot.
+#
+# That helper freezes the screen with hyprpicker and relies on its own EXIT trap
+# to unfreeze. Run as a tracked child of the shell, anything that tears the
+# child down -- a plugin reload above all -- skips the trap and leaves the
+# freeze up, which presents as a completely locked desktop. Owning the freeze
+# here means the cleanup is in a finally block, and a stale one from a previous
+# run is reaped before the next capture starts.
+
+FREEZE_PIDFILE = "freeze.pid"
+CAPTURE_LOCK = "capture.lock"
+
+
+def capture_lock():
+    """Exclusive lock for the duration of a capture, or None if one is running.
+
+    The QML side cannot serialise this: the picker is launched detached (so a
+    plugin reload cannot kill it mid-selection), which means there is no
+    process to track. A double-click on the bar icon therefore arrives here as
+    two captures ~200ms apart, and two pickers fight over the pointer while the
+    second one reaps the first one's freeze. The lock is what makes the second
+    press a no-op instead.
+    """
+    import fcntl
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    handle = open(STATE_DIR / CAPTURE_LOCK, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
+def hypr(*args: str) -> str:
+    proc = run(["hyprctl", *args])
+    return proc.stdout if proc.returncode == 0 else ""
+
+
+def reap_stale_freeze() -> None:
+    """Recover from a freeze a previous run failed to clean up."""
+    path = STATE_DIR / FREEZE_PIDFILE
+    if not path.exists():
+        return
+    try:
+        pid = int(path.read_text().strip())
+        os.kill(pid, 15)
+    except (ValueError, OSError, ProcessLookupError):
+        pass
+    path.unlink(missing_ok=True)
+
+
+def start_freeze() -> subprocess.Popen | None:
+    """Freeze the screen so menus and hover states can be captured."""
+    if not has("hyprpicker"):
+        return None
+    try:
+        proc = subprocess.Popen(["hyprpicker", "-r", "-z"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    (STATE_DIR / FREEZE_PIDFILE).write_text(str(proc.pid))
+    return proc
+
+
+def wait_for_freeze(timeout: float = 2.0) -> bool:
+    """Block until the freeze surface is actually mapped.
+
+    A fixed sleep is a race: on a cold start hyprpicker needs longer than any
+    delay short enough to feel instant, and if slurp maps first it gets no grab
+    and exits 1 straight away -- which presents as "the region picker just does
+    not start", intermittently, depending on whether hyprpicker is warm.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if '"namespace": "hyprpicker"' in hypr("layers", "-j"):
+            return True
+        time.sleep(0.03)
+    return False
+
+
+def stop_freeze(proc: subprocess.Popen | None) -> None:
+    if proc:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                proc.kill()
+            except OSError:
+                pass
+    (STATE_DIR / FREEZE_PIDFILE).unlink(missing_ok=True)
+
+
+def active_workspace() -> int | None:
+    try:
+        for monitor in json.loads(hypr("monitors", "-j") or "[]"):
+            if monitor.get("focused"):
+                return (monitor.get("activeWorkspace") or {}).get("id")
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
+def window_boxes() -> list[str]:
+    """Visible window rectangles, in slurp's format.
+
+    Feeding these is what makes the picker outline the window under the cursor:
+    slurp highlights the smallest box containing the pointer and keeps the
+    first on a tie, so a floating window resolves over the tiled one beneath.
+
+    Restricted to the focused workspace -- offering a window you cannot see is
+    worse than offering none -- and deduplicated, because windows stacked at
+    identical geometry collapse to one rectangle slurp cannot tell apart.
+    """
+    workspace = active_workspace()
+    try:
+        clients = json.loads(hypr("clients", "-j") or "[]")
+    except json.JSONDecodeError:
+        return []
+    boxes: list[str] = []
+    for client in clients:
+        if client.get("hidden") or not client.get("mapped"):
+            continue
+        if workspace is not None and (client.get("workspace") or {}).get("id") != workspace:
+            continue
+        at, size = client.get("at") or [], client.get("size") or []
+        if len(at) == 2 and len(size) == 2 and size[0] > 0 and size[1] > 0:
+            box = f"{at[0]},{at[1]} {size[0]}x{size[1]}"
+            if box not in boxes:
+                boxes.append(box)
+    return boxes
+
+
+def monitor_boxes() -> list[str]:
+    """Monitors showing the focused workspace, as slurp rectangles."""
+    workspace = active_workspace()
+    try:
+        monitors = json.loads(hypr("monitors", "-j") or "[]")
+    except json.JSONDecodeError:
+        return []
+    boxes = []
+    for monitor in monitors:
+        if workspace is not None and (monitor.get("activeWorkspace") or {}).get("id") != workspace:
+            continue
+        scale = monitor.get("scale") or 1
+        width = round(monitor.get("width", 0) / scale)
+        height = round(monitor.get("height", 0) / scale)
+        if monitor.get("transform") in (1, 3, 5, 7):
+            width, height = height, width
+        if width > 0 and height > 0:
+            boxes.append(f"{monitor.get('x', 0)},{monitor.get('y', 0)} {width}x{height}")
+    return boxes
+
+
+def focused_monitor_geometry() -> str | None:
+    try:
+        monitors = json.loads(hypr("monitors", "-j") or "[]")
+    except json.JSONDecodeError:
+        return None
+    for monitor in monitors:
+        if monitor.get("focused"):
+            scale = monitor.get("scale") or 1
+            return "%d,%d %dx%d" % (monitor.get("x", 0), monitor.get("y", 0),
+                                    round(monitor.get("width", 0) / scale),
+                                    round(monitor.get("height", 0) / scale))
+    return None
+
+
+def pick_region(mode: str) -> str | None:
+    """Geometry for the capture, or None when the user cancelled."""
+    if mode == "fullscreen":
+        return focused_monitor_geometry()
+    if not has("slurp"):
+        die("slurp is not installed")
+
+    args = ["slurp", "-w", "2"]
+    if mode == "window":
+        args.append("-r")       # restrict the pick to whole windows
+
+    # Monitors first, then windows: slurp keeps the first box on a tie, so a
+    # window has to come later to win over the monitor behind it.
+    boxes = monitor_boxes() + window_boxes()
+    # slurp ALWAYS gets rectangles, and this is load-bearing: it reads boxes
+    # from stdin and treats EOF with none as an immediate cancel, exiting 1
+    # before the user can drag anything. Feeding it the monitor rects gives it
+    # something to highlight, keeps free dragging available (that needs no -r),
+    # and is what omarchy does for the same reason.
+    if not boxes:
+        return None
+    proc = run(args, stdin_text="\n".join(boxes) + "\n")
+    if proc.returncode != 0:
+        return None                      # cancelled with Esc or right-click
+    geometry = (proc.stdout or "").strip()
+    return geometry or None
+
+
+def take_screenshot(mode: str, target: Path, freeze: bool = True) -> Path | None:
+    if not has("grim"):
+        die("grim is not installed")
+
+    lock = capture_lock()
+    if lock is None:
+        return None      # a picker is already open; leave it alone
+
+    reap_stale_freeze()
+
+    # Software cursors so the pointer appears in the grab, restored afterwards.
+    cursor_setting = None
+    frozen = None
+    try:
+        if freeze and mode != "fullscreen":
+            cursor_setting = (hypr("getoption", "cursor:no_hardware_cursors", "-j") or "")
+            frozen = start_freeze()
+            if frozen:
+                hypr("keyword", "cursor:no_hardware_cursors", "0")
+                wait_for_freeze()
+
+        geometry = pick_region(mode)
+        if not geometry:
+            return None
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        grab = run(["grim", "-g", geometry, str(target)])
+        if grab.returncode != 0 or not target.exists():
+            return None
+        return target
+    finally:
+        # The whole point: a freeze we started is always taken down, however
+        # this function exits.
+        stop_freeze(frozen)
+        lock.close()
+        if cursor_setting:
+            try:
+                previous = json.loads(cursor_setting).get("int")
+                if previous is not None:
+                    hypr("keyword", "cursor:no_hardware_cursors", str(previous))
+            except json.JSONDecodeError:
+                pass
+
+
+def ocr(image: Path) -> str:
+    if not has("tesseract"):
+        return ""
+    langs = os.environ.get("OMARCHY_OCR_LANGS", "eng")
+    proc = run(["tesseract", str(image), "stdout", "--oem", "1", "--psm", "6",
+                "-l", langs, "--dpi", "300",
+                "-c", "preserve_interword_spaces=1"], timeout=60)
+    return (proc.stdout or "").strip() if proc.returncode == 0 else ""
+
+
+def image_size(path: Path) -> tuple[int, int] | None:
+    """Pixel dimensions, so a capture can be laid out at its own aspect."""
+    if not has("ffprobe"):
+        return None
+    proc = run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height",
+                "-of", "csv=p=0:s=x", str(path)], timeout=10)
+    try:
+        width, height = (int(n) for n in (proc.stdout or "").strip().split("x")[:2])
+    except ValueError:
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def backfill_dimensions(conn: sqlite3.Connection) -> int:
+    """Measure image attachments recorded before dimensions were stored.
+
+    Called once when the v4 migration applies, and again by `reindex` so there
+    is an explicit way to redo it. A file that has gone missing is skipped
+    rather than treated as an error: the row is still a valid memory.
+    """
+    filled = 0
+    rows = conn.execute("SELECT id, rel_path FROM attachments WHERE kind = 'image' "
+                        "AND (width IS NULL OR height IS NULL)").fetchall()
+    for row in rows:
+        path = DATA_DIR / row["rel_path"]
+        if not path.exists():
+            continue
+        size = image_size(path)
+        if size:
+            conn.execute("UPDATE attachments SET width = ?, height = ? WHERE id = ?",
+                         (size[0], size[1], row["id"]))
+            filled += 1
+    if filled:
+        conn.commit()
+    return filled
+
+
+def make_thumb(image: Path) -> Path | None:
+    """Pre-generate thumbnails; scaling full PNGs makes the grid stutter."""
+    if not has("ffmpeg"):
+        return None
+    thumb = image.parent / "thumb.png"
+    proc = run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(image),
+                "-vf", "scale=640:-1:flags=lanczos", str(thumb)], timeout=30)
+    return thumb if proc.returncode == 0 and thumb.exists() else None
+
+
+def attach_image(conn: sqlite3.Connection, memory_id: str, source: Path) -> Path:
+    folder = BLOB_DIR / memory_id
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "capture.png"
+    if source != target:
+        shutil.move(str(source), target)
+    size = image_size(target)
+    conn.execute(
+        "INSERT INTO attachments "
+        "(id, memory_id, kind, rel_path, mime, bytes, width, height) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (new_id(), memory_id, "image", str(target.relative_to(DATA_DIR)),
+         "image/png", target.stat().st_size,
+         size[0] if size else None, size[1] if size else None))
+    return target
+
+
+def cmd_capture(args) -> int:
+    config = settings()
+    mode = args.mode or config.get("defaultAction", "screenshot")
+
+    if mode == "clipboard":
+        die("clipboard capture is not enabled yet", 2)
+    if mode == "voice" and not has("voxtype"):
+        notify("Dictation is not set up",
+               "Install Voxtype to capture voice notes.",
+               exec_cmd="omarchy-voxtype-install")
+        die("voxtype is not installed", 2)
+
+    memory_id = new_id()
+    shot = None
+    if mode == "screenshot":
+        shot = take_screenshot(config.get("captureMode", "smart"),
+                               BLOB_DIR / memory_id / "capture.png",
+                               freeze=config.get("captureFreeze", True) is not False)
+        if shot is None:
+            return 2   # cancelled: write nothing at all
+
+    conn = connect()
+    stamp = iso(now())
+    conn.execute(
+        "INSERT INTO memories (id, created_at, updated_at, status, ai_status) "
+        "VALUES (?,?,?,'draft','none')", (memory_id, stamp, stamp))
+    stored = attach_image(conn, memory_id, shot) if shot else None
+    conn.commit()
+
+    payload = {"id": memory_id, "mode": mode,
+               "hasImage": bool(stored), "image": str(stored) if stored else "",
+               "autoDictate": mode == "voice",
+               "voiceAvailable": has("voxtype")}
+    conn.close()
+
+    # The overlay opens only now, so it is never in its own screenshot.
+    shell_ipc(IPC_TARGET, "compose", json.dumps(payload))
+    emit(payload)
+    return 0
+
+
+def discard(conn: sqlite3.Connection, memory_id: str,
+            drafts_only: bool = True) -> bool:
+    """Esc on a draft leaves nothing behind -- row, blocks and blob all go.
+
+    drafts_only is the safety catch. A compose overlay can outlive the commit
+    it triggered (the window is still on screen when the memory is already
+    saved), and dismissing it must never destroy a finished memory. Deleting a
+    saved memory is `delete`, which asks for it explicitly.
+    """
+    row = conn.execute("SELECT status FROM memories WHERE id = ?",
+                       (memory_id,)).fetchone()
+    if not row:
+        return False
+    if drafts_only and row["status"] != "draft":
+        return False
+    conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+    conn.execute("DELETE FROM memories_fts WHERE memory_id = ?", (memory_id,))
+    conn.commit()
+    shutil.rmtree(BLOB_DIR / memory_id, ignore_errors=True)
+    return True
+
+
+def cmd_discard(args) -> int:
+    conn = connect()
+    removed = discard(conn, args.id)
+    write_index(conn)
+    emit({"discarded": removed})
+    return 0 if removed else 2
+
+
+# --- commit -----------------------------------------------------------------
+
+def cmd_commit(args) -> int:
+    conn = connect()
+    memory = conn.execute("SELECT * FROM memories WHERE id = ?", (args.id,)).fetchone()
+    if not memory:
+        die(f"no such memory: {args.id}")
+
+    note = (args.note or "").strip()
+    image = conn.execute("SELECT * FROM attachments WHERE memory_id = ? AND kind = 'image'",
+                         (args.id,)).fetchone()
+
+    if args.remove_image and image:
+        shutil.rmtree(BLOB_DIR / args.id, ignore_errors=True)
+        conn.execute("DELETE FROM attachments WHERE id = ?", (image["id"],))
+        image = None
+
+    # Defence in depth: the overlay gates on this too, but a memory with no
+    # text and no image is worthless and must never be stored.
+    if not note and not image:
+        discard(conn, args.id)
+        die("nothing to save: a capture needs text, an image, or a voice note", 2)
+
+    ai_config = ai_settings()
+    ai_on = bool(resolve_provider(ai_config))
+
+    image_path = DATA_DIR / image["rel_path"] if image else None
+    ocr_text = ocr(image_path) if image_path else ""
+
+    # Capture-owned blocks come first and are never written by the model.
+    if image:
+        add_block(conn, args.id, "image",
+                  {"attachment_id": image["id"], "caption": ""}, origin="capture")
+    if note:
+        add_block(conn, args.id, "note", {"text": note}, origin="user")
+
+    conn.execute(
+        "UPDATE memories SET status = 'ready', ai_status = ?, ocr_text = ?, "
+        "updated_at = ? WHERE id = ?",
+        ("pending" if ai_on else "none", ocr_text, iso(now()), args.id))
+    conn.commit()
+
+    if image_path:
+        thumb = make_thumb(image_path)
+        if thumb:
+            conn.execute("UPDATE attachments SET thumb_path = ? WHERE id = ?",
+                         (str(thumb.relative_to(DATA_DIR)), image["id"]))
+            conn.commit()
+
+    # The bar icon must show its working state within a frame, so the index is
+    # written before the model runs, not after.
+    if ai_on:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        commit_pidfile(args.id).write_text(str(os.getpid()))
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+
+    enriched, ai_error = (run_ai(note, ocr_text,
+                                 str(image_path) if image_path else None, ai_config)
+                          if ai_on else (None, ""))
+
+    created_items = 0
+    if enriched:
+        created_items += apply_enrichment(conn, args.id, enriched)
+    elif ai_on:
+        conn.execute("UPDATE memories SET ai_status = 'failed', ai_error = ? "
+                     "WHERE id = ?", (one_line(ai_error, 500), args.id))
+
+    # Deterministic fallback. Runs whenever the model produced no to-do, so an
+    # explicit "remind me ..." still works with AI off, failed, or just quiet.
+    if not created_items:
+        spec = todo_from_note(note)
+        if spec:
+            block_id = add_block(conn, args.id, "todos", {"item_ids": []}, origin="user")
+            item_id = create_item(conn, args.id, block_id, spec, source="manual")
+            conn.execute("UPDATE blocks SET payload = ? WHERE id = ?",
+                         (json.dumps({"item_ids": [item_id]}), block_id))
+
+    if not conn.execute("SELECT title FROM memories WHERE id = ?",
+                        (args.id,)).fetchone()["title"]:
+        fallback = (note.splitlines()[0] if note else "").strip()
+        if not fallback:
+            fallback = "Screenshot " + now().astimezone().strftime("%d %b %H:%M")
+        conn.execute("UPDATE memories SET title = ? WHERE id = ?",
+                     (fallback[:120], args.id))
+
+    conn.commit()
+    commit_pidfile(args.id).unlink(missing_ok=True)
+    refresh_fts(conn, args.id)
+    sync_timers(conn)
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+
+    memory = conn.execute("SELECT * FROM memories WHERE id = ?", (args.id,)).fetchone()
+    # Only alarms on ACTIVE items are scheduled, so a cancelled item's reminder
+    # row must not be counted: it would promise a notification that never comes.
+    pending = conn.execute(
+        "SELECT COUNT(*) AS n FROM reminders r JOIN items i ON i.id = r.item_id "
+        "WHERE i.memory_id = ? AND r.status = 'pending' AND i.status = 'active'",
+        (args.id,)).fetchone()["n"]
+    todos = conn.execute(
+        "SELECT COUNT(*) AS n FROM items WHERE memory_id = ? AND kind = 'todo' "
+        "AND status = 'active' AND completed_at IS NULL", (args.id,)).fetchone()["n"]
+    suggested = conn.execute(
+        "SELECT COUNT(*) AS n FROM items WHERE memory_id = ? AND kind = 'todo' "
+        "AND status = 'suggested'", (args.id,)).fetchone()["n"]
+
+    if memory["ai_status"] == "failed":
+        headline, body = "Memory saved", "Enrichment failed — the capture is intact."
+    elif pending:
+        headline = "Memory saved"
+        body = f"{pending} reminder{'s' if pending != 1 else ''} scheduled"
+    elif suggested:
+        headline = "Memory saved"
+        body = (f"{suggested} to-do{'s' if suggested != 1 else ''} suggested"
+                " — open to add")
+    elif todos:
+        headline = "Memory saved"
+        body = f"{todos} to-do{'s' if todos != 1 else ''} added"
+    else:
+        headline, body = "Memory saved", memory["title"] or ""
+
+    notify(headline, body, exec_cmd=open_space_cmd(args.id),
+           image=str(image_path) if image_path else None)
+    emit({"id": args.id, "aiStatus": memory["ai_status"],
+          "reminders": int(pending), "todos": int(todos),
+          "suggested": int(suggested)})
+    return 0
+
+
+# --- related captures -------------------------------------------------------
+
+def _pair(a: str, b: str) -> tuple[str, str]:
+    """One row per pair: order the ids so (a,b) and (b,a) cannot both exist."""
+    return (a, b) if a <= b else (b, a)
+
+
+def fts_escape(query: str) -> str:
+    """Match any term, as a prefix.
+
+    Every term gets FTS5's `*` prefix operator. Without it the index only
+    matches whole tokens, so a search typed one character at a time finds
+    nothing until the final letter of a word -- "bandcam" would miss
+    "bandcamp". Prefix matching is what makes search-as-you-type behave.
+    """
+    terms = [t for t in re.split(r"\W+", query or "") if t]
+    return " OR ".join(f'"{t}"*' for t in terms)
+
+
+def source_domain(conn: sqlite3.Connection, memory_id: str) -> str | None:
+    """The domain of a memory's source block, if it has one."""
+    row = conn.execute("SELECT payload FROM blocks WHERE memory_id = ? AND "
+                       "type = 'source' LIMIT 1", (memory_id,)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row["payload"]).get("domain") or None
+    except json.JSONDecodeError:
+        return None
+
+
+def decided(conn: sqlite3.Connection, memory_id: str) -> set[str]:
+    """Ids already linked to this one, so the picker never offers a duplicate."""
+    out = set()
+    for row in conn.execute("SELECT from_id, to_id FROM links WHERE "
+                            "from_id = ? OR to_id = ?", (memory_id, memory_id)):
+        out.add(row["to_id"] if row["from_id"] == memory_id else row["from_id"])
+    return out
+
+
+def cmd_related(args) -> int:
+    """Only what the user linked. Nothing is inferred."""
+    conn = connect(write=False)
+    linked = []
+    for row in conn.execute(
+            "SELECT * FROM links WHERE (from_id = ? OR to_id = ?) "
+            "ORDER BY created_at DESC", (args.id, args.id)):
+        other = row["to_id"] if row["from_id"] == args.id else row["from_id"]
+        memory = conn.execute("SELECT * FROM memories WHERE id = ? AND "
+                              "status = 'ready'", (other,)).fetchone()
+        if memory:
+            linked.append(memory_card(conn, memory))
+    emit({"linked": linked})
+    return 0
+
+
+def cmd_candidates(args) -> int:
+    """Memories available to link by hand, for the explicit picker.
+
+    Everything the user has already ruled on is excluded, so the list only ever
+    offers something that would actually be a new link.
+    """
+    conn = connect(write=False)
+    skip = decided(conn, args.id) | {args.id}
+
+    if args.q:
+        match = fts_escape(args.q)
+        # FTS5 wants the table name in MATCH, not an alias.
+        rows = conn.execute(
+            "SELECT m.* FROM memories_fts JOIN memories m "
+            "ON m.id = memories_fts.memory_id "
+            "WHERE memories_fts MATCH ? AND m.status = 'ready' "
+            "ORDER BY rank LIMIT 100", (match,)).fetchall() if match else []
+    else:
+        rows = conn.execute("SELECT * FROM memories WHERE status = 'ready' "
+                            "ORDER BY created_at DESC LIMIT 100").fetchall()
+
+    out = [memory_card(conn, row) for row in rows if row["id"] not in skip]
+    emit({"candidates": out[:args.limit]})
+    return 0
+
+
+def cmd_link(args) -> int:
+    conn = connect()
+    low, high = _pair(args.from_id, args.to)
+    if args.action == "add":
+        conn.execute("INSERT OR IGNORE INTO links (from_id, to_id, created_at) "
+                     "VALUES (?,?,?)", (low, high, iso(now())))
+    elif args.action == "remove":
+        conn.execute("DELETE FROM links WHERE from_id = ? AND to_id = ?", (low, high))
+    conn.commit()
+    write_index(conn)
+    return 0
+
+
+# --- read APIs --------------------------------------------------------------
+
+def cmd_list(args) -> int:
+    conn = connect(write=False)
+    sql = "SELECT * FROM memories WHERE status = 'ready'"
+    params: list = []
+    if args.collection:
+        sql += (" AND id IN (SELECT mc.memory_id FROM memory_collections mc "
+                "JOIN collections c ON c.id = mc.collection_id WHERE c.name = ?)")
+        params.append(args.collection)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(args.limit)
+    emit({"memories": [memory_card(conn, row) for row in conn.execute(sql, params)]})
+    return 0
+
+
+def cmd_show(args) -> int:
+    conn = connect(write=False)
+    memory = conn.execute("SELECT * FROM memories WHERE id = ?", (args.id,)).fetchone()
+    if not memory:
+        die(f"no such memory: {args.id}")
+
+    blocks = []
+    for row in conn.execute("SELECT * FROM blocks WHERE memory_id = ? ORDER BY position",
+                            (args.id,)):
+        try:
+            payload = json.loads(row["payload"])
+        except json.JSONDecodeError:
+            payload = {}
+        if row["type"] == "image":
+            attachment = conn.execute("SELECT * FROM attachments WHERE id = ?",
+                                      (payload.get("attachment_id"),)).fetchone()
+            if attachment:
+                payload["path"] = str(DATA_DIR / attachment["rel_path"])
+                payload["thumb"] = (str(DATA_DIR / attachment["thumb_path"])
+                                    if attachment["thumb_path"] else payload["path"])
+                payload["aspect"] = aspect_of(attachment)
+        blocks.append({"id": row["id"], "type": row["type"], "payload": payload,
+                       "origin": row["origin"], "edited": bool(row["edited"])})
+
+    items = []
+    # Cancelled items are gone as far as the page is concerned. Returning them
+    # meant a deleted to-do kept rendering in its memory's To-dos block, which
+    # looked exactly like the delete having failed.
+    for row in conn.execute("SELECT * FROM items WHERE memory_id = ? "
+                            "AND status != 'cancelled' ORDER BY created_at",
+                            (args.id,)):
+        reminders = [{"id": r["id"], "fireAt": r["fire_at"],
+                      "offsetMin": r["trigger_offset_min"], "status": r["status"]}
+                     for r in conn.execute(
+                         "SELECT * FROM reminders WHERE item_id = ?", (row["id"],))]
+        items.append({
+            "id": row["id"], "kind": row["kind"], "title": row["title"],
+            "dueAt": row["due_at"], "startsAt": row["starts_at"],
+            "endsAt": row["ends_at"], "allDay": bool(row["all_day"]),
+            "location": row["location"] or "", "mapUrl": row["map_url"] or "",
+            "status": row["status"], "completedAt": row["completed_at"],
+            "reminders": reminders,
+        })
+
+    emit({
+        "id": memory["id"], "title": memory["title"] or "", "lede": memory["lede"] or "",
+        "createdAt": memory["created_at"], "aiStatus": memory["ai_status"],
+        "aiError": memory["ai_error"] or "",
+        "blocks": blocks, "items": items,
+        "tags": [r["tag"] for r in conn.execute(
+            "SELECT tag FROM tags WHERE memory_id = ?", (args.id,))],
+        "collections": [dict(r) for r in conn.execute(
+            "SELECT c.id, c.name FROM collections c JOIN memory_collections mc "
+            "ON mc.collection_id = c.id WHERE mc.memory_id = ?", (args.id,))],
+    })
+    return 0
+
+
+def cmd_search(args) -> int:
+    conn = connect(write=False)
+    match = fts_escape(args.q)
+    if not match:
+        emit({"results": []})
+        return 0
+    try:
+        rows = conn.execute(
+            "SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ? "
+            "ORDER BY rank LIMIT ?", (match, args.limit)).fetchall()
+    except sqlite3.OperationalError as error:
+        die(f"search failed: {error}")
+    results = []
+    for row in rows:
+        memory = conn.execute("SELECT * FROM memories WHERE id = ? AND status = 'ready'",
+                              (row["memory_id"],)).fetchone()
+        if memory:
+            results.append(memory_card(conn, memory))
+    emit({"results": results})
+    return 0
+
+
+def cmd_archive(args) -> int:
+    """The To-do archive: one query, grouped by time and completion.
+
+    Grouping never consults a reminder's state -- a fired alarm says nothing
+    about whether the to-do is done, so it stays in Past until checked off.
+    """
+    conn = connect(write=False)
+    current = now()
+    # No separate "anytime" group. An undated to-do is still something ahead of
+    # you, and giving it its own heading split Upcoming into priority tiers --
+    # which is exactly what this page is not for.
+    groups = {"suggested": [], "upcoming": [], "past": [], "completed": []}
+    # Newest first, not by due date. This page is the full list; For you is
+    # where what matters today gets picked out, and ordering both by urgency
+    # made the archive a second, worse version of the digest.
+    for row in conn.execute(
+            "SELECT * FROM items WHERE kind = 'todo' "
+            "AND status IN ('active', 'suggested') "
+            "ORDER BY created_at DESC"):
+        entry = {"id": row["id"], "memoryId": row["memory_id"], "title": row["title"],
+                 "dueAt": row["due_at"], "completedAt": row["completed_at"],
+                 "status": row["status"], "createdAt": row["created_at"]}
+        due = parse_iso(row["due_at"])
+        if row["status"] == "suggested":
+            groups["suggested"].append(entry)
+        elif row["completed_at"]:
+            groups["completed"].append(entry)
+        elif due is None or due >= current:
+            groups["upcoming"].append(entry)
+        else:
+            groups["past"].append(entry)
+    # No per-group re-sorting: the query's created_at DESC already holds for
+    # every group, including suggestions and completed ones.
+    emit(groups)
+    return 0
+
+
+def cmd_state(args) -> int:
+    conn = connect(write=False)
+    row = conn.execute(
+        "SELECT COUNT(*) AS memories, SUM(ai_status = 'pending') AS pending, "
+        "SUM(ai_status = 'failed') AS failed FROM memories WHERE status = 'ready'"
+    ).fetchone()
+    pending = conn.execute(
+        "SELECT COUNT(*) AS n FROM reminders WHERE status = 'pending'").fetchone()["n"]
+    upcoming = conn.execute(
+        "SELECT i.title, r.fire_at FROM reminders r JOIN items i ON i.id = r.item_id "
+        "WHERE r.status = 'pending' ORDER BY r.fire_at LIMIT 1").fetchone()
+    emit({
+        "memories": int(row["memories"] or 0),
+        "enriching": int(row["pending"] or 0),
+        "failed": int(row["failed"] or 0),
+        "pendingReminders": int(pending or 0),
+        "next": {"title": upcoming["title"], "fireAt": upcoming["fire_at"]} if upcoming else None,
+        "aiConfigured": bool(resolve_provider(ai_settings())),
+        "voiceAvailable": has("voxtype"),
+    })
+    return 0
+
+
+# --- mutations --------------------------------------------------------------
+
+def item_payload(conn: sqlite3.Connection, item: sqlite3.Row) -> dict:
+    memory = conn.execute("SELECT id, title FROM memories WHERE id = ?",
+                          (item["memory_id"],)).fetchone()
+    return {
+        "id": item["id"], "kind": item["kind"], "title": item["title"],
+        "notes": item["notes"] or "",
+        "dueAt": item["due_at"], "startsAt": item["starts_at"],
+        "endsAt": item["ends_at"], "allDay": bool(item["all_day"]),
+        "location": item["location"] or "", "mapUrl": item["map_url"] or "",
+        "status": item["status"], "completedAt": item["completed_at"],
+        "source": item["source"],
+        "memoryId": item["memory_id"],
+        "memoryTitle": memory["title"] if memory else "",
+        "reminders": [{"id": r["id"], "fireAt": r["fire_at"],
+                       "offsetMin": r["trigger_offset_min"],
+                       "status": r["status"],
+                       "scheduled": bool(r["unit"])}
+                      for r in conn.execute(
+                          "SELECT * FROM reminders WHERE item_id = ? "
+                          "ORDER BY fire_at", (item["id"],))],
+    }
+
+
+def cmd_item(args) -> int:
+    if args.action == "get":
+        conn = connect(write=False)
+        item = conn.execute("SELECT * FROM items WHERE id = ?", (args.id,)).fetchone()
+        if not item:
+            die(f"no such item: {args.id}")
+        emit(item_payload(conn, item))
+        return 0
+
+    conn = connect()
+    if args.action == "add":
+        spec = {"kind": args.kind, "title": args.title, "suggested": False}
+        when = parse_iso(args.at) or (parse_when(args.at) if args.at else None)
+        if when:
+            spec["due_at" if args.kind == "todo" else "starts_at"] = iso(when)
+        item_id = create_item(conn, args.memory, None, spec, source="manual")
+        conn.commit()
+        emit({"id": item_id})
+    else:
+        item = conn.execute("SELECT * FROM items WHERE id = ?", (args.id,)).fetchone()
+        if not item:
+            die(f"no such item: {args.id}")
+        if args.action == "promote":
+            conn.execute("UPDATE items SET status = 'active' WHERE id = ?", (args.id,))
+            # A promoted item with a time and no alarm gets one, so accepting a
+            # suggestion actually schedules something.
+            anchor = parse_iso(item["due_at"] or item["starts_at"])
+            existing = conn.execute("SELECT COUNT(*) AS n FROM reminders "
+                                    "WHERE item_id = ?", (args.id,)).fetchone()["n"]
+            if anchor and not existing:
+                conn.execute("INSERT INTO reminders (id, item_id, fire_at, status) "
+                             "VALUES (?,?,?,'pending')", (new_id(), args.id, iso(anchor)))
+        elif args.action == "complete":
+            conn.execute("UPDATE items SET completed_at = ? WHERE id = ?",
+                         (iso(now()), args.id))
+        elif args.action == "reopen":
+            conn.execute("UPDATE items SET completed_at = NULL WHERE id = ?", (args.id,))
+            conn.execute("UPDATE reminders SET status = 'pending' WHERE item_id = ? "
+                         "AND status = 'cancelled'", (args.id,))
+        elif args.action == "cancel":
+            conn.execute("UPDATE items SET status = 'cancelled' WHERE id = ?", (args.id,))
+        elif args.action == "edit":
+            if args.title:
+                conn.execute("UPDATE items SET title = ? WHERE id = ?", (args.title, args.id))
+            if args.notes is not None:
+                conn.execute("UPDATE items SET notes = ? WHERE id = ?", (args.notes, args.id))
+            column = "due_at" if item["kind"] == "todo" else "starts_at"
+            if args.clear_at:
+                # An undated to-do is valid, so clearing has to drop the alarms
+                # with it rather than leaving them pointing at nothing.
+                conn.execute(f"UPDATE items SET {column} = NULL WHERE id = ?", (args.id,))
+                for row in conn.execute("SELECT unit FROM reminders WHERE item_id = ?",
+                                        (args.id,)):
+                    stop_unit(row["unit"])
+                conn.execute("DELETE FROM reminders WHERE item_id = ?", (args.id,))
+            elif args.at:
+                when = parse_iso(args.at) or parse_when(args.at)
+                if not when:
+                    die(f"could not read a date from: {args.at}")
+                conn.execute(f"UPDATE items SET {column} = ? WHERE id = ?",
+                             (iso(when), args.id))
+                if not conn.execute("SELECT COUNT(*) AS n FROM reminders "
+                                    "WHERE item_id = ?", (args.id,)).fetchone()["n"]:
+                    conn.execute("INSERT INTO reminders (id, item_id, fire_at, status) "
+                                 "VALUES (?,?,?,'pending')",
+                                 (new_id(), args.id, iso(when)))
+                conn.commit()
+                reschedule_item(conn, args.id)
+        conn.commit()
+    sync_timers(conn)
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    return 0
+
+
+def cmd_reminder(args) -> int:
+    conn = connect()
+    if args.action == "add":
+        item = conn.execute("SELECT * FROM items WHERE id = ?", (args.item,)).fetchone()
+        if not item:
+            die(f"no such item: {args.item}")
+        anchor = parse_iso(item["due_at"] or item["starts_at"])
+        if args.offset is not None:
+            if not anchor:
+                die("an offset needs an item with a time")
+            fire_at = anchor + timedelta(minutes=args.offset)
+            offset = args.offset
+        else:
+            fire_at = parse_iso(args.at) or parse_when(args.at or "")
+            offset = None
+            if not fire_at:
+                die("could not read a time from --at")
+        conn.execute("INSERT INTO reminders (id, item_id, fire_at, trigger_offset_min, "
+                     "status) VALUES (?,?,?,?,'pending')",
+                     (new_id(), args.item, iso(fire_at), offset))
+    elif args.action == "remove":
+        row = conn.execute("SELECT unit FROM reminders WHERE id = ?", (args.id,)).fetchone()
+        if row:
+            stop_unit(row["unit"])
+        conn.execute("DELETE FROM reminders WHERE id = ?", (args.id,))
+    conn.commit()
+    sync_timers(conn)
+    write_index(conn)
+    return 0
+
+
+def cmd_collection(args) -> int:
+    conn = connect()
+    if args.action == "new":
+        conn.execute("INSERT OR IGNORE INTO collections (id, name, created_at) "
+                     "VALUES (?,?,?)", (new_id(), args.name, iso(now())))
+    elif args.action == "rename":
+        if not args.to or not args.to.strip():
+            die("rename needs --to")
+        row = conn.execute("SELECT id FROM collections WHERE name = ?",
+                           (args.name,)).fetchone()
+        if not row:
+            die(f"no such collection: {args.name}")
+        clash = conn.execute("SELECT id FROM collections WHERE name = ? AND id != ?",
+                             (args.to.strip(), row["id"])).fetchone()
+        if clash:
+            die(f"a collection called {args.to.strip()!r} already exists", 2)
+        conn.execute("UPDATE collections SET name = ? WHERE id = ?",
+                     (args.to.strip(), row["id"]))
+    elif args.action == "delete":
+        # The collection only. memory_collections cascades on the foreign key,
+        # so the memberships go and every memory stays exactly where it was.
+        row = conn.execute("SELECT id FROM collections WHERE name = ?",
+                           (args.name,)).fetchone()
+        if not row:
+            die(f"no such collection: {args.name}")
+        conn.execute("DELETE FROM collections WHERE id = ?", (row["id"],))
+    else:
+        row = conn.execute("SELECT id FROM collections WHERE name = ?", (args.name,)).fetchone()
+        if not row and args.action == "add":
+            collection_id = new_id()
+            conn.execute("INSERT INTO collections (id, name, created_at) VALUES (?,?,?)",
+                         (collection_id, args.name, iso(now())))
+        elif not row:
+            die(f"no such collection: {args.name}")
+        else:
+            collection_id = row["id"]
+        if args.action == "add":
+            conn.execute("INSERT OR IGNORE INTO memory_collections "
+                         "(memory_id, collection_id) VALUES (?,?)", (args.memory, collection_id))
+        elif args.action == "remove":
+            conn.execute("DELETE FROM memory_collections WHERE memory_id = ? AND "
+                         "collection_id = ?", (args.memory, collection_id))
+    conn.commit()
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    return 0
+
+
+def cmd_delete(args) -> int:
+    conn = connect()
+    for row in conn.execute(
+            "SELECT r.unit FROM reminders r JOIN items i ON i.id = r.item_id "
+            "WHERE i.memory_id = ?", (args.id,)):
+        stop_unit(row["unit"])
+    discard(conn, args.id, drafts_only=False)
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    return 0
+
+
+def cmd_memory(args) -> int:
+    """Edit a memory's own fields. The blocks are `block set`'s business."""
+    conn = connect()
+    memory = conn.execute("SELECT id FROM memories WHERE id = ?", (args.id,)).fetchone()
+    if not memory:
+        die(f"no such memory: {args.id}")
+    if args.title is not None:
+        title = args.title.strip()
+        if not title:
+            die("a memory needs a title", 2)
+        conn.execute("UPDATE memories SET title = ?, updated_at = ? WHERE id = ?",
+                     (title, iso(now()), args.id))
+    if args.lede is not None:
+        conn.execute("UPDATE memories SET lede = ?, updated_at = ? WHERE id = ?",
+                     (args.lede.strip(), iso(now()), args.id))
+    conn.commit()
+    refresh_fts(conn, args.id)
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    emit({"id": args.id})
+    return 0
+
+
+def cmd_enrich(args) -> int:
+    """Run the agent again on a capture that already exists.
+
+    commit cannot be reused for this: it would insert a second note and image
+    block. Only the agent's own output is replaced, and only the rows it has not
+    been told the user corrected -- an edited block survives a retry, which is
+    what the `edited` flag is for.
+    """
+    conn = connect()
+    memory = conn.execute("SELECT * FROM memories WHERE id = ?", (args.id,)).fetchone()
+    if not memory:
+        die(f"no such memory: {args.id}")
+
+    ai = ai_settings()
+    if not resolve_provider(ai):
+        die("no agent is configured; run `omoide setup-ai` first", 2)
+
+    note_row = conn.execute(
+        "SELECT payload FROM blocks WHERE memory_id = ? AND type = 'note' "
+        "ORDER BY position LIMIT 1", (args.id,)).fetchone()
+    note = ""
+    if note_row:
+        try:
+            note = json.loads(note_row["payload"]).get("text") or ""
+        except json.JSONDecodeError:
+            note = ""
+    image = conn.execute("SELECT rel_path FROM attachments WHERE memory_id = ? "
+                         "AND kind = 'image' ORDER BY rowid LIMIT 1",
+                         (args.id,)).fetchone()
+    image_path = str(DATA_DIR / image["rel_path"]) if image else None
+
+    # Out with the previous answer. An edited block stays, and so does anything
+    # the capture itself owns -- the note and the image are origin 'user' and
+    # 'capture', never 'ai'.
+    stale = conn.execute("SELECT id FROM blocks WHERE memory_id = ? "
+                         "AND origin = 'ai' AND edited = 0", (args.id,)).fetchall()
+    for row in stale:
+        for unit in conn.execute("SELECT r.unit FROM reminders r "
+                                 "JOIN items i ON i.id = r.item_id "
+                                 "WHERE i.block_id = ?", (row["id"],)):
+            stop_unit(unit["unit"])
+        conn.execute("DELETE FROM items WHERE block_id = ?", (row["id"],))
+        conn.execute("DELETE FROM blocks WHERE id = ?", (row["id"],))
+    renumber_blocks(conn, args.id)
+
+    conn.execute("UPDATE memories SET ai_status = 'pending', ai_error = NULL "
+                 "WHERE id = ?", (args.id,))
+    conn.commit()
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+
+    enriched, reason = run_ai(note, memory["ocr_text"] or "", image_path, ai)
+    if enriched:
+        apply_enrichment(conn, args.id, enriched)
+    else:
+        conn.execute("UPDATE memories SET ai_status = 'failed', ai_error = ? "
+                     "WHERE id = ?", (one_line(reason, 500), args.id))
+    conn.commit()
+    sync_timers(conn)
+    refresh_fts(conn, args.id)
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    emit({"id": args.id, "aiStatus": "ok" if enriched else "failed",
+          "error": "" if enriched else one_line(reason, 200)})
+    return 0
+
+
+def renumber_blocks(conn: sqlite3.Connection, memory_id: str) -> None:
+    """Close the gaps a deletion leaves, so `position` stays 0..n-1."""
+    rows = conn.execute("SELECT id FROM blocks WHERE memory_id = ? ORDER BY position",
+                        (memory_id,)).fetchall()
+    for index, row in enumerate(rows):
+        conn.execute("UPDATE blocks SET position = ? WHERE id = ?", (index, row["id"]))
+
+
+def cmd_block(args) -> int:
+    """Edit or remove one block. An edit marks the row so a later AI pass
+    cannot silently overwrite what the user corrected."""
+    conn = connect()
+    block = conn.execute("SELECT * FROM blocks WHERE id = ?", (args.id,)).fetchone()
+    if not block:
+        die(f"no such block: {args.id}")
+    if args.action == "delete":
+        conn.execute("DELETE FROM blocks WHERE id = ?", (args.id,))
+        renumber_blocks(conn, block["memory_id"])
+    elif args.action == "set":
+        try:
+            payload = json.loads(args.payload)
+        except json.JSONDecodeError:
+            die("--payload must be JSON")
+        conn.execute("UPDATE blocks SET payload = ?, edited = 1 WHERE id = ?",
+                     (json.dumps(payload, ensure_ascii=False), args.id))
+    conn.commit()
+    refresh_fts(conn, block["memory_id"])
+    write_index(conn)
+    shell_ipc(IPC_TARGET, "refresh")
+    return 0
+
+
+def cmd_reindex(args) -> int:
+    conn = connect()
+    # Before the index, not after: the cards carry each capture's aspect, so a
+    # row that has not been measured yet would be written out with aspect 0 and
+    # laid out on a fallback ratio until the next rebuild.
+    measured = backfill_dimensions(conn)
+    refresh_fts(conn)
+    write_index(conn)
+    emit({"reindexed": True, "version": INDEX_VERSION, "measured": measured})
+    return 0
+
+
+def cmd_migrate(args) -> int:
+    conn = connect()
+    emit({"schemaVersion": conn.execute("PRAGMA user_version").fetchone()[0]})
+    return 0
+
+
+def commit_pidfile(memory_id: str) -> Path:
+    return STATE_DIR / f"commit-{memory_id}.pid"
+
+
+def commit_running(memory_id: str) -> bool:
+    """Is an enrichment for this memory actually alive?"""
+    path = commit_pidfile(memory_id)
+    try:
+        pid = int(path.read_text().strip())
+    except (OSError, ValueError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def sweep_stalled(conn: sqlite3.Connection) -> int:
+    """Resolve enrichments that will never finish.
+
+    A commit killed part-way -- a shell restart, a reboot, a crash -- leaves
+    ai_status='pending' with no process behind it, and the bar then shows a scan
+    line forever.
+
+    Detected by the process being gone rather than by an elapsed-time guess: a
+    timeout either resolves a live model call too early or leaves a dead one
+    spinning for minutes. Marking them failed is the honest outcome -- the
+    capture itself is intact, and silently re-running the model would spend
+    tokens the user did not ask to spend.
+    """
+    resolved = 0
+    for row in conn.execute("SELECT id FROM memories WHERE ai_status = 'pending'"):
+        if commit_running(row["id"]):
+            continue
+        conn.execute("UPDATE memories SET ai_status = 'failed' WHERE id = ?",
+                     (row["id"],))
+        commit_pidfile(row["id"]).unlink(missing_ok=True)
+        resolved += 1
+    conn.commit()
+    return resolved
+
+
+def sweep_drafts(conn: sqlite3.Connection, older_than_minutes: int = 10) -> int:
+    """Discard drafts whose compose overlay is gone.
+
+    A draft exists only while its overlay is on screen, so one that outlives
+    the shell can never be finished -- it just holds a blob on disk. The age
+    cutoff avoids racing a capture that is genuinely mid-picker when the
+    plugin reloads.
+    """
+    cutoff = iso(now() - timedelta(minutes=older_than_minutes))
+    stale = [row["id"] for row in conn.execute(
+        "SELECT id FROM memories WHERE status = 'draft' AND created_at < ?",
+        (cutoff,))]
+    for memory_id in stale:
+        discard(conn, memory_id)
+    return len(stale)
+
+
+def cmd_sync_timers(args) -> int:
+    """Startup reconciliation: timers rebuilt, dead drafts swept."""
+    conn = connect()
+    swept = sweep_drafts(conn)
+    stalled = sweep_stalled(conn)
+    result = sync_timers(conn)
+    result["draftsSwept"] = swept
+    result["stalledEnrichments"] = stalled
+    write_index(conn)
+    emit(result)
+    return 0
+
+
+# --- install / uninstall ----------------------------------------------------
+#
+# Clean, not merely reversible: all-or-nothing, byte-exact restoration, no
+# residue outside the data dir, and idempotent in both directions.
+
+PRISTINE_BINDINGS = "bindings.lua.pristine"
+
+MOD_BITS = {"SHIFT": 1, "CAPS": 2, "CTRL": 4, "CONTROL": 4, "ALT": 8,
+            "MOD2": 16, "MOD3": 32, "SUPER": 64, "MOD5": 128}
+
+
+def accel_parts(accel: str) -> tuple[int, str]:
+    mask = 0
+    key = ""
+    for part in re.split(r"\s*\+\s*", accel.strip()):
+        upper = part.upper()
+        if upper in MOD_BITS:
+            mask |= MOD_BITS[upper]
+        else:
+            key = part
+    return mask, key.lower()
+
+
+def keybind_conflict(accel: str) -> str | None:
+    """Ask Hyprland what is bound rather than parsing config by hand."""
+    mask, key = accel_parts(accel)
+    proc = run(["hyprctl", "binds", "-j"])
+    if proc.returncode != 0:
+        return None
+    try:
+        binds = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+    for bind in binds:
+        if int(bind.get("modmask", -1)) == mask and str(bind.get("key", "")).lower() == key:
+            dispatcher = bind.get("dispatcher", "")
+            argument = bind.get("arg", "")
+            if IPC_TARGET in str(argument):
+                return None      # our own binding, already installed
+            return f"{dispatcher} {argument}".strip()
+    return None
+
+
+def bindings_block(accel: str) -> str:
+    return (f'{MARK_BEGIN}\n'
+            f'o.bind("{accel}", "Omoide capture",\n'
+            f'       "omarchy-shell -q {IPC_TARGET} capture screenshot")\n'
+            f'{MARK_END}')
+
+
+def strip_block(content: str) -> str:
+    pattern = re.compile(re.escape(MARK_BEGIN) + r".*?" + re.escape(MARK_END),
+                         re.DOTALL)
+    return pattern.sub("", content)
+
+
+def install_keybind(accel: str) -> tuple[bool, str]:
+    if not HYPR_BINDINGS.exists():
+        return False, f"{HYPR_BINDINGS} does not exist"
+
+    conflict = keybind_conflict(accel)
+    if conflict:
+        return False, f"{accel} is already bound to: {conflict}"
+
+    original = HYPR_BINDINGS.read_text()
+    # Kept for the lifetime of the install so uninstall can restore byte-exactly
+    # when the user has not otherwise touched the file.
+    pristine = STATE_DIR / PRISTINE_BINDINGS
+    if not pristine.exists():
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        pristine.write_text(strip_block(original))
+
+    # Replace rather than append, so running install twice leaves one block.
+    body = strip_block(original).rstrip("\n")
+    updated = f"{body}\n\n{bindings_block(accel)}\n"
+    HYPR_BINDINGS.write_text(updated)
+
+    run(["hyprctl", "reload"])
+    errors = run(["hyprctl", "configerrors"])
+    text = (errors.stdout or "").strip()
+    if text and "no errors" not in text.lower():
+        HYPR_BINDINGS.write_text(original)   # roll the write back immediately
+        run(["hyprctl", "reload"])
+        return False, f"hyprland rejected the config: {text.splitlines()[0]}"
+    return True, accel
+
+
+def remove_keybind() -> None:
+    if not HYPR_BINDINGS.exists():
+        return
+    current = HYPR_BINDINGS.read_text()
+    if MARK_BEGIN not in current:
+        return
+    pristine = STATE_DIR / PRISTINE_BINDINGS
+    stripped = strip_block(current).rstrip("\n") + "\n"
+    if pristine.exists() and stripped.rstrip("\n") == pristine.read_text().rstrip("\n"):
+        # Untouched since install: restore the original bytes exactly.
+        HYPR_BINDINGS.write_text(pristine.read_text())
+    else:
+        # The user edited it since; keep their edits, remove only our block.
+        HYPR_BINDINGS.write_text(stripped)
+    run(["hyprctl", "reload"])
+
+
+def omarchy(*args: str) -> subprocess.CompletedProcess:
+    return run(["omarchy", *args])
+
+
+def cmd_install(args) -> int:
+    done: list[str] = []
+
+    def rollback(reason: str) -> int:
+        if "keybind" in done:
+            remove_keybind()
+        if "plugin" in done:
+            omarchy("plugin", "disable", PLUGIN_ID)
+        die(f"install failed ({reason}); rolled back", 1)
+
+    connect()   # create + migrate the database before anything user-visible
+
+    result = omarchy("plugin", "enable", PLUGIN_ID)
+    if result.returncode != 0:
+        return rollback((result.stderr or result.stdout or "plugin enable").strip())
+    done.append("plugin")
+
+    omarchy("bar", "put", PLUGIN_ID, "--section", "right", "--after", "omarchy.agents")
+
+    accel = args.accel or DEFAULT_ACCEL
+    keybind_note = ""
+    if args.no_keybind:
+        keybind_note = "skipped (--no-keybind)"
+    else:
+        ok, detail = install_keybind(accel)
+        if ok:
+            done.append("keybind")
+            keybind_note = f"bound {detail}"
+        else:
+            # Not a failed install: the bar icon is the primary entry point.
+            keybind_note = f"not bound — {detail}"
+
+    shell_ipc("shell", "rescanPlugins")
+    emit({"installed": True, "keybind": keybind_note,
+          "aiConfigured": bool(resolve_provider(ai_settings()))})
+    return 0
+
+
+def cmd_uninstall(args) -> int:
+    remove_keybind()
+    omarchy("plugin", "disable", PLUGIN_ID)
+
+    if DB_PATH.exists():
+        conn = connect(write=False)
+        for row in conn.execute("SELECT unit FROM reminders WHERE unit IS NOT NULL"):
+            stop_unit(row["unit"])
+        conn.close()
+    # Belt and braces: catch units whose row is already gone.
+    listed = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
+                  "--plain", "omoide-reminder-*"])
+    for line in (listed.stdout or "").splitlines():
+        unit = line.split()[0] if line.split() else ""
+        if unit:
+            run(["systemctl", "--user", "stop", unit])
+
+    shutil.rmtree(STATE_DIR, ignore_errors=True)   # derived: always removed
+
+    if args.purge:
+        shutil.rmtree(DATA_DIR, ignore_errors=True)
+        # Our own settings. Kept by a plain uninstall, like the captures: the
+        # agent you chose is yours, not installation state.
+        CONFIG_PATH.unlink(missing_ok=True)
+
+    shell_ipc("shell", "rescanPlugins")
+    emit({"uninstalled": True, "dataRemoved": bool(args.purge),
+          "dataDir": None if args.purge else str(DATA_DIR),
+          "configFile": None if args.purge else str(CONFIG_PATH)})
+    return 0
+
+
+# --- setup-ai (the second sanctioned direct write) --------------------------
+
+def cmd_ai_config(args) -> int:
+    """Everything the settings dialog needs to render itself."""
+    current = ai_settings()
+    providers = []
+    for name, preset in AI_PRESETS.items():
+        providers.append({
+            "id": name,
+            "command": " ".join(preset),
+            "available": has(preset[0]),
+            "vision": name in VISION_CAPABLE,
+            "needsModel": name == "ollama",
+        })
+    emit({
+        "enabled": bool(current.get("enabled")),
+        "provider": current.get("provider") or "",
+        "command": current.get("command") or [],
+        "model": current.get("model") or "",
+        "visionMode": current.get("visionMode") or "ocr",
+        "timeoutMs": int(current.get("timeoutMs") or 45000),
+        "providers": providers,
+        "resolved": bool(resolve_provider(current)),
+    })
+    return 0
+
+
+def cmd_setup_ai(args) -> int:
+    current = ai_settings()
+
+    if args.disable:
+        current["enabled"] = False
+        write_ai_settings(current)
+        emit({"enabled": False})
+        return 0
+
+    provider = args.provider
+    if not provider:
+        if not has("gum"):
+            die("pass --provider (one of: " + ", ".join(AI_PRESETS) + ", custom)")
+        available = [name for name in AI_PRESETS if has(name)] + ["custom"]
+        if not available:
+            die("no supported agent found on PATH")
+        picked = run(["gum", "choose", "--header", "Agent for Omoide:",
+                      *available])
+        provider = (picked.stdout or "").strip()
+        if not provider:
+            return 2
+
+    if provider == "custom":
+        if not args.command:
+            die("--command is required with --provider custom")
+        import shlex
+        argv = args.command if isinstance(args.command, list) else shlex.split(args.command)
+        if not argv:
+            die("--command is empty")
+        current["command"] = argv
+        current["provider"] = "custom"
+    elif provider in AI_PRESETS:
+        current["provider"] = provider
+        current["command"] = []
+        if not has(provider):
+            die(f"{provider} is not on PATH")
+    else:
+        die(f"unknown provider: {provider}")
+
+    if args.model:
+        current["model"] = args.model
+    if args.vision:
+        current["visionMode"] = args.vision
+    current["enabled"] = True
+
+    write_ai_settings(current)
+    emit({"enabled": True, "provider": current.get("provider"),
+          "command": current.get("command"), "visionMode": current.get("visionMode")})
+    return 0
+
+
+# --- dispatch ---------------------------------------------------------------
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="omoide",
+        description="Capture, enrich and recall Omoide memories.")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("capture", help="start a capture")
+    p.add_argument("mode", nargs="?",
+                   choices=["screenshot", "note", "voice", "clipboard"])
+    p.add_argument("--mode", dest="mode", help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_capture)
+
+    p = sub.add_parser("commit", help="finalise a draft and enrich it")
+    p.add_argument("--id", required=True)
+    p.add_argument("--note", default="")
+    p.add_argument("--remove-image", action="store_true")
+    p.set_defaults(func=cmd_commit)
+
+    p = sub.add_parser("discard", help="throw a draft away")
+    p.add_argument("--id", required=True)
+    p.set_defaults(func=cmd_discard)
+
+    p = sub.add_parser("list", help="recent memories")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--collection")
+    p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("show", help="one memory, with blocks and items")
+    p.add_argument("--id", required=True)
+    p.set_defaults(func=cmd_show)
+
+    p = sub.add_parser("search", help="full-text search")
+    p.add_argument("--q", required=True)
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=cmd_search)
+
+    p = sub.add_parser("archive", help="to-dos grouped for the archive view")
+    p.set_defaults(func=cmd_archive)
+
+    p = sub.add_parser("state", help="counts for the bar widget")
+    p.set_defaults(func=cmd_state)
+
+    p = sub.add_parser("item", help="to-do and event operations")
+    p.add_argument("action", choices=["get", "add", "edit", "promote",
+                                      "complete", "reopen", "cancel"])
+    p.add_argument("--id")
+    p.add_argument("--memory")
+    p.add_argument("--kind", choices=["todo", "event"], default="todo")
+    p.add_argument("--title")
+    p.add_argument("--at")
+    p.add_argument("--notes")
+    p.add_argument("--clear-at", action="store_true",
+                   help="drop the date, making it an undated to-do")
+    p.set_defaults(func=cmd_item)
+
+    p = sub.add_parser("reminder", help="alarms attached to an item")
+    p.add_argument("action", choices=["add", "remove"])
+    p.add_argument("--id")
+    p.add_argument("--item")
+    p.add_argument("--at")
+    p.add_argument("--offset", type=int,
+                   help="minutes relative to the item's time, e.g. -30")
+    p.set_defaults(func=cmd_reminder)
+
+    p = sub.add_parser("sync-timers", help="reconcile systemd units with the database")
+    p.set_defaults(func=cmd_sync_timers)
+
+    p = sub.add_parser("collection", help="collections")
+    p.add_argument("action", choices=["new", "add", "remove", "rename", "delete"])
+    p.add_argument("--name", required=True)
+    p.add_argument("--to", help="the new name, for rename")
+    p.add_argument("--memory")
+    p.set_defaults(func=cmd_collection)
+
+    p = sub.add_parser("link", help="related captures")
+    p.add_argument("action", choices=["add", "remove"])
+    p.add_argument("--from", dest="from_id", required=True)
+    p.add_argument("--to", required=True)
+    p.set_defaults(func=cmd_link)
+
+    p = sub.add_parser("related", help="captures linked to this one")
+    p.add_argument("--id", required=True)
+    p.set_defaults(func=cmd_related)
+
+    p = sub.add_parser("candidates", help="memories available to link by hand")
+    p.add_argument("--id", required=True)
+    p.add_argument("--q")
+    p.add_argument("--limit", type=int, default=40)
+    p.set_defaults(func=cmd_candidates)
+
+    p = sub.add_parser("block", help="edit or delete one block")
+    p.add_argument("action", choices=["set", "delete"])
+    p.add_argument("--id", required=True)
+    p.add_argument("--payload")
+    p.set_defaults(func=cmd_block)
+
+    p = sub.add_parser("delete", help="delete a memory and everything under it")
+    p.add_argument("--id", required=True)
+    p.set_defaults(func=cmd_delete)
+
+    p = sub.add_parser("memory", help="edit a memory's title or lede")
+    p.add_argument("--id", required=True)
+    p.add_argument("--title")
+    p.add_argument("--lede")
+    p.set_defaults(func=cmd_memory)
+
+    p = sub.add_parser("enrich", help="run the agent again on an existing capture")
+    p.add_argument("--id", required=True)
+    p.set_defaults(func=cmd_enrich)
+
+    p = sub.add_parser("reindex", help="rebuild the search index and the QML cache")
+    p.set_defaults(func=cmd_reindex)
+
+    p = sub.add_parser("migrate", help="apply pending schema migrations")
+    p.set_defaults(func=cmd_migrate)
+
+    p = sub.add_parser("ai-config", help="the configured agent, and which agents are installed")
+    p.set_defaults(func=cmd_ai_config)
+
+    p = sub.add_parser("setup-ai", help="choose the agent that enriches captures")
+    p.add_argument("--provider")
+    p.add_argument("--command",
+                   help="argv for a custom provider, as one string")
+    p.add_argument("--model")
+    p.add_argument("--vision", choices=["ocr", "image"])
+    p.add_argument("--disable", action="store_true")
+    p.set_defaults(func=cmd_setup_ai)
+
+    p = sub.add_parser("install", help="enable the plugin and bind the shortcut")
+    p.add_argument("--accel", default=DEFAULT_ACCEL)
+    p.add_argument("--no-keybind", action="store_true")
+    p.set_defaults(func=cmd_install)
+
+    p = sub.add_parser("uninstall", help="remove everything this plugin added")
+    p.add_argument("--purge", action="store_true",
+                   help="also delete captured memories (irreversible)")
+    p.set_defaults(func=cmd_uninstall)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return args.func(args) or 0
+    except BrokenPipeError:
+        return 0
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

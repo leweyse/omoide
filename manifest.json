@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "leweyse.omoide",
+  "name": "Omoide",
+  "version": "0.1.0",
+  "author": "leweyse",
+  "license": "MIT",
+  "description": "Capture a screenshot, note, or voice memo and let an agent turn it into a structured memory with reminders, events, and collections.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omoide",
+    "description": "One icon: capture to Omoide, or open the library to browse memories, to-dos, and collections.",
+    "category": "AI",
+    "aliases": [
+      "omoide",
+      "memories"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "defaultAction": "screenshot",
+      "captureMode": "region"
+    },
+    "schema": [
+      {
+        "key": "defaultAction",
+        "type": "enum",
+        "label": "Default action",
+        "options": [
+          "screenshot",
+          "note",
+          "voice"
+        ],
+        "defaultValue": "screenshot",
+        "description": "What a left-click on the bar icon starts."
+      },
+      {
+        "key": "captureMode",
+        "type": "enum",
+        "label": "Screenshot mode",
+        "options": [
+          "region",
+          "smart",
+          "window",
+          "fullscreen"
+        ],
+        "defaultValue": "region"
+      }
+    ]
+  }
+}
