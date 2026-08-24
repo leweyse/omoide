@@ -44,8 +44,11 @@ it. Search matches titles, notes, list items and OCR'd text, by prefix.
 **Tasks** has three tabs, Upcoming, Past and Completed. Space ticks a row or
 accepts a suggestion.
 
-Ctrl 1 to 3 switch views, `/` searches, `?` lists every shortcut, Esc steps
-back.
+## Keyboard
+
+The dialog works without a mouse. Ctrl 1 to 3 switch views, `/` searches, Space
+ticks a task or accepts a suggestion, Enter opens what the cursor is on, Esc
+steps back and then closes. `?` shows the full map.
 
 ## What a memory holds
 
@@ -54,7 +57,14 @@ what you captured. An article gives you a source, a summary and key points. A
 screenshot of a design board gives you an image and a list of names, nothing
 more.
 
+Headings, list items and to-dos are editable, so you can fix what the agent got
+wrong. Related captures and collections are yours to link, never inferred.
+
 ## Tasks, events and reminders
+
+Open any task or event to edit it: title, date, time, and as many reminders on
+one item as you want. Nothing commits until Save, so closing the sheet drops a
+mistyped date.
 
 Reminders are `systemd-run` timers, rebuilt from the database at startup so they
 survive a reboot.
