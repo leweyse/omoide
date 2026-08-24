@@ -3,8 +3,10 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
-import "MemoryModel.js" as Model
-import "views" as Views
+import "../components"
+import "../dialogs"
+import "../views"
+import "../MemoryModel.js" as Model
 
 // The Space dialog.
 //
@@ -59,6 +61,7 @@ Item {
     || renamePrompt.opened || overflowMenu.opened
     || confirmDelete.opened || confirmRemove.opened
     || linkPicker.opened || collectionPicker.opened
+    || todosEditor.opened
 
   // Which sidebar row belongs to the page on screen. A memory or a collection
   // was reached through the Library, so that is the row that stays lit.
@@ -235,6 +238,7 @@ Item {
     helpSheet.opened = false
     linkPicker.opened = false
     collectionPicker.opened = false
+    todosEditor.opened = false
     root.opened = false
   }
 
@@ -885,6 +889,18 @@ Item {
         // Linking a memory and filing into a collection were inline modes that
         // swapped UI in place under the cursor. Same component for both: they are
         // the same interaction -- type, pick, done.
+        // Add, rename and remove across the whole to-do list of one memory. The
+        // item editor still owns a single to-do's date and reminders.
+        TodosEditor {
+          id: todosEditor
+          anchors.fill: parent
+          scrimRadius: root.cardRadius
+          z: 55
+          service: root.service
+          onOpenedChanged: if (!opened) root.restoreFocus()
+          onChanged: if (root.service) root.service.refresh()
+        }
+
         PickerSheet {
           id: linkPicker
           anchors.fill: parent
@@ -967,7 +983,7 @@ Item {
 
   Component {
     id: forYouView
-    Views.ForYouView {
+    ForYouView {
       service: root.service
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
@@ -977,7 +993,7 @@ Item {
 
   Component {
     id: libraryView
-    Views.LibraryView {
+    LibraryView {
       service: root.service
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenCollection: function (name) { root.openCollection(name) }
@@ -986,7 +1002,7 @@ Item {
 
   Component {
     id: archiveView
-    Views.TodoArchive {
+    TodoArchive {
       service: root.service
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
@@ -995,7 +1011,7 @@ Item {
 
   Component {
     id: collectionView
-    Views.CollectionDetail {
+    CollectionDetail {
       index: root.service ? root.service.index : ({ memories: [] })
       collectionName: root.collectionName
       onOpenMemory: function (id) { root.openMemory(id) }
@@ -1010,7 +1026,7 @@ Item {
 
   Component {
     id: detailView
-    Views.MemoryDetail {
+    MemoryDetail {
       service: root.service
       memoryId: root.memoryId
       onOpenMemory: function (id) { root.openMemory(id) }
@@ -1019,6 +1035,10 @@ Item {
       onPreviewImage: function (path) { imagePreview.open(path) }
       onEditBlock: function (blockId, blockType, payload) {
         blockEditor.openFor(blockId, blockType, payload)
+      }
+      onManageTodos: function (blockId, items) {
+        todosEditor.memoryId = root.memoryId
+        todosEditor.open(blockId, items)
       }
       onLinkRequested: {
         linkPicker.open()

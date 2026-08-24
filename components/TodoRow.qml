@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
 import "../MemoryModel.js" as Model
 
 // One to-do, used both inside a memory and in the archive, so the two can
@@ -93,7 +93,7 @@ Item {
 
       // The inner ring, concentric because the box is a circle: radius less the
       // inset lands exactly on the smaller circle's edge.
-      Root.FocusRing {
+      FocusRing {
         anchors.fill: parent
         radius: parent.width / 2
         gap: 1

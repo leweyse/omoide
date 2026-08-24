@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // A one-field prompt: a title, a text input, Cancel and Save.
 //

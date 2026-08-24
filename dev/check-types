@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Resolve every QML type this plugin uses against that file's own imports.
+
+qmllint does not resolve custom component types -- `FocusRing is not a type`
+shipped past it once and broke the whole dialog at runtime. Directory moves are
+exactly the change that breaks those references, and the failure is silent until
+someone opens the one surface that uses the type. So this walks the same path Qt
+does: same-directory siblings, unprefixed relative imports, aliased relative
+imports, and the shell's own Ui/Commons modules.
+
+Usage:  dev/check-types [--verbose]
+Exit:   0 clean, 1 unresolved references
+"""
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SHELL = pathlib.Path("/usr/share/omarchy/shell")
+
+# Types the QML engine provides. Anything not local and not here is reported, so
+# a genuinely new external type has to be added deliberately rather than passing
+# silently.
+BUILTIN = {
+    # QtQuick
+    "Item", "Rectangle", "Text", "TextInput", "TextEdit", "Image", "AnimatedImage",
+    "MouseArea", "Column", "Row", "Grid", "Flow", "GridView", "ListView", "Repeater",
+    "Loader", "Component", "Timer", "Flickable", "FocusScope", "Canvas", "Shape",
+    "ShaderEffect", "ShaderEffectSource", "Behavior", "NumberAnimation", "Connections",
+    "SequentialAnimation", "ParallelAnimation", "PropertyAnimation", "ColorAnimation",
+    "RotationAnimator", "OpacityAnimator", "ScaleAnimator", "PropertyChanges", "State",
+    "Transition", "Scale", "Rotation", "Translate", "Gradient", "GradientStop",
+    "WheelHandler", "HoverHandler", "TapHandler", "DragHandler", "PointHandler",
+    "PinchHandler", "MultiPointTouchArea", "Drag", "SystemPalette", "FontLoader",
+    "Instantiator", "ListModel", "ListElement", "QtObject", "Qt", "Screen",
+    "LayoutMirroring", "Accessible", "Keys", "EventPoint", "TextMetrics",
+    "Binding", "StateGroup", "Action", "Shortcut", "EnterKey", "TextDocument",
+    "IntValidator", "DoubleValidator", "RegularExpressionValidator",
+    "SmoothedAnimation", "SpringAnimation", "PauseAnimation", "ScriptAction",
+    "AnchorAnimation", "AnchorChanges", "ParentChange", "ParentAnimation",
+    "DelegateModel", "DelegateModelGroup", "ObjectModel", "Package",
+    "PathView", "Path", "PathLine", "PathQuad", "PathCubic", "BorderImage",
+    "FrameAnimation", "AnimationController", "Vector3dAnimation", "Sprite",
+    # QtQuick.Layouts / Controls / Effects
+    "RowLayout", "ColumnLayout", "GridLayout", "StackLayout", "Layout",
+    "ScrollView", "ScrollBar", "TextField", "TextArea", "Button", "CheckBox",
+    "RadioButton", "Slider", "SpinBox", "ComboBox", "Popup", "Menu", "MenuItem",
+    "MultiEffect", "OpacityMask", "Blend", "DropShadow", "FastBlur", "GaussianBlur",
+    "ColorOverlay", "Desaturate",
+    # Quickshell
+    "PanelWindow", "FloatingWindow", "ShellRoot", "Scope", "Variants", "ScreenView",
+    "ClippingRectangle", "ClippingWrapperRectangle", "WrapperItem", "WrapperMouseArea",
+    "Process", "StdioCollector", "SplitParser", "FileView", "IpcHandler", "IpcHandlerBase",
+    "Quickshell", "Singleton", "SystemClock", "Socket", "SocketServer", "Region",
+    "ExclusionMode", "Anchors", "Margins", "HyprlandWorkspace", "Hyprland",
+    "WlrLayershell", "WlrLayer", "WlrKeyboardFocus", "SessionLock", "SessionLockSurface",
+    "Notification", "NotificationServer", "TrayItem", "SystemTray", "Pam",
+    "PersistentProperties", "LazyLoader", "GlobalShortcut", "DesktopEntries",
+    "CustomShellSurface", "PopupWindow", "PopupAnchor", "MprisPlayer", "Mpris",
+    "Pipewire", "PwNode", "UPower", "UPowerDevice", "Bluetooth", "Player",
+}
+
+
+def module_types(directory: pathlib.Path) -> set:
+    if not directory.is_dir():
+        return set()
+    return {p.stem for p in directory.glob("*.qml")}
+
+
+EXTERNAL = {
+    "qs.Ui": module_types(SHELL / "Ui"),
+    "qs.Commons": module_types(SHELL / "Commons"),
+    "qs.Services": module_types(SHELL / "services"),
+}
+
+LOCAL_TYPES = {}
+
+# A type appears either at the start of a line (`Rectangle {`) or as a property
+# value (`delegate: EventCard {`, `sourceComponent: Foo {`). Matching only the
+# first form is what let a directory move break `delegate: EventCard` in
+# ForYouView while this script reported everything clean.
+DECL = re.compile(r"(?:^\s*|:\s*)([A-Z][A-Za-z0-9_]*)\s*\{")
+QUALIFIED = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\.([A-Z][A-Za-z0-9_]*)\b")
+IMPORT_DIR = re.compile(r'^\s*import\s+"([^"]+)"(?:\s+as\s+(\w+))?')
+IMPORT_MOD = re.compile(r"^\s*import\s+([\w.]+)(?:\s+\d[\d.]*)?(?:\s+as\s+(\w+))?")
+
+
+def strip_noise(text: str) -> str:
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    text = re.sub(r"//.*$", "", text, flags=re.M)
+    return re.sub(r'"(?:[^"\\]|\\.)*"', '""', text)
+
+
+def check(verbose: bool = False) -> int:
+    problems = []
+    files = sorted(p for p in ROOT.rglob("*.qml") if ".git" not in p.parts)
+
+    global LOCAL_TYPES
+    LOCAL_TYPES = {p.stem: p.parent.relative_to(ROOT).as_posix().replace(".", "")
+                   for p in files}
+
+    for path in files:
+        raw = path.read_text()
+        text = strip_noise(raw)
+
+        unprefixed = set()          # types reachable with no prefix
+        aliases = {}                # alias -> set of types
+        unprefixed |= module_types(path.parent)   # siblings are implicit
+
+        for line in raw.split("\n"):
+            m = IMPORT_DIR.match(line)
+            if m:
+                target, alias = m.group(1), m.group(2)
+                resolved = (path.parent / target).resolve()
+                types = ({resolved.stem} if target.endswith(".js")
+                         else module_types(resolved))
+                if not resolved.exists():
+                    problems.append((path, 0, f'import "{target}" -> missing path'))
+                if alias:
+                    aliases[alias] = types
+                else:
+                    unprefixed |= types
+                continue
+            m = IMPORT_MOD.match(line)
+            if m and m.group(1) not in ("import",):
+                mod, alias = m.group(1), m.group(2)
+                types = EXTERNAL.get(mod, set())
+                if alias:
+                    aliases[alias] = types
+                else:
+                    unprefixed |= types
+
+        own = path.stem
+        for n, line in enumerate(text.split("\n"), 1):
+            for t in DECL.findall(line):
+                if t in ("Keys", "Behavior", "Layout"):
+                    continue
+                if t not in unprefixed and t not in BUILTIN and t != own:
+                    problems.append((path, n,
+                                     f"unqualified type `{t}` not reachable"))
+            for prefix, t in QUALIFIED.findall(line):
+                if prefix in aliases:
+                    if t not in aliases[prefix]:
+                        problems.append((path, n,
+                                         f"`{prefix}.{t}` not in that import"))
+                    continue
+                # A prefix with NO import at all. Skipping these is what let
+                # `Views.MemoryDetail` survive a directory move and break the
+                # library dialog at runtime: the alias had been dropped, so
+                # there was nothing to check against. If the tail names a real
+                # local type, the prefix was an import alias that went missing.
+                if t in LOCAL_TYPES and prefix not in LOCAL_TYPES:
+                    problems.append((path, n,
+                                     f"`{prefix}.{t}` -- no import declares "
+                                     f"`{prefix}` (type lives in "
+                                     f"{LOCAL_TYPES[t] or 'the root'}/)"))
+
+        if verbose:
+            print(f"  {path.relative_to(ROOT)}: {len(unprefixed)} unprefixed, "
+                  f"aliases {sorted(aliases)}")
+
+    print(f"checked {len(files)} qml files")
+    if not problems:
+        print("all type references resolve")
+        return 0
+    for path, line, msg in problems:
+        where = f"{path.relative_to(ROOT)}:{line}" if line else path.relative_to(ROOT)
+        print(f"  {where}: {msg}")
+    print(f"\n{len(problems)} unresolved reference(s)")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(check("--verbose" in sys.argv))

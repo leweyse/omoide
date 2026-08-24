@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
 
 // One collection: its own page, laid out like a memory's.
 //
@@ -141,7 +141,7 @@ Flickable {
       }
     }
 
-    Root.MasonryGrid {
+    MasonryGrid {
       id: grid
       width: parent.width
       items: root.memories

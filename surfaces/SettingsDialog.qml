@@ -3,6 +3,8 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "../common"
+import "../components"
 
 // Choosing the model that enriches captures.
 //

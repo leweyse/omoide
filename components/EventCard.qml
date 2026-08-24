@@ -1,7 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "MemoryModel.js" as Model
+import "../common"
+import "../MemoryModel.js" as Model
 
 // One card in the For you carousel: the calendar tile, the event, and its art.
 //

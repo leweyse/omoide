@@ -168,7 +168,7 @@ Item {
   Loader {
     id: composeLoader
     active: false
-    source: "ComposeOverlay.qml"
+    source: "surfaces/ComposeOverlay.qml"
     onLoaded: {
       item.service = root
       if (root._pendingCompose) {
@@ -181,7 +181,7 @@ Item {
   Loader {
     id: settingsLoader
     active: false
-    source: "SettingsDialog.qml"
+    source: "surfaces/SettingsDialog.qml"
     onLoaded: {
       item.service = root
       item.saved.connect(function () { root.refresh() })
@@ -195,7 +195,7 @@ Item {
   Loader {
     id: spaceWindowLoader
     active: false
-    source: "SpaceWindow.qml"
+    source: "surfaces/SpaceWindow.qml"
     onLoaded: {
       item.service = root
       item.show(root._pendingSpace || ({}))

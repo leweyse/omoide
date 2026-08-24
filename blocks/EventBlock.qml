@@ -2,8 +2,8 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "../common"
 import "../MemoryModel.js" as Model
-import ".." as Root
 
 // "Event Date" is a canonical label; the date badge and the range come from
 // the item row, not from the block payload.
@@ -55,7 +55,7 @@ BlockCard {
       width: parent.width
       spacing: Style.spacing.md
 
-      Root.DateBadge {
+      DateBadge {
         id: badge
         month: root.badge.top
         day: root.badge.bottom

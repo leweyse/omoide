@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
 import "../MemoryModel.js" as Model
 
 // One memory in a grid: thumbnail, title, lede, then tags and open to-dos.
@@ -44,7 +44,7 @@ BorderSurface {
     onClicked: card.activated()
   }
 
-  Root.FocusRing {
+  FocusRing {
     anchors.fill: parent
     radius: card.radius
     hasCursor: card.hasCursor
@@ -69,7 +69,7 @@ BorderSurface {
     // Only the top corners: the thumbnail bleeds to the card's top edge
     // and the text continues below it. Radius less the border it sits
     // behind, so the inner curve matches the outer one.
-    Root.RoundedImage {
+    RoundedImage {
       width: parent.width
       // The capture's own shape, not a fixed ratio. A fixed 0.62 cropped
       // every thumbnail to the same rectangle, so a wide selection and a

@@ -1,9 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
-import "../blocks" as Blocks
 import "../MemoryModel.js" as Model
+import "../components"
 
 // A digest of what is live, not a list of everything.
 Flickable {
@@ -163,7 +162,7 @@ Flickable {
         clip: true
         model: root.events
 
-        delegate: Root.EventCard {
+        delegate: EventCard {
           required property var modelData
           required property int index
           event: modelData
@@ -213,7 +212,7 @@ Flickable {
       Repeater {
         model: root.tasks
 
-        delegate: Blocks.TodoRow {
+        delegate: TodoRow {
           required property var modelData
           required property int index
           width: parent.width

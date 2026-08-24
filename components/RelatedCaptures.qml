@@ -1,7 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "MemoryModel.js" as Model
+import "../common"
+import "../MemoryModel.js" as Model
 
 // Related captures: only what the user linked, plus a chip that opens the
 // link picker. The picker itself is a dialog owned by SpaceWindow.
@@ -49,6 +50,37 @@ Column {
     text: "Related captures"
     foreground: Color.muted
     fontFamily: Style.font.resolvedFamily
+  }
+
+  // Two up. The cards carry the thumbnail, so a linked capture is recognised
+  // by its artwork the way it is in the library grid -- a column of titles
+  // would make "related" read as a list of links rather than of captures.
+  Grid {
+    id: cards
+    width: parent.width
+    columns: 2
+    spacing: Style.spacing.sm
+    visible: (root.linked || []).length > 0
+
+    readonly property real cellWidth:
+      Math.floor((width - spacing * (columns - 1)) / columns)
+
+    Repeater {
+      model: root.linked || []
+
+      delegate: RelatedCard {
+        required property var modelData
+        required property int index
+
+        width: cards.cellWidth
+        memory: modelData
+        // Cards come first, then the chip -- which is why chipFocused is one
+        // past the last index.
+        hasCursor: root.cursor === index
+        onOpened: root.openMemory(modelData.id)
+        onRemoved: root.act("remove", modelData.id)
+      }
+    }
   }
 
   Chip {

@@ -1,7 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "MemoryModel.js" as Model
+import "../common"
+import "../MemoryModel.js" as Model
 
 // A to-do or event, opened from anywhere one is shown.
 //

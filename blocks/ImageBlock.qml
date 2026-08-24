@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
 
 // The capture itself.
 //
@@ -40,7 +40,7 @@ Item {
   // Sized and positioned to the picture, not the block: the block spans the
   // page width while the image is centred at its own aspect, so a ring on the
   // block bounds would float in the margin beside the photo.
-  Root.FocusRing {
+  FocusRing {
     x: shot.x
     y: shot.y
     width: shot.width
@@ -57,7 +57,7 @@ Item {
     hot: false
   }
 
-  Root.RoundedImage {
+  RoundedImage {
     id: shot
     // Bounded by height, never by crop: a tall capture gets narrower rather
     // than losing its top and bottom, which is what the old

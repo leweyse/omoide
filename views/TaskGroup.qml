@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "../blocks" as Blocks
+import "../components"
 
 // A titled card of task rows.
 //
@@ -61,7 +61,7 @@ Column {
         id: rep
         model: root.rows || []
 
-        delegate: Blocks.TodoRow {
+        delegate: TodoRow {
           required property var modelData
           required property int index
           width: inner.width

@@ -1,7 +1,6 @@
 import QtQuick
 import qs.Commons
-import "blocks" as Blocks
-import "MemoryModel.js" as Model
+import "../MemoryModel.js" as Model
 
 // type -> delegate. A block whose type this build does not know renders as
 // nothing rather than erroring, so a memory written by a newer version of the
@@ -17,6 +16,8 @@ Column {
   // The block the user wants to correct, handed up whole: the page owns the
   // editor, so it needs the id, the type and the current payload.
   signal editBlock(string blockId, string blockType, var payload)
+  // The to-dos card asks to manage its list; the page relays upward.
+  signal manageTodos(string blockId, var items)
 
   // Which block types this instance draws, so a page can put some blocks above
   // its title and the rest below without reordering stored rows. `only` empty
@@ -170,44 +171,47 @@ Column {
     }
   }
 
-  Component { id: sourceCard;  Blocks.SourceBlock {} }
+  Component { id: sourceCard;  SourceBlock {} }
   Component {
     id: imageCard
-    Blocks.ImageBlock {
+    ImageBlock {
       onPreviewRequested: function (path) { renderer.previewImage(path) }
     }
   }
-  Component { id: noteCard;    Blocks.NoteBlock {} }
+  Component { id: noteCard;    NoteBlock {} }
   Component {
     id: summaryCard
-    Blocks.SummaryBlock {
+    SummaryBlock {
       onEditRequested: renderer.editBlock(blockId, blockType, payload)
     }
   }
   Component {
     id: listCard
-    Blocks.ListBlock {
+    ListBlock {
       onEditRequested: renderer.editBlock(blockId, blockType, payload)
     }
   }
   Component {
     id: textCard
-    Blocks.TextBlock {
+    TextBlock {
       onEditRequested: renderer.editBlock(blockId, blockType, payload)
     }
   }
 
   Component {
     id: todosCard
-    Blocks.TodosBlock {
+    TodosBlock {
       onChanged: renderer.changed()
       onOpenItem: function (item) { renderer.openItem(item) }
+      onManageRequested: function (blockId, items) {
+          renderer.manageTodos(blockId, items)
+        }
     }
   }
 
   Component {
     id: eventCard
-    Blocks.EventBlock {
+    EventBlock {
       onChanged: renderer.changed()
       onOpenItem: function (item) { renderer.openItem(item) }
     }

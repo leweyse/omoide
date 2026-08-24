@@ -2792,9 +2792,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("capture", help="start a capture")
-    p.add_argument("mode", nargs="?",
+    # SUPPRESS, not None: a nargs="?" positional assigns its default AFTER the
+    # options are parsed, so a plain default silently clobbered --mode back to
+    # None and every `capture --mode note` took a SCREENSHOT instead. With
+    # SUPPRESS the attribute is left alone when the positional is absent.
+    p.add_argument("mode", nargs="?", default=argparse.SUPPRESS,
                    choices=["screenshot", "note", "voice", "clipboard"])
-    p.add_argument("--mode", dest="mode", help=argparse.SUPPRESS)
+    p.add_argument("--mode", dest="mode", default=None,
+                   choices=["screenshot", "note", "voice", "clipboard"],
+                   help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_capture)
 
     p = sub.add_parser("commit", help="finalise a draft and enrich it")

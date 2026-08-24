@@ -1,6 +1,6 @@
 import QtQuick
 import qs.Commons
-import "MemoryModel.js" as Model
+import "../MemoryModel.js" as Model
 
 // QML has no masonry layout, and round-robin leaves ragged columns once
 // thumbnails vary in height. Each item goes to the shortest column instead.

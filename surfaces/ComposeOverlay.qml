@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // The one surface every capture mode converges on.
 //

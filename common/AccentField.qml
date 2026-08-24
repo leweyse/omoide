@@ -33,11 +33,16 @@ TextField {
       event.accepted = true
       return
     }
-    // No target: leave the key UNACCEPTED so it bubbles to an ancestor. The old
-    // fallback did `focus = false` and accepted it, which dropped focus into the
-    // void AND swallowed the press -- nothing was focused, so no Keys handler
-    // could fire, and the dialog became uncloseable however many times you hit
-    // Escape.
+    // No target: hand the key to an ancestor. Un-accepting is NOT the default
+    // here -- Qt's specific-key handlers arrive pre-accepted
+    // (QQuickKeysAttached::keyPressed calls setAccepted(true) before invoking
+    // onEscapePressed), so simply returning swallows the press. That is what
+    // made Escape do nothing at all in the compose overlay, whose note field
+    // has no escapeTo and relies on the overlay's own catcher.
+    //
+    // Not `focus = false` either: that dropped focus into the void as well as
+    // eating the key, leaving nothing focused for any Keys handler to fire on.
+    event.accepted = false
   }
 
   // Every input sits inside a dialog, so the ring's backdrop is the menu

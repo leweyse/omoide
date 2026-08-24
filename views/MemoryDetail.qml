@@ -2,7 +2,9 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../blocks"
+import "../common"
+import "../components"
 import "../MemoryModel.js" as Model
 
 // Blocks, then three fixed sections in the reference's order: Related
@@ -25,6 +27,8 @@ Flickable {
   // The window owns both dialogs; this page only asks for them.
   signal linkRequested()
   signal collectionRequested()
+  // The to-dos card asks to manage its list.
+  signal manageTodos(string blockId, var items)
 
   // Bottom inset only. The gap above belongs to the window's view
   // loader, so it is chrome and survives scrolling.
@@ -465,7 +469,7 @@ Flickable {
     spacing: Style.spacing.xxl
 
     // The capture itself, first. It is the thing you recognise.
-    Root.BlockRenderer {
+    BlockRenderer {
       id: imageBlocks
       width: parent.width
       memory: root.memory
@@ -476,6 +480,9 @@ Flickable {
       only: ["image"]
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
+      onManageTodos: function (blockId, items) {
+        root.manageTodos(blockId, items)
+      }
       onPreviewImage: function (path) { root.previewImage(path) }
       onEditBlock: function (blockId, blockType, payload) {
         root.editBlock(blockId, blockType, payload)
@@ -527,7 +534,7 @@ Flickable {
     // happening at a time, that is the thing you came back for -- ahead of the
     // note, the source and the summary. Hoisted here rather than reordered in
     // the database, so the stored positions stay as the agent wrote them.
-    Root.BlockRenderer {
+    BlockRenderer {
       id: eventBlocks
       width: parent.width
       memory: root.memory
@@ -538,6 +545,9 @@ Flickable {
       only: ["event"]
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
+      onManageTodos: function (blockId, items) {
+        root.manageTodos(blockId, items)
+      }
       onPreviewImage: function (path) { root.previewImage(path) }
       onEditBlock: function (blockId, blockType, payload) {
         root.editBlock(blockId, blockType, payload)
@@ -547,7 +557,7 @@ Flickable {
     // Everything else, in the order the agent chose. The image is drawn above
     // the title and the event above this, so both are excluded. The note comes
     // first among what is left: the CLI inserts it before any agent block.
-    Root.BlockRenderer {
+    BlockRenderer {
       id: restBlocks
       width: parent.width
       memory: root.memory
@@ -558,13 +568,16 @@ Flickable {
       except: ["image", "event"]
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
+      onManageTodos: function (blockId, items) {
+        root.manageTodos(blockId, items)
+      }
       onPreviewImage: function (path) { root.previewImage(path) }
       onEditBlock: function (blockId, blockType, payload) {
         root.editBlock(blockId, blockType, payload)
       }
     }
 
-    Root.RelatedCaptures {
+    RelatedCaptures {
       id: related
       cursor: root.region === 1 ? root.relatedCursor : -1
       // The chip inside this section asks; the page relays to the window, which
@@ -594,7 +607,7 @@ Flickable {
         Repeater {
           model: root.memory.collections || []
 
-          delegate: Root.Chip {
+          delegate: Chip {
             required property var modelData
             required property int index
             label: modelData.name
@@ -608,7 +621,7 @@ Flickable {
         Repeater {
           model: root.suggestedCollections
 
-          delegate: Root.Chip {
+          delegate: Chip {
             required property var modelData
             required property int index
             hasCursor: root.badgeFocused
@@ -621,7 +634,7 @@ Flickable {
           }
         }
 
-        Root.Chip {
+        Chip {
           hasCursor: root.badgeFocused
                      && root.badgeCursor === root.badges.length - 1
           label: "+  Add to collection"
@@ -669,7 +682,7 @@ Flickable {
       // A reason with nothing to do about it is just bad news. Anything you
       // have corrected by hand survives the retry -- that is what the block
       // editor's `edited` flag buys.
-      Root.Chip {
+      Chip {
         label: "Try again"
         tint: Color.accent
         outlined: true

@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // One filter chip: label, count, selected state.
 BorderSurface {

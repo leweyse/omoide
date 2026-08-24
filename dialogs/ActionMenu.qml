@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "../components"
 
 // The right-click menu: the capture modes, plus the two destinations.
 //

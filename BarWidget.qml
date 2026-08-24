@@ -2,6 +2,8 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "components"
+import "dialogs"
 
 // One icon. Left-click runs the configured default action, right-click opens
 // the action menu, middle-click opens the Space window.

@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
 
 BorderSurface {
   id: root
@@ -42,7 +42,7 @@ BorderSurface {
               ? Border.flat(Color.accent, 1)
               : Border.controlSpec("normal", Color.popups.text, Color.accent)
 
-  Root.FocusRing {
+  FocusRing {
     anchors.fill: parent
     radius: root.radius
     hasCursor: root.hasCursor

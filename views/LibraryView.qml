@@ -1,7 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
+import "../common"
+import "../components"
 import "../MemoryModel.js" as Model
 
 Flickable {
@@ -448,7 +449,7 @@ Flickable {
 
         // Wrapped so the exclusion ring is a SIBLING of the tile: a
         // ShaderEffectSource pointing at an ancestor recurses.
-        delegate: Root.CollectionTile {
+        delegate: CollectionTile {
           required property var modelData
           required property int index
           collection: modelData
@@ -493,7 +494,7 @@ Flickable {
 
         // Pinned outside the strip: a control you cannot reach because it
         // scrolled away is worse than one that costs a little width.
-        Root.FilterChip {
+        FilterChip {
           id: searchToggle
           anchors.right: parent.right
           anchors.top: parent.top
@@ -524,7 +525,7 @@ Flickable {
             id: chips
             spacing: Style.spacing.sm
 
-            Root.FilterChip {
+            FilterChip {
               hasCursor: root.filterCursor === 0
               label: "All"
               count: root.searching ? root.results.length
@@ -536,7 +537,7 @@ Flickable {
             Repeater {
               model: root.shownFacets
 
-              delegate: Root.FilterChip {
+              delegate: FilterChip {
                 required property var modelData
                 required property int index
                 // +1 for the "All" chip ahead of this Repeater.
@@ -592,7 +593,7 @@ Flickable {
         height: root.searchOpen ? field.height + Style.spacing.lg : 0
         visible: root.searchOpen
 
-        Root.AccentField {
+        AccentField {
 
           ringBackdrop: Color.popups.background
           id: field
@@ -637,7 +638,7 @@ Flickable {
       }
 
 
-      Root.MasonryGrid {
+      MasonryGrid {
         id: grid
         width: parent.width
         items: root.shownMemories

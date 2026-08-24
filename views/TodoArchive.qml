@@ -1,9 +1,8 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import ".." as Root
-import "../blocks" as Blocks
 import "../MemoryModel.js" as Model
+import "../common"
 
 // Upcoming / Past / Anytime / Completed.
 //
@@ -197,7 +196,7 @@ Flickable {
           { key: "completed", label: "Completed" }
         ]
 
-        delegate: Root.TabButton {
+        delegate: TabButton {
           required property var modelData
           // The tab's own tasks only. Suggestions are a section of their own
           // with its own heading, so counting them here would promise more

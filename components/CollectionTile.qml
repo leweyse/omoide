@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // A collection: its count, its name, and one cover.
 //
