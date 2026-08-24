@@ -2,7 +2,7 @@
 
 思い出 (*omoide*) is Japanese for a memory you keep.
 
-![The For you view, listing today's events and the open tasks](preview.png)
+https://github.com/user-attachments/assets/6699df68-81dc-43ea-8182-eaad28a516b2
 
 More in [assets/](assets): the library, the capture menu, agent settings.
 
@@ -20,9 +20,9 @@ all if you run a local one.
 
 ## Capturing
 
-- Left-click the bar icon runs the default action.
-- Middle-click opens the library.
-- Right-click opens the full menu: screenshot, quick note, voice note, the
+- **Left-click** the bar icon runs the default action.
+- **Middle-click** opens the library.
+- **Right-click** opens the full menu: screenshot, quick note, voice note, the
   library and agent settings. Picking a capture mode there sets what left-click
   does from then on.
 
