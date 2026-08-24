@@ -5,8 +5,12 @@ import qs.Ui
 import "components"
 import "dialogs"
 
-// One icon. Left-click runs the configured default action, right-click opens
-// the action menu, middle-click opens the Space window.
+// One icon. Left-click opens the action menu, right-click opens the library.
+//
+// No click captures directly. A capture is a destructive-ish, interactive thing
+// -- it grabs the pointer for a region pick -- and having that on the primary
+// click meant a misclick on the bar started one. The menu names every mode
+// instead, so a capture is always chosen rather than triggered.
 //
 // The icon is a small state machine driven by the service's index cache, so
 // every monitor's copy animates together without any broadcast plumbing.
@@ -34,10 +38,6 @@ BarWidget {
   implicitWidth: vertical ? barSize : button.implicitWidth
   implicitHeight: button.implicitHeight
 
-  function runDefault() {
-    if (service) service.capture(root.defaultAction)
-  }
-
   function openMenu() {
     menu.open()
   }
@@ -46,7 +46,10 @@ BarWidget {
     if (service) service.showSpace({})
   }
 
-  // Persist the quick action.
+  // Persist the default capture mode.
+  //
+  // Still meaningful with no click bound to it: `omoide capture` with no mode
+  // argument falls back to this, which is what a hand-written keybind gets.
   //
   // Settings live inline on this widget's entry in shell.json and the shell
   // owns that file, so writing it means handing the whole entry back through
@@ -111,12 +114,13 @@ BarWidget {
     tooltipText: root.tooltip()
 
     onPressed: function (whichButton) {
+      // Middle-click is deliberately unbound: it used to open the library, and
+      // a paste-adjacent button doing that by accident is worse than it not
+      // working at all.
       if (whichButton === Qt.RightButton)
-        root.openMenu()
-      else if (whichButton === Qt.MiddleButton)
         root.openSpace()
-      else
-        root.runDefault()
+      else if (whichButton === Qt.LeftButton)
+        root.openMenu()
     }
   }
 

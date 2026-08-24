@@ -202,9 +202,21 @@ Item {
                   onClicked: root.activate(modelData)
                 }
 
-                // Sets the quick action rather than running it, so the
-                // left-click default is changeable from the same place the
-                // modes are listed.
+                Text {
+                  anchors.right: parent.right
+                  anchors.rightMargin: root.rowInset
+                  anchors.verticalCenter: parent.verticalCenter
+                  visible: modelData.id === root.defaultAction
+                  // No leading "·" any more: a mid-sentence separator only read
+                  // as one while this was glued to the end of the label.
+                  text: "default"
+                  color: Color.popups.text
+                  font.family: Style.font.resolvedFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                // Sets the default capture mode rather than running it, so it
+                // is changeable from the same place the modes are listed.
                 PanelActionButton {
                   anchors.right: parent.right
                   anchors.rightMargin: root.rowInset
@@ -254,7 +266,6 @@ Item {
 
                     Text {
                       text: modelData.label
-                           + (modelData.id === root.defaultAction ? "  ·  default" : "")
                       color: Color.popups.text
                       font.family: Style.font.resolvedFamily
                       font.pixelSize: Style.font.body

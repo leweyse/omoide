@@ -20,11 +20,8 @@ all if you run a local one.
 
 ## Capturing
 
-- **Left-click** the bar icon runs the default action.
-- **Middle-click** opens the library.
-- **Right-click** opens the full menu: screenshot, quick note, voice note, the
-  library and agent settings. Picking a capture mode there sets what left-click
-  does from then on.
+- **Left-click** the bar icon opens the menu.
+- **Right-click** opens the library.
 
 ```text
 screenshot ──▶ pick a region ──▶ overlay opens with the shot, note optional

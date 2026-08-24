@@ -40,7 +40,7 @@
           "voice"
         ],
         "defaultValue": "screenshot",
-        "description": "What a left-click on the bar icon starts."
+        "description": "Which capture mode `omoide capture` starts when given no mode, such as from a keybind."
       },
       {
         "key": "captureMode",
