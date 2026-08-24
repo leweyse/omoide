@@ -49,7 +49,7 @@ CursorSurface {
       text: root.picked ? "●" : "○"
       color: root.picked ? Color.accent : Color.muted
       font.family: Style.font.menuFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
     Column {
@@ -65,7 +65,7 @@ CursorSurface {
         text: root.title
         color: Color.menu.text
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
       }
 
       Text {
@@ -75,7 +75,7 @@ CursorSurface {
         wrapMode: Text.WordWrap
         color: Color.muted
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
     }
   }

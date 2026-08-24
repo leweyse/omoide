@@ -94,12 +94,18 @@ QML until it restarts, so without one you are still running the old version.
 To remove it, `omarchy plugin remove leweyse.omoide`. Your memories stay on
 disk. Run `bin/omoide uninstall --purge` first if you want them gone with it.
 
-For a keybinding, in `~/.config/hypr/bindings.lua`:
+For keybindings, in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + CTRL + <YOUR_CHOICE>", "Omoide capture",
-       "omarchy-shell -q omoide capture screenshot")
+       "omarchy-shell -q omoide toggleChooser")
+o.bind("SUPER + CTRL + <YOUR_CHOICE>", "Omoide library",
+       "omarchy-shell -q omoide toggleSpace")
 ```
+
+The capture binding opens the capture options in Omarchy's own menu, default
+action first and focused, so Enter starts it. No binding starts a capture
+directly.
 
 ## Choosing an agent
 
@@ -149,6 +155,14 @@ I have not solved.
 list.
 
 **Clipboard capture.** It already shows in the menu, disabled.
+
+## IPC and trust
+
+IPC opens windows, it does not act. There is no `capture` method: the keybind
+opens a chooser, and a capture starts only from a click or Enter on a surface
+the shell drew itself. No OCR runs and nothing reaches an agent until you press
+Save in the overlay, compose payloads cannot start the microphone, and Esc
+deletes an unexpected capture, image included.
 
 ## License
 

@@ -74,10 +74,21 @@ Item {
     Quickshell.execDetached([root.binPath].concat(args))
   }
 
+  property bool voiceTicket: false
+
+  // Pushed by the bar widget, which owns the setting; the chooser orders its
+  // entries by it. "screenshot" when no widget is in the bar to push one.
+  property string defaultAction: "screenshot"
+
   function capture(mode) {
     if (root.capturing) return
     root.capturing = true
     root.pendingMode = mode || "screenshot"
+    // One-shot ticket for auto-dictation, consumed by the next compose call.
+    // The compose payload arrives over public same-user IPC, so its flags are
+    // claims, not facts -- and autoDictate turns the microphone on. Only a
+    // voice capture this shell launched itself has the standing to do that.
+    root.voiceTicket = root.pendingMode === "voice"
     // The click that chose the action must be fully delivered and the menu
     // surface gone before slurp maps, or the release lands in the picker.
     captureLaunch.restart()
@@ -205,6 +216,52 @@ Item {
     }
   }
 
+  // The keybind's chooser is Omarchy's own menu in dmenu mode, so it is the
+  // same dialog as every other picker on the system. The selection comes back
+  // to this process and goes through capture(), which means the voice ticket
+  // and the compose overlay's arming apply exactly as they do from the bar
+  // menu. Tracked, not detached: if the plugin reloads mid-wait the waiter
+  // dies and the menu is an Esc away from gone, which beats a process that
+  // waits forever on a menu that was replaced.
+  property var chooserProc: null
+
+  function toggleChooser() {
+    if (root.chooserProc) {
+      // Second press closes. The menu cancels, the waiter exits empty.
+      Quickshell.execDetached(["omarchy-shell", "shell", "hide", "omarchy.menu"])
+      return
+    }
+
+    var voiceOk = !!(root.index && root.index.voiceAvailable === true)
+    var all = [
+      { mode: "screenshot", option: "	Screenshot" },
+      { mode: "note", option: "	Quick note" },
+      { mode: "voice", option: "	Voice note"
+                               + (voiceOk ? "" : "	Needs Voxtype dictation") }
+    ]
+    // Default first, so the keybind plus Enter still runs the mode chosen in
+    // the bar menu.
+    var entries = all.filter(function (e) { return e.mode === root.defaultAction })
+      .concat(all.filter(function (e) { return e.mode !== root.defaultAction }))
+
+    var command = ["omarchy-menu-select", "Omoide"]
+    for (var i = 0; i < entries.length; i++) command.push(entries[i].option)
+
+    root.chooserProc = cliComponent.createObject(root, {
+      command: command,
+      callback: function (code, parsed, err, outText) {
+        root.chooserProc = null
+        if (code !== 0) return    // cancelled, or the menu was replaced
+        var label = String(outText || "").trim().split("\t")[0]
+        var mode = ({ "Screenshot": "screenshot",
+                      "Quick note": "note",
+                      "Voice note": "voice" })[label]
+        if (mode) root.capture(mode)
+      },
+      running: true
+    })
+  }
+
   property var _pendingCompose: null
   property var _pendingSpace: null
 
@@ -304,8 +361,11 @@ Item {
   IpcHandler {
     target: "omoide"
 
-    function capture(mode: string): string {
-      root.capture(mode && mode.length ? mode : "screenshot")
+    // There is deliberately no capture method here. The keybind opens the
+    // chooser, and a capture starts only from a click or Enter on a surface
+    // the shell drew itself -- IPC opens windows, it does not act.
+    function toggleChooser(): string {
+      root.toggleChooser()
       return "ok"
     }
 
@@ -316,6 +376,14 @@ Item {
       } catch (e) {
         payload = ({})
       }
+      // A crafted payload must not start the microphone: autoDictate is
+      // honored only on the ticket capture() issued, and the ticket is spent
+      // here whether it was used or not. A capture run straight from a
+      // terminal opens the overlay with the mic off; its dictate button is
+      // one click away.
+      if (payload.autoDictate === true && !root.voiceTicket)
+        payload.autoDictate = false
+      root.voiceTicket = false
       root.showCompose(payload)
       return "ok"
     }

@@ -27,6 +27,14 @@ FocusScope {
   property bool voiceAvailable: false
   property bool dictating: false
 
+  // Submit stays disarmed for the overlay's first moments. The window takes
+  // exclusive keyboard focus the instant it maps, and a capture can arrive
+  // over IPC -- the keybind is exactly that -- so an Enter aimed at whatever
+  // the user was typing into would otherwise land here and commit a capture
+  // they never looked at. 600ms outlives any keystroke already in flight and
+  // is beneath notice for someone pressing Enter on purpose.
+  property bool armed: false
+
   // A memory with no text, no image and no voice is worthless. The CLI refuses
   // one too, but the button has to say so before the user presses it.
   readonly property bool canSubmit: noteField.text.trim().length > 0 || root.hasImage
@@ -41,6 +49,8 @@ FocusScope {
     // missing flag as a yes.
     root.voiceAvailable = data.voiceAvailable === true
     noteField.text = ""
+    root.armed = false
+    armDelay.restart()
     root.opened = true
     Qt.callLater(function () { noteField.forceActiveFocus() })
     if (data.autoDictate && root.voiceAvailable)
@@ -48,7 +58,7 @@ FocusScope {
   }
 
   function submit() {
-    if (!root.canSubmit || !root.memoryId) return
+    if (!root.armed || !root.canSubmit || !root.memoryId) return
     var args = ["commit", "--id", root.memoryId, "--note", noteField.text]
     if (!root.hasImage) args.push("--remove-image")
     root.opened = false
@@ -87,6 +97,8 @@ FocusScope {
     if (root.imagePath)
       Quickshell.execDetached(["tensaku-edit", root.imagePath])
   }
+
+  Timer { id: armDelay; interval: 600; onTriggered: root.armed = true }
 
   PanelWindow {
     id: panel

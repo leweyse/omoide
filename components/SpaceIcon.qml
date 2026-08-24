@@ -29,15 +29,19 @@ Item {
   readonly property color activeColor: failed ? urgentColor
                                      : (working || capturing ? accentColor : color)
 
-  readonly property int frameBorder: Math.max(1, Math.round(iconSize / 12))
+  // floor, not round, for every stroke weight: round makes the stroke jump to
+  // 2px at 18px (the Space footer) while the 16px bar copy stays at 1px -- the
+  // same mark, visibly heavier two points larger. A stroke thickens only when
+  // a whole extra pixel fits.
+  readonly property int frameBorder: Math.max(1, Math.floor(iconSize / 12))
   // The area inside the frame's stroke, with a little air so the marks read as
   // separate from it rather than thickening it.
   readonly property int innerSize: Math.max(4, Math.round(iconSize * 0.78)
                                     - (frameBorder + Math.max(1, Math.round(iconSize / 16))) * 2)
   readonly property int markArm: Math.max(2, Math.round(innerSize * 0.42))
   readonly property int markRadius: Math.max(1, Math.round(innerSize * 0.24))
-  readonly property int markStroke: Math.max(1, Math.round(iconSize / 14))
-  readonly property int pointSize: Math.max(2, Math.round(iconSize * 0.14))
+  readonly property int markStroke: Math.max(1, Math.floor(iconSize / 14))
+  readonly property int pointSize: Math.max(2, Math.floor(iconSize * 0.14))
   // How far each point sits in from its corner of the inner box. At the
   // corners the points crowd the frame's stroke; one pixel in gives them air
   // on the outside and reads as a group inside the frame rather than four
@@ -121,7 +125,7 @@ Item {
     height: width
     radius: width / 2
     color: "transparent"
-    border.width: Math.max(1, Math.round(root.iconSize / 14))
+    border.width: Math.max(1, Math.floor(root.iconSize / 14))
     border.color: root.urgentColor
     antialiasing: true
   }
@@ -231,7 +235,7 @@ Item {
 
     Rectangle {
       anchors.centerIn: parent
-      width: parent.width - Math.max(1, Math.round(root.iconSize / 12)) * 2
+      width: parent.width - Math.max(1, Math.floor(root.iconSize / 12)) * 2
       height: width
       radius: width / 2
       color: root.accentColor
