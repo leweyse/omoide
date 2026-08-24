@@ -246,9 +246,8 @@ FocusScope {
   }
   z: 50
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     // Matches the curve of whatever this is layered over. Anchored inside the
     // Space card, a square scrim paints across the card's rounded corners and
     // the dialog looks like it has square ones.
@@ -259,7 +258,7 @@ FocusScope {
   BorderSurface {
     id: sheet
     anchors.centerIn: parent
-    width: Math.min(Style.space(440), parent.width - Style.spacing.xl * 2)
+    width: Math.min(Style.space(440), parent.width - Style.spacing.xxl * 2)
     height: layout.implicitHeight + Style.spacing.panelPadding * 2
     radius: Style.cornerRadius
     color: Color.menu.background
@@ -288,7 +287,7 @@ FocusScope {
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.margins: Style.spacing.panelPadding
-      spacing: Style.spacing.xl
+      spacing: Style.spacing.xxl
 
       // Where this to-do came from, at the top: it is context for everything
       // below, not one of the actions at the bottom. Its rule appears with it,
@@ -326,7 +325,7 @@ FocusScope {
           }
           anchors.left: parent.left
           anchors.right: acceptButton.visible ? acceptButton.left : parent.right
-          anchors.rightMargin: acceptButton.visible ? Style.spacing.md : 0
+          anchors.rightMargin: acceptButton.visible ? Style.spacing.lg : 0
           anchors.verticalCenter: parent.verticalCenter
           textFormat: Text.PlainText
           text: root.item.memoryTitle
@@ -334,7 +333,7 @@ FocusScope {
           elide: Text.ElideRight
           color: Color.accent
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
 
           MouseArea {
             anchors.fill: parent
@@ -392,7 +391,7 @@ FocusScope {
       // where the choice between keeping and dropping the edits is made.
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
 
         PanelSectionHeader {
           width: parent.width
@@ -409,7 +408,7 @@ FocusScope {
           foreground: Color.menu.text
           accent: Color.accent
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
           placeholderText: "Title"
         }
       }
@@ -417,14 +416,14 @@ FocusScope {
       // Events only. A to-do's time comes from its earliest reminder.
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         visible: root.isEvent
 
         Text {
           text: "Starts"
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         DateTimeField { id: startsField; escapeTo: editorKeys }
@@ -432,13 +431,13 @@ FocusScope {
 
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
 
         Text {
           text: "Reminders"
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         Text {
@@ -446,7 +445,7 @@ FocusScope {
           text: "None."
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         Repeater {
@@ -519,16 +518,16 @@ FocusScope {
 
         // A chip, matching "Add to collection" and "Link a memory": all three
         // are the same thing -- an inline control that adds a row.
-        // An Item, so the button can be centred and given room above it. A Column
+        // An Item, so the button can be given room above it. A Column
         // spacing applies to every gap equally; this one gap wants to be bigger,
         // because the button is an action under a list rather than another row.
         Item {
           width: parent.width
-          height: addReminderButton.height + Style.spacing.xl
+          height: addReminderButton.height + Style.spacing.xxl
         
           Button {
             id: addReminderButton
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.left: parent.left
             anchors.bottom: parent.bottom
             focusable: true
             // Full-strength accent on focus. controlSpec("focus") applies

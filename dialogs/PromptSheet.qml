@@ -67,9 +67,8 @@ FocusScope {
     }
   }
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     // Matches the curve of whatever this is layered over. Anchored inside the
     // Space card, a square scrim paints across the card's rounded corners and
     // the dialog looks like it has square ones.
@@ -97,7 +96,7 @@ FocusScope {
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.margins: Style.spacing.panelPadding
-      spacing: Style.spacing.xl
+      spacing: Style.spacing.xxl
 
       PanelSectionHeader {
         width: parent.width
@@ -114,7 +113,7 @@ FocusScope {
         foreground: Color.menu.text
         accent: Color.accent
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
         placeholderText: root.placeholder
         onAccepted: root.submit()
         Keys.onEscapePressed: function (event) {

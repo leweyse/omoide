@@ -75,9 +75,8 @@ FocusScope {
   // layout or swallow a click.
   Item { id: focusSink }
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     radius: root.scrimRadius
     MouseArea { anchors.fill: parent; onClicked: root.close() }
   }
@@ -123,7 +122,7 @@ FocusScope {
         textFormat: Text.PlainText
         color: Color.menu.text
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.subtitle
+        font.pixelSize: Style.font.title
         font.bold: true
       }
 
@@ -134,7 +133,7 @@ FocusScope {
         foreground: Color.menu.text
         accent: Color.accent
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
         onTextChanged: {
           root.query = text
           debounce.restart()
@@ -176,12 +175,12 @@ FocusScope {
         textFormat: Text.PlainText
         color: Color.muted
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.bodySmall
+        font.pixelSize: Style.font.body
       }
 
       Column {
         width: parent.width
-        spacing: Style.spacing.xs
+        spacing: Style.spacing.sm
         // Invisible, not merely empty: a zero-height Column still takes a
         // spacing slot from its parent, which left 20px of dead air under the
         // "nothing to choose from" line.
@@ -197,7 +196,7 @@ FocusScope {
 
             width: parent.width
             height: Math.max(Style.spacing.popupRowHeight,
-                             rowText.implicitHeight + Style.spacing.md * 2)
+                             rowText.implicitHeight + Style.spacing.lg * 2)
             radius: Style.cornerRadius
             hasCursor: root.cursor === index
             bordered: false
@@ -216,8 +215,8 @@ FocusScope {
               anchors.left: parent.left
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              anchors.leftMargin: Style.spacing.md
-              anchors.rightMargin: Style.spacing.md
+              anchors.leftMargin: Style.spacing.lg
+              anchors.rightMargin: Style.spacing.lg
               spacing: 0
 
               Text {
@@ -227,7 +226,7 @@ FocusScope {
                 elide: Text.ElideRight
                 color: Color.menu.text
                 font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.body
+                font.pixelSize: Style.font.subtitle
               }
 
               Text {
@@ -238,7 +237,7 @@ FocusScope {
                 elide: Text.ElideRight
                 color: Color.muted
                 font.family: Style.font.menuFamily
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.body
               }
             }
           }

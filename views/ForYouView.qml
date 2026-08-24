@@ -45,9 +45,12 @@ Flickable {
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
   function focusFirst() {
-    root.region = 0
-    // Explicitly: entering when region is already 0 fires no change handler.
-    root.enterRegion(0)
+    // The first region with anything in it: a day can have tasks and no
+    // events, and entering the empty carousel highlights nothing at all.
+    var target = root.events.length > 0 ? 0 : (root.tasks.length > 0 ? 1 : 0)
+    root.region = target
+    // Explicitly: entering when the region is unchanged fires no handler.
+    root.enterRegion(target)
   }
 
   function pageKey(event) {
@@ -130,11 +133,11 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.lg
       visible: (root.index.events || []).length > 0
 
       Row {
@@ -158,7 +161,7 @@ Flickable {
         // uniform anyway, and each one centres its own content vertically.
         height: Style.space(96)
         orientation: ListView.Horizontal
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         clip: true
         model: root.events
 
@@ -179,7 +182,7 @@ Flickable {
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.lg
 
       Item {
         width: parent.width
@@ -200,7 +203,7 @@ Flickable {
           text: "›"
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.subtitle
+          font.pixelSize: Style.font.title
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
@@ -229,7 +232,7 @@ Flickable {
         text: "No open to-dos."
         color: Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
       }
     }
   }

@@ -19,7 +19,7 @@ BorderSurface {
   signal activated()
 
   readonly property var badge: Model.dateBadge(event ? event.startsAt : "")
-  readonly property real pad: Style.spacing.xxl
+  readonly property real pad: Style.spacing.xxxl
   readonly property string place: {
     if (!root.event) return ""
     var parts = []
@@ -96,7 +96,7 @@ BorderSurface {
     // Centred against the card, so a one-line event does not sit at the top of
     // a taller box next to its artwork.
     anchors.verticalCenter: parent.verticalCenter
-    spacing: Style.spacing.md
+    spacing: Style.spacing.lg
 
     DateBadge {
       id: badge
@@ -105,8 +105,8 @@ BorderSurface {
     }
 
     Column {
-      width: parent.width - badge.width - Style.spacing.md
-      spacing: Style.spacing.xs
+      width: parent.width - badge.width - Style.spacing.lg
+      spacing: Style.spacing.sm
 
       Text {
         width: parent.width
@@ -117,7 +117,7 @@ BorderSurface {
         elide: Text.ElideRight
         color: Color.popups.text
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.subtitle
+        font.pixelSize: Style.font.title
       }
 
       Text {
@@ -131,7 +131,7 @@ BorderSurface {
         elide: Text.ElideRight
         color: Color.popups.text
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
 
       Text {
@@ -143,7 +143,7 @@ BorderSurface {
         elide: Text.ElideRight
         color: Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
     }
   }

@@ -19,7 +19,7 @@ BorderSurface {
 
   // One inset for the whole card. The thumbnail deliberately bleeds to the
   // edges; everything else sits inside this.
-  readonly property real pad: Style.spacing.md
+  readonly property real pad: Style.spacing.lg
 
   width: parent ? parent.width : 0
   height: cardLayout.implicitHeight + card.borderTop + card.borderBottom
@@ -30,10 +30,13 @@ BorderSurface {
   // unfocused card beside it. Same width, so nothing reflows.
   // Accent on focus. The width does NOT change -- a card measures its height
   // as content plus border widths, so a thicker focus border would resize the
-  // card and reflow the grid on every arrow key.
+  // card and reflow the grid on every arrow key. 2px in BOTH states, matching
+  // the dialog chrome and the image frame, which is what keeps that rule.
   borderSpec: card.hasCursor
-              ? Border.flat(Color.accent, 1)
-              : Border.controlSpec("normal", Color.popups.text, Color.accent)
+              ? Border.flat(Color.accent, Math.max(1, Style.space(2)))
+              : Border.withWidth(
+                  Border.controlSpec("normal", Color.popups.text, Color.accent),
+                  Math.max(1, Style.space(2)))
   clip: true
 
   MouseArea {
@@ -47,10 +50,11 @@ BorderSurface {
   FocusRing {
     anchors.fill: parent
     radius: card.radius
+    cornersOnly: true
+    hostBorder: Math.max(1, Style.space(2))
     hasCursor: card.hasCursor
-    // Artwork bleeds under the ring on this card, so it gets the dark
-    // companion line: whichever of the two loses contrast against the
-    // thumbnail, the other keeps it.
+    // twoTone matters only for the full ring; the marks carry their own
+    // halo, which is the same guarantee against arbitrary thumbnails.
     twoTone: true
     hot: hoverArea.containsMouse
   }
@@ -108,7 +112,7 @@ BorderSurface {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: card.pad
-        spacing: Style.spacing.xs
+        spacing: Style.spacing.sm
 
         Text {
           width: parent.width
@@ -120,7 +124,7 @@ BorderSurface {
           lineHeight: 1.15
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
         }
 
         Text {
@@ -133,17 +137,17 @@ BorderSurface {
           elide: Text.ElideRight
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         Item {
           width: parent.width
-          height: metaRow.visible ? metaRow.implicitHeight + Style.spacing.xs : 0
+          height: metaRow.visible ? metaRow.implicitHeight + Style.spacing.sm : 0
 
           Row {
             id: metaRow
             anchors.bottom: parent.bottom
-            spacing: Style.spacing.sm
+            spacing: Style.spacing.md
             visible: (card.memory.tags || []).length > 0
                      || card.memory.openTodos > 0
 
@@ -152,7 +156,7 @@ BorderSurface {
               text: "○ " + card.memory.openTodos
               color: Color.accent
               font.family: Style.font.resolvedFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
 
             Text {
@@ -160,7 +164,7 @@ BorderSurface {
               text: (card.memory.tags || []).slice(0, 3).join(" · ")
               color: Color.muted
               font.family: Style.font.resolvedFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
           }
         }

@@ -32,7 +32,7 @@ Rectangle {
       text: root.month
       color: Color.urgent
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
 
     Text {
@@ -41,7 +41,7 @@ Rectangle {
       text: root.day
       color: Color.popups.text
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.subtitle
+      font.pixelSize: Style.font.title
     }
   }
 }

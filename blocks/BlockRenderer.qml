@@ -52,7 +52,7 @@ Column {
   // instance with nothing to draw has to be invisible, not merely zero-height.
   visible: renderer.shownBlocks.length > 0
 
-  spacing: Style.spacing.xl
+  spacing: Style.spacing.xxl
 
   function itemById(id) {
     var items = (memory && memory.items) || []

@@ -18,7 +18,7 @@ BorderSurface {
   height: root.hasArt
           ? Style.space(96)
           : Math.max(Style.space(46),
-                     label.implicitHeight + Style.spacing.md * 2 + Style.space(14))
+                     label.implicitHeight + Style.spacing.lg * 2 + Style.space(14))
   radius: Style.cornerRadius
   color: Color.popups.background
   // The outline-button border, not popups.border -- that token defaults to the
@@ -65,10 +65,10 @@ BorderSurface {
     anchors.right: parent.right
     anchors.bottom: root.hasArt ? parent.bottom : undefined
     anchors.verticalCenter: root.hasArt ? undefined : parent.verticalCenter
-    anchors.leftMargin: Style.spacing.md
-    anchors.rightMargin: Style.spacing.md
-    anchors.bottomMargin: Style.spacing.md
-    spacing: Style.spacing.hairline
+    anchors.leftMargin: Style.spacing.lg
+    anchors.rightMargin: Style.spacing.lg
+    anchors.bottomMargin: Style.spacing.lg
+    spacing: Style.spacing.xxs
 
     Text {
       id: label
@@ -80,7 +80,7 @@ BorderSurface {
       elide: Text.ElideRight
       color: Color.popups.text
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
 
   }
@@ -88,8 +88,8 @@ BorderSurface {
   Row {
     anchors.top: parent.top
     anchors.right: parent.right
-    anchors.margins: Style.spacing.sm
-    spacing: Style.spacing.xs
+    anchors.margins: Style.spacing.md
+    spacing: Style.spacing.sm
     opacity: 0.75
 
     PanelActionButton {

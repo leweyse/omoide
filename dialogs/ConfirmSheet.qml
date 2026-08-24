@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // A confirmation in the plugin's own dialog language.
 //
@@ -53,9 +54,8 @@ FocusScope {
     }
   }
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     // Matches the curve of whatever this is layered over. Anchored inside the
     // Space card, a square scrim paints across the card's rounded corners and
     // the dialog looks like it has square ones.
@@ -101,7 +101,7 @@ FocusScope {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Style.spacing.panelPadding
-        spacing: Style.spacing.xxl
+        spacing: Style.spacing.xxxl
 
         Text {
           width: parent.width
@@ -110,7 +110,7 @@ FocusScope {
           wrapMode: Text.WordWrap
           color: Color.menu.text
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
           lineHeight: 1.25
         }
 

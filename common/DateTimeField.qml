@@ -45,7 +45,7 @@ Row {
     foreground: root.foreground
     accent: root.accent
     font.family: root.fontFamily
-    font.pixelSize: Style.font.body
+    font.pixelSize: Style.font.subtitle
 
     // Caret to the front on entry. With a mask, Qt leaves it wherever the
     // pointer landed or wherever it was last, so typing a fresh date would
@@ -63,7 +63,7 @@ Row {
     foreground: root.foreground
     accent: root.accent
     font.family: root.fontFamily
-    font.pixelSize: Style.font.body
+    font.pixelSize: Style.font.subtitle
     onActiveFocusChanged: if (activeFocus)
       Qt.callLater(function () { timeField.cursorPosition = 0 })
   }

@@ -33,7 +33,7 @@ BlockCard {
 
   Column {
     width: parent.width
-    spacing: Style.spacing.xs
+    spacing: Style.spacing.sm
 
     Repeater {
       model: root.items || []

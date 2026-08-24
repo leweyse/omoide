@@ -378,7 +378,7 @@ Flickable {
     if (!it) return
     var top = it.mapToItem(layout, 0, 0).y
     var bottom = top + it.height
-    var pad = Style.spacing.xxl
+    var pad = Style.spacing.xxxl
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -422,10 +422,10 @@ Flickable {
     x: root.width - width - Style.spacing.panelPadding
     y: 0
     z: 2
-    spacing: Style.spacing.xs
+    spacing: Style.spacing.sm
 
     Row {
-      spacing: Style.spacing.xs
+      spacing: Style.spacing.sm
       visible: (related.linked || []).length > 0
 
       PanelActionButton {
@@ -466,7 +466,7 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     // The capture itself, first. It is the thing you recognise.
     BlockRenderer {
@@ -495,7 +495,7 @@ Flickable {
     Item {
       id: titleRow
       width: parent.width
-      height: titleGroup.implicitHeight + Style.spacing.xl * 2
+      height: titleGroup.implicitHeight + Style.spacing.xxl * 2
 
       Column {
         id: titleGroup
@@ -504,9 +504,9 @@ Flickable {
         // Room for the floating actions only when they would actually be
         // alongside -- which is when there is no capture above to separate them.
         anchors.rightMargin: imageBlocks.visible
-                             ? 0 : pageActions.width + Style.spacing.md
+                             ? 0 : pageActions.width + Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.spacing.xs
+        spacing: Style.spacing.sm
 
         Text {
           id: titleText
@@ -527,7 +527,7 @@ Flickable {
           wrapMode: Text.WordWrap
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
         }
       }
     }
@@ -594,7 +594,7 @@ Flickable {
     Column {
       id: collectionsSection
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.md
 
       PanelSectionHeader {
         text: "Collections"
@@ -604,7 +604,7 @@ Flickable {
 
       Flow {
         width: parent.width
-        spacing: Style.spacing.sm
+        spacing: Style.spacing.md
 
         Repeater {
           model: root.memory.collections || []
@@ -658,14 +658,14 @@ Flickable {
       wrapMode: Text.WordWrap
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
       opacity: 0.8
     }
 
     Column {
       width: parent.width
       visible: root.memory.aiStatus === "failed"
-      spacing: Style.spacing.md
+      spacing: Style.spacing.lg
 
       Text {
         width: parent.width
@@ -679,7 +679,7 @@ Flickable {
         wrapMode: Text.WordWrap
         color: Color.urgent
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
 
       // A reason with nothing to do about it is just bad news. Anything you

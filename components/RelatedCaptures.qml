@@ -27,7 +27,7 @@ Column {
   // asks for it -- it no longer swaps a search field in under the cursor.
   signal linkRequested()
 
-  spacing: Style.spacing.sm
+  spacing: Style.spacing.md
 
   Item { id: focusSink }
 
@@ -59,7 +59,7 @@ Column {
     id: cards
     width: parent.width
     columns: 2
-    spacing: Style.spacing.sm
+    spacing: Style.spacing.md
     visible: (root.linked || []).length > 0
 
     readonly property real cellWidth:

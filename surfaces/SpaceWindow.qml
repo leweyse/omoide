@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "../common"
 import "../components"
 import "../dialogs"
 import "../views"
@@ -245,6 +246,11 @@ Item {
   function goTo(id) {
     root.section = id
     root.railCursor = root.sectionIndex()
+    // Going to a page means acting on it: the keyboard follows, whether the
+    // navigation was a sidebar click, Enter on a row, Ctrl+N, or a link in
+    // the content. Left or Shift+Tab is the one-key way back to the rail.
+    root.inContent = true
+    root.focusPageFirst()
     root.restoreFocus()
   }
 
@@ -283,9 +289,6 @@ Item {
         && event.key >= Qt.Key_1
         && event.key < Qt.Key_1 + root.sections.length) {
       root.goTo(root.sections[event.key - Qt.Key_1].id)
-      // Focus stays at whatever depth it was: jumping pages should not also
-      // move you between the sidebar and the content.
-      if (root.inContent) root.focusPageFirst()
       return true
     }
 
@@ -294,7 +297,6 @@ Item {
       // and start typing. callLater because the page does not exist yet at the
       // moment the section changes.
       root.goTo("library")
-      root.inContent = true
       Qt.callLater(function () {
         if (viewLoader.item && viewLoader.item.focusInput)
           viewLoader.item.focusInput()
@@ -339,8 +341,10 @@ Item {
       // memory away and show me the grid".
       if (root.railCursor !== root.sectionIndex())
         root.goTo(root.sections[root.railCursor].id)
-      root.inContent = true
-      root.focusPageFirst()
+      else {
+        root.inContent = true
+        root.focusPageFirst()
+      }
       return true
     }
     return false
@@ -401,7 +405,7 @@ Item {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: Color.menu.scrim }
+    Scrim { anchors.fill: parent }
 
     MouseArea { anchors.fill: parent; onClicked: root.close() }
 
@@ -453,19 +457,19 @@ Item {
 
           // One padding token so the caption, the rows and the footer all line
           // up on the same inset.
-          readonly property real pad: Style.spacing.lg
+          readonly property real pad: Style.spacing.xl
 
           // Horizontal padding inside the rail's content: the title, the rows
           // and the footer all carry it. One token because they are all 10 --
           // split it again if they ever need to differ.
-          readonly property real contentPadX: Style.spacing.xl
+          readonly property real contentPadX: Style.spacing.xxl
           // The footer's TOTAL inset from the rail's edges, not an addition to
           // `pad`: it anchors to the rail itself rather than to the padded
           // Column, so this is the whole distance.
-          readonly property real footerPadX: Style.spacing.xl
+          readonly property real footerPadX: Style.spacing.xxl
           // Where a row's label lands once the (currently empty) glyph slot and
           // its gap are accounted for. 4px right of the title.
-          readonly property real labelInset: contentPadX + Style.spacing.sm
+          readonly property real labelInset: contentPadX + Style.spacing.md
 
           // Defines the split now that the fill is subtle.
           Rectangle {
@@ -486,7 +490,7 @@ Item {
             anchors.topMargin: Style.spacing.panelPadding
             anchors.leftMargin: rail.pad
             anchors.rightMargin: rail.pad
-            spacing: Style.spacing.xs
+            spacing: Style.spacing.sm
 
             // The name, at the hero's weight and size but not a PanelHero:
             // with no icon the hero still applies its 14px label inset, which
@@ -502,7 +506,7 @@ Item {
               text: "Omoide"
               color: Color.menu.text
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.heading
               font.bold: true
             }
 
@@ -517,7 +521,7 @@ Item {
                     ? (root.service.index.memoryCount || 0) + " memories" : ""
               color: Color.muted
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
 
             // Enrichment is transient, so it appears under the count rather than
@@ -531,17 +535,17 @@ Item {
                     + (root.service ? root.service.enrichingCount : 0) + "…"
               color: Color.accent
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
 
-            Item { width: 1; height: Style.spacing.sm }
+            Item { width: 1; height: Style.spacing.md }
 
             PanelSeparator {
               width: parent.width
               foreground: Color.menu.text
             }
 
-            Item { width: 1; height: Style.spacing.sm }
+            Item { width: 1; height: Style.spacing.md }
 
             Repeater {
               model: root.sections
@@ -578,14 +582,14 @@ Item {
                   anchors.fill: parent
                   anchors.leftMargin: rail.contentPadX
                   anchors.rightMargin: rail.contentPadX
-                  spacing: Style.spacing.sm
+                  spacing: Style.spacing.md
 
                   Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.glyph
                     color: railRow.selected ? Color.accent : Color.menu.text
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.body
+                    font.pixelSize: Style.font.subtitle
                   }
 
                   Text {
@@ -597,7 +601,7 @@ Item {
                     font.underline: railRow.selected
                     color: railRow.selected ? Color.accent : Color.menu.text
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.body
+                    font.pixelSize: Style.font.subtitle
                   }
                 }
               }
@@ -646,7 +650,7 @@ Item {
               text: "?  Keyboard"
               color: hintArea.containsMouse ? Color.menu.text : Color.muted
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
 
               MouseArea {
                 id: hintArea
@@ -676,8 +680,10 @@ Item {
                            titleBar.chromeInset + closeButton.height)
 
           // The close button's inset. Deliberately tighter than the content
-          // inset so it reads as window chrome rather than as part of the page.
-          readonly property real chromeInset: Style.spacing.md
+          // inset so it reads as window chrome rather than as part of the
+          // page, with a nudge off the corner so the glyph does not crowd
+          // the card's border.
+          readonly property real chromeInset: Style.spacing.lg + Style.space(2)
 
           // Out of the library and into a memory or a collection is the only
           // navigation this dialog has, so it belongs beside the page title
@@ -704,12 +710,12 @@ Item {
           Text {
             id: pageHeading
             anchors.left: backButton.visible ? backButton.right : parent.left
-            anchors.leftMargin: backButton.visible ? Style.spacing.md
+            anchors.leftMargin: backButton.visible ? Style.spacing.lg
                                                    : Style.spacing.panelPadding
             anchors.top: parent.top
             anchors.topMargin: Style.spacing.panelPadding
             anchors.right: closeButton.left
-            anchors.rightMargin: Style.spacing.md
+            anchors.rightMargin: Style.spacing.lg
             text: root.pageTitle
             textFormat: Text.PlainText
             elide: Text.ElideRight
@@ -729,6 +735,9 @@ Item {
             anchors.rightMargin: titleBar.chromeInset
             iconText: "✕"
             tooltipText: "Close  (Esc)"
+            // A bigger glyph in the same hit area: the button was findable,
+            // the ✕ itself was what read small.
+            fontSize: Style.font.iconLarge
             size: Style.space(22)
             foreground: Color.menu.text
             fontFamily: Style.font.menuFamily
@@ -937,11 +946,9 @@ Item {
           onSubmitted: function (text) { root.fileInto(text); collectionPicker.close() }
         }
 
+        // A window of its own, so the reference can outgrow this card.
         HelpSheet {
           id: helpSheet
-          anchors.fill: parent
-          scrimRadius: root.cardRadius
-          z: 60
           onClosed: root.restoreFocus()
         }
 

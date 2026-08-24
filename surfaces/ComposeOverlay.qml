@@ -110,7 +110,7 @@ FocusScope {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: Color.menu.scrim }
+    Scrim { anchors.fill: parent }
 
     MouseArea { anchors.fill: parent; onClicked: root.discard() }
 
@@ -162,7 +162,7 @@ FocusScope {
           text: "Omoide"
           color: Color.menu.text
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.title
+          font.pixelSize: Style.font.heading
           font.bold: true
         }
 
@@ -209,10 +209,10 @@ FocusScope {
           Rectangle {
             anchors.right: preview.right
             anchors.bottom: preview.bottom
-            anchors.rightMargin: Style.spacing.md + preview.borderWidth
-            anchors.bottomMargin: Style.spacing.md + preview.borderWidth
-            width: imageActions.width + Style.spacing.xs * 2
-            height: imageActions.height + Style.spacing.xs * 2
+            anchors.rightMargin: Style.spacing.lg + preview.borderWidth
+            anchors.bottomMargin: Style.spacing.lg + preview.borderWidth
+            width: imageActions.width + Style.spacing.sm * 2
+            height: imageActions.height + Style.spacing.sm * 2
             radius: Style.cornerRadius
             color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
                            Color.menu.background.b, 0.88)
@@ -220,7 +220,7 @@ FocusScope {
             Row {
               id: imageActions
               anchors.centerIn: parent
-              spacing: Style.spacing.xxs
+              spacing: Style.spacing.xs
 
               // Nerd Font glyphs, so they need resolvedFamily rather than the
               // menu font -- the same reason ActionMenu's default-action pin
@@ -229,7 +229,7 @@ FocusScope {
                 iconText: "󰏫"
                 tooltipText: "Crop or annotate in tensaku"
                 size: Style.space(24)
-                fontSize: Style.font.body
+                fontSize: Style.font.subtitle
                 foreground: Color.menu.text
                 fontFamily: Style.font.resolvedFamily
                 onClicked: root.editImage()
@@ -239,7 +239,7 @@ FocusScope {
                 iconText: "󰩹"
                 tooltipText: "Remove the screenshot, keep only the note"
                 size: Style.space(24)
-                fontSize: Style.font.body
+                fontSize: Style.font.subtitle
                 foreground: Color.menu.text
                 // Destructive, so it takes the urgent-tinted hover the
                 // component already provides for forget/unpair actions.
@@ -267,7 +267,7 @@ FocusScope {
             foreground: Color.menu.text
             accent: Color.accent
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.subtitle
             placeholderText: root.hasImage
                              ? "Optional — add a note, or press Enter to save"
                              : "What do you want to remember?"
@@ -314,7 +314,7 @@ FocusScope {
           text: "Add a note or a voice memo to save this."
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         // Anchored, not spaced. A Row plus a fixed-width filler only lines up

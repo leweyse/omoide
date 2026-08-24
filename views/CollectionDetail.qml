@@ -63,7 +63,7 @@ Flickable {
     if (!cell) return
     var top = cell.mapToItem(layout, 0, 0).y
     var bottom = top + cell.height
-    var pad = Style.spacing.xxl
+    var pad = Style.spacing.xxxl
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -103,7 +103,7 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     Item {
       id: titleRow
@@ -116,9 +116,9 @@ Flickable {
         anchors.right: parent.right
         // The floating actions sit alongside the title on this page, since
         // there is no capture above to separate them.
-        anchors.rightMargin: overflow.width + Style.spacing.md
+        anchors.rightMargin: overflow.width + Style.spacing.lg
         anchors.top: parent.top
-        spacing: Style.spacing.xs
+        spacing: Style.spacing.sm
 
         Text {
           id: nameText
@@ -137,7 +137,7 @@ Flickable {
                 + (root.memories.length === 1 ? " memory" : " memories")
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
         }
       }
     }
@@ -158,7 +158,7 @@ Flickable {
       wrapMode: Text.WordWrap
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
   }
 

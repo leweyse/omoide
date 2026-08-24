@@ -36,7 +36,7 @@ Item {
   }
 
   width: parent ? parent.width : 0
-  height: Math.max(Style.space(34), layout.height + Style.spacing.sm * 2)
+  height: Math.max(Style.space(34), layout.height + Style.spacing.md * 2)
 
   function accept() {
     if (!service || !item) return
@@ -116,7 +116,7 @@ Item {
       visible: root.suggested
       anchors.right: parent.right
       y: Math.round(layout.firstLineCentre - height / 2)
-      spacing: Style.spacing.xxs
+      spacing: Style.spacing.xs
 
       PanelActionButton {
         iconText: "+"
@@ -142,11 +142,13 @@ Item {
     Column {
       id: body
       anchors.left: parent.left
-      anchors.leftMargin: layout.slot + Style.spacing.md
+      anchors.leftMargin: layout.slot + Style.spacing.lg
       anchors.right: suggestActions.visible ? suggestActions.left : parent.right
-      anchors.rightMargin: suggestActions.visible ? Style.spacing.md : 0
+      anchors.rightMargin: suggestActions.visible ? Style.spacing.lg : 0
       anchors.top: parent.top
-      spacing: 0
+      // A hair of air between the title and its time: at the old font sizes
+      // zero read as one unit, at the new ones it read as crowding.
+      spacing: Style.spacing.xxs
 
       Text {
         id: titleText
@@ -159,7 +161,7 @@ Item {
         wrapMode: Text.WordWrap
         color: Color.popups.text
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
 
         MouseArea {
           anchors.fill: parent
@@ -176,7 +178,7 @@ Item {
         // Overdue but still open reads red, and is never auto-hidden.
         color: root.overdue ? Color.urgent : Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
     }
   }

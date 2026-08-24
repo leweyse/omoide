@@ -56,10 +56,14 @@ Flickable {
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
   function focusFirst() {
-    root.region = 0
-    // rowsFor(0), not regionRows: entering when region is already 0 fires no
-    // change handler, and reading the binding here can see the region you left.
-    root.cursor = root.rowsFor(0).length > 0 ? 0 : -1
+    // Upcoming can be empty while suggestions are not; land on whichever has
+    // rows so entering the page always lights something up.
+    var target = root.rowsFor(0).length > 0 ? 0
+               : (root.rowsFor(1).length > 0 ? 1 : 0)
+    root.region = target
+    // rowsFor(target), not regionRows: entering when the region is unchanged
+    // fires no change handler, and the binding can see the region you left.
+    root.cursor = root.rowsFor(target).length > 0 ? 0 : -1
   }
 
   function pageKey(event) {
@@ -117,7 +121,7 @@ Flickable {
     if (!it) return
     var top = it.mapToItem(layout, 0, 0).y
     var bottom = top + it.height
-    var pad = Style.spacing.xxl
+    var pad = Style.spacing.xxxl
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -181,7 +185,7 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     // Buttons, not chips: a chip is a filter you add to a set, a tab is a
     // switch between whole views, and at chip size it read as neither.
@@ -253,7 +257,7 @@ Flickable {
                                    : "Nothing completed yet.")
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
   }

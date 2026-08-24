@@ -84,9 +84,8 @@ FocusScope {
     }
   }
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     radius: root.scrimRadius
     MouseArea { anchors.fill: parent; onClicked: root.close() }
   }
@@ -133,7 +132,7 @@ FocusScope {
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.margins: Style.spacing.panelPadding
-      spacing: Style.spacing.xl
+      spacing: Style.spacing.xxl
 
       PanelSectionHeader {
         width: parent.width
@@ -144,14 +143,14 @@ FocusScope {
 
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         visible: root.hasHeading
 
         Text {
           text: "Heading"
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         AccentField {
@@ -161,21 +160,21 @@ FocusScope {
           foreground: Color.menu.text
           accent: Color.accent
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
           placeholderText: "What these items are"
         }
       }
 
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
 
         Text {
           text: root.hasHeading ? "One item per line — “Label: text” for a pair"
                                 : "Text"
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         // A TextEdit inside a BorderSurface rather than a Controls TextArea:
@@ -223,7 +222,7 @@ FocusScope {
             color: Color.menu.text
             selectionColor: Style.selectionFillFor(Color.menu.text, Color.accent)
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.subtitle
 
             // Blur, not close. Esc in a text field closing the dialog threw
             // away whatever had been typed; a second press, once the field

@@ -13,16 +13,16 @@ BlockCard {
 
   Column {
     width: parent.width
-    spacing: Style.spacing.xs
+    spacing: Style.spacing.sm
 
     Row {
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.md
       visible: !!(root.payload.chip || root.payload.byline)
 
       Rectangle {
         visible: !!root.payload.chip
         height: Style.space(18)
-        width: chipText.implicitWidth + Style.spacing.md
+        width: chipText.implicitWidth + Style.spacing.lg
         radius: Style.space(3)
         color: Style.selectedFillFor(Color.popups.text, Color.accent, Color.urgent)
         Text {
@@ -32,7 +32,7 @@ BlockCard {
           text: root.payload.chip || ""
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
       }
 
@@ -42,7 +42,7 @@ BlockCard {
         text: root.payload.byline || ""
         color: Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.caption
+        font.pixelSize: Style.font.body
       }
     }
 
@@ -52,7 +52,7 @@ BlockCard {
       text: root.payload.domain || ""
       color: Color.popups.text
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
     Text {
@@ -62,7 +62,7 @@ BlockCard {
       elide: Text.ElideRight
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
 
       MouseArea {
         anchors.fill: parent

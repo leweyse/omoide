@@ -20,7 +20,7 @@ CursorSurface {
 
   signal chose()
 
-  height: body.implicitHeight + Style.spacing.md * 2
+  height: body.implicitHeight + Style.spacing.lg * 2
   radius: Style.space(5)
   hasCursor: root.picked
   bordered: false
@@ -35,8 +35,8 @@ CursorSurface {
 
   Row {
     anchors.fill: parent
-    anchors.margins: Style.spacing.md
-    spacing: Style.spacing.md
+    anchors.margins: Style.spacing.lg
+    spacing: Style.spacing.lg
 
     Text {
       // Level with the title, not centred on the card: centring a radio
@@ -55,8 +55,8 @@ CursorSurface {
     Column {
       id: body
       anchors.top: parent.top
-      width: parent.width - Style.space(12) - Style.spacing.md
-      spacing: Style.spacing.hairline
+      width: parent.width - Style.space(12) - Style.spacing.lg
+      spacing: Style.spacing.xxs
 
       Text {
         width: parent.width

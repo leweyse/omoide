@@ -304,7 +304,7 @@ Flickable {
     if (!cell) return
     var top = cell.mapToItem(layout, 0, 0).y
     var bottom = top + cell.height
-    var pad = Style.spacing.xxl
+    var pad = Style.spacing.xxxl
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -402,7 +402,7 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     Timer {
       id: searchDebounce
@@ -426,7 +426,7 @@ Flickable {
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.md
       // Collections are about browsing, so they step aside while searching.
       visible: !root.searching && (root.index.collections || []).length > 0
 
@@ -443,7 +443,7 @@ Flickable {
         // delegates' height, so this IS the tile height.
         height: Style.space(112)
         orientation: ListView.Horizontal
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         clip: true
         model: root.index.collections || []
 
@@ -466,7 +466,7 @@ Flickable {
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.md
 
       PanelSectionHeader {
         text: root.awaiting
@@ -489,7 +489,7 @@ Flickable {
         width: parent.width
         // Trailing air of its own, so the chips read as a control strip above
         // the grid rather than as the grid's first row.
-        height: searchToggle.height + Style.spacing.lg
+        height: searchToggle.height + Style.spacing.xl
         visible: root.shownFacets.length > 0 || root.searchOpen
 
         // Pinned outside the strip: a control you cannot reach because it
@@ -523,7 +523,7 @@ Flickable {
 
           Row {
             id: chips
-            spacing: Style.spacing.sm
+            spacing: Style.spacing.md
 
             FilterChip {
               hasCursor: root.filterCursor === 0
@@ -590,7 +590,7 @@ Flickable {
         // carries its own -- so the field reads as a control above the grid
         // rather than as its first row. Zero when closed, so it costs nothing
         // while unused.
-        height: root.searchOpen ? field.height + Style.spacing.lg : 0
+        height: root.searchOpen ? field.height + Style.spacing.xl : 0
         visible: root.searchOpen
 
         AccentField {
@@ -602,7 +602,7 @@ Flickable {
           foreground: Color.popups.text
           accent: Color.accent
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.subtitle
+          font.pixelSize: Style.font.title
           placeholderText: "Search memories, notes and screenshot text…"
           rightPadding: Style.space(30)
           onTextChanged: {
@@ -622,7 +622,7 @@ Flickable {
 
         PanelActionButton {
           anchors.right: parent.right
-          anchors.rightMargin: Style.spacing.sm
+          anchors.rightMargin: Style.spacing.md
           anchors.verticalCenter: parent.verticalCenter
           visible: field.text.length > 0
           iconText: "×"
@@ -656,7 +656,7 @@ Flickable {
                                 : "Nothing matches this filter.")
         color: Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
       }
     }
   }

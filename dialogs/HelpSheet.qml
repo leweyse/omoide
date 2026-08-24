@@ -1,6 +1,9 @@
 import QtQuick
+import Quickshell
+import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // The keyboard reference, opened with "?".
 //
@@ -20,11 +23,13 @@ import qs.Ui
 // holding it disappears or declines a key, and being the root puts it on the
 // parent chain of everything inside, so the Escape handler sees keys wherever
 // focus actually sits.
-FocusScope {
+// Its own layer-shell window, not an overlay inside the Space card: the card
+// clamped the sheet to the dialog's height, and a reference that grows past
+// its host deserves the screen as its ceiling, the way compose does.
+Item {
   id: root
 
   property bool opened: false
-  property real scrimRadius: 0
 
   signal closed()
 
@@ -36,17 +41,6 @@ FocusScope {
   function close() {
     root.opened = false
     root.closed()
-  }
-
-  visible: opened
-
-  Keys.onPressed: function (event) {
-    if (event.key === Qt.Key_Escape) {
-      // Only on a real press: holding Escape auto-repeats, and each
-      // repeat would dismiss another layer.
-      if (!event.isAutoRepeat) root.close()
-      event.accepted = true
-    }
   }
 
   // Grouped, because a flat list of twenty-seven chords is a wall. The groups
@@ -138,10 +132,18 @@ FocusScope {
   readonly property var leftGroups: root.groups.slice(0, root.splitAt)
   readonly property var rightGroups: root.groups.slice(root.splitAt)
 
-  Rectangle {
+  PanelWindow {
+    id: panel
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omoide-help"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
+
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
-    radius: root.scrimRadius
     MouseArea { anchors.fill: parent; onClicked: root.close() }
   }
 
@@ -158,9 +160,10 @@ FocusScope {
     BorderSurface {
       id: card
       anchors.centerIn: parent
-      width: Math.min(Style.space(720),
-                      parent.width - Style.spacing.panelPadding * 2)
-      height: layout.implicitHeight + Style.spacing.panelPadding * 2
+      width: Math.min(Style.space(760),
+                      parent.width - Style.gapsOut * 2)
+      height: Math.min(layout.implicitHeight + Style.spacing.panelPadding * 2,
+                       parent.height - Style.gapsOut * 2)
       radius: Style.cornerRadius
       color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
                      Color.menu.background.b, 1.0)
@@ -175,27 +178,27 @@ FocusScope {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Style.spacing.panelPadding
-        spacing: Style.spacing.xl
+        spacing: Style.spacing.huge
 
         Text {
           text: "Keyboard"
           color: Color.menu.text
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.title
+          font.pixelSize: Style.font.heading
           font.bold: true
         }
 
         Row {
           width: parent.width
-          spacing: Style.spacing.huge
+          spacing: Style.space(28)
 
           Repeater {
             model: [root.leftGroups, root.rightGroups]
 
             delegate: Column {
               required property var modelData
-              width: (parent.width - Style.spacing.huge) / 2
-              spacing: Style.spacing.xl
+              width: (parent.width - Style.space(28)) / 2
+              spacing: Style.spacing.huge
 
               Repeater {
                 model: parent.modelData
@@ -203,13 +206,13 @@ FocusScope {
                 delegate: Column {
                   required property var modelData
                   width: parent.width
-                  spacing: Style.spacing.sm
+                  spacing: Style.spacing.lg
 
                   Text {
                     text: modelData.title
                     color: Color.muted
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.body
                     font.capitalization: Font.AllUppercase
                   }
 
@@ -226,13 +229,13 @@ FocusScope {
 
                       Text {
                         id: chord
-                        width: Style.space(84)
+                        width: Style.space(96)
                         anchors.left: parent.left
                         anchors.top: parent.top
                         text: modelData.keys
                         color: Color.accent
                         font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.bodySmall
+                        font.pixelSize: Style.font.body
                       }
 
                       Text {
@@ -244,7 +247,7 @@ FocusScope {
                         wrapMode: Text.WordWrap
                         color: Color.menu.text
                         font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.bodySmall
+                        font.pixelSize: Style.font.body
                         lineHeight: 1.25
                       }
                     }
@@ -260,9 +263,10 @@ FocusScope {
           text: "Press any key to close."
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
       }
     }
+  }
   }
 }

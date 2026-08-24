@@ -30,7 +30,7 @@ BlockCard {
 
   Column {
     width: parent.width
-    spacing: Style.spacing.sm
+    spacing: Style.spacing.md
 
     Repeater {
       model: root.payload.items || []
@@ -39,13 +39,13 @@ BlockCard {
         required property var modelData
         required property int index
         width: parent.width
-        spacing: Style.spacing.sm
+        spacing: Style.spacing.md
 
         Text {
           text: root.payload.ordered ? (index + 1) + "." : "·"
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
         }
 
         Text {
@@ -53,7 +53,7 @@ BlockCard {
           wrapMode: Text.WordWrap
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
           // StyledText, because the label is bold and the text beside it is
           // not, and they have to wrap as one paragraph. That makes this the
           // one binding where model output is concatenated into markup, so

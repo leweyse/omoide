@@ -171,9 +171,8 @@ FocusScope {
   // Somewhere for focus to land that is not a control about to be destroyed.
   Item { id: focusSink }
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     radius: root.scrimRadius
     MouseArea { anchors.fill: parent; onClicked: root.close() }
   }
@@ -204,13 +203,13 @@ FocusScope {
         text: "To-dos"
         color: Color.menu.text
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.subtitle
+        font.pixelSize: Style.font.title
         font.bold: true
       }
 
       Column {
         width: parent.width
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         visible: (root.draft || []).length > 0
 
         Repeater {
@@ -241,7 +240,7 @@ FocusScope {
               accent: Color.accent
               ringBackdrop: Color.menu.background
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.subtitle
             }
 
             PanelActionButton {
@@ -289,7 +288,7 @@ FocusScope {
         text: "No to-dos yet."
         color: Color.muted
         font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.bodySmall
+        font.pixelSize: Style.font.body
       }
 
       Item {

@@ -30,7 +30,7 @@ Column {
   // Repeater knows a row's real geometry.
   function itemAt(i) { return rep.itemAt(i) }
 
-  spacing: Style.spacing.sm
+  spacing: Style.spacing.md
   visible: (root.rows || []).length > 0
 
   PanelSectionHeader {
@@ -44,7 +44,7 @@ Column {
     width: parent.width
     // md * 2, not md: the inner column is inset from the top by md, so a single
     // allowance leaves the last row sitting on the border.
-    height: inner.implicitHeight + Style.spacing.md * 2
+    height: inner.implicitHeight + Style.spacing.lg * 2
     radius: Style.cornerRadius
     color: Color.popups.background
     borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
@@ -54,8 +54,8 @@ Column {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: parent.top
-      anchors.margins: Style.spacing.md
-      spacing: Style.spacing.xs
+      anchors.margins: Style.spacing.lg
+      spacing: Style.spacing.sm
 
       Repeater {
         id: rep

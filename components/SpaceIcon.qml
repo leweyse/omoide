@@ -42,11 +42,11 @@ Item {
   readonly property int markRadius: Math.max(1, Math.round(innerSize * 0.24))
   readonly property int markStroke: Math.max(1, Math.floor(iconSize / 14))
   readonly property int pointSize: Math.max(2, Math.floor(iconSize * 0.14))
-  // How far each point sits in from its corner of the inner box. At the
-  // corners the points crowd the frame's stroke; one pixel in gives them air
-  // on the outside and reads as a group inside the frame rather than four
-  // marks stuck to it.
-  readonly property int pointInset: Math.max(1, Math.round(iconSize / 16))
+  // How far each point sits in from its corner of the inner box.
+  // Proportional to the inner box, not the icon: a fixed pixel left the dots
+  // hugging the corners at the Space footer's size while looking right in the
+  // bar. Scaled, the group pulls toward the centre as the icon grows.
+  readonly property int pointInset: Math.max(1, Math.round(innerSize * 0.15))
   // Pushes the badge outward so its centre lands on the frame's corner rather
   // than half a pixel inside it. Anchored flush to the canvas the badge leans
   // in, and at this size half a pixel is visible. It overflows the optical

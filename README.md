@@ -158,11 +158,10 @@ list.
 
 ## IPC and trust
 
-IPC opens windows, it does not act. There is no `capture` method: the keybind
-opens a chooser, and a capture starts only from a click or Enter on a surface
-the shell drew itself. No OCR runs and nothing reaches an agent until you press
-Save in the overlay, compose payloads cannot start the microphone, and Esc
-deletes an unexpected capture, image included.
+IPC opens windows, it does not act. A capture starts only from a click or
+Enter on a shell surface. Nothing runs OCR or reaches an agent until you press
+Save, IPC cannot start the microphone, and Esc deletes an unexpected capture,
+image included.
 
 ## License
 
