@@ -2899,9 +2899,14 @@ def keybind_conflict(accel: str) -> str | None:
 
 
 def bindings_snippet(accel: str) -> str:
-    """The line to paste into ~/.config/hypr/bindings.lua."""
+    """The line to paste into ~/.config/hypr/bindings.lua.
+
+    Opens the chooser rather than capturing outright: there is no capture
+    method on the IPC surface any more, and a capture starts only from a
+    click or Enter on a surface the shell drew itself.
+    """
     return (f'o.bind("{accel}", "Omoide capture",\n'
-            f'       "omarchy-shell -q {IPC_TARGET} capture screenshot")')
+            f'       "omarchy-shell -q {IPC_TARGET} toggleChooser")')
 
 
 def cmd_keybind(args) -> int:

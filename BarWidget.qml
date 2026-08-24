@@ -38,6 +38,15 @@ BarWidget {
   implicitWidth: vertical ? barSize : button.implicitWidth
   implicitHeight: button.implicitHeight
 
+  // The chooser lives on the service, the setting lives on this widget: push
+  // it across whenever either side appears or the user changes it.
+  function pushDefaultAction() {
+    if (service) service.defaultAction = root.defaultAction
+  }
+  onDefaultActionChanged: pushDefaultAction()
+  onServiceChanged: pushDefaultAction()
+  Component.onCompleted: pushDefaultAction()
+
   function openMenu() {
     menu.open()
   }
@@ -48,8 +57,9 @@ BarWidget {
 
   // Persist the default capture mode.
   //
-  // Still meaningful with no click bound to it: `omoide capture` with no mode
-  // argument falls back to this, which is what a hand-written keybind gets.
+  // Still meaningful with no click bound to it: the keybind's chooser puts
+  // this mode first and focused, and `omoide capture` with no mode argument
+  // falls back to it.
   //
   // Settings live inline on this widget's entry in shell.json and the shell
   // owns that file, so writing it means handing the whole entry back through

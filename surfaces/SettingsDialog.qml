@@ -187,7 +187,7 @@ FocusScope {
               text: "Agent for Omoide"
               color: Color.menu.text
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.subtitle
+              font.pixelSize: Style.font.title
             }
 
             // Turning enrichment off is a rare, destructive-ish action, so it
@@ -219,7 +219,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             color: Color.muted
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.body
           }
 
           // The one thing worth saying before the choice rather than after it.
@@ -236,7 +236,7 @@ FocusScope {
             wrapMode: Text.WordWrap
             color: Color.menu.text
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.body
           }
 
           // One row per preset, plus custom. An uninstalled provider is shown
@@ -335,7 +335,7 @@ FocusScope {
               text: "What the agent sees from a screenshot"
               color: Color.muted
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
 
             // The same cards as the agent grid above, in the same two columns.

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "leweyse.omoide",
   "name": "Omoide",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "author": "leweyse",
   "license": "MIT",
   "description": "Capture a screenshot, note, or voice memo and let an agent turn it into a structured memory with reminders, events, and collections.",
@@ -40,7 +40,7 @@
           "voice"
         ],
         "defaultValue": "screenshot",
-        "description": "Which capture mode `omoide capture` starts when given no mode, such as from a keybind."
+        "description": "First and focused in the capture chooser, and what `omoide capture` runs when given no mode."
       },
       {
         "key": "captureMode",
