@@ -45,9 +45,12 @@ Flickable {
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
   function focusFirst() {
-    root.region = 0
-    // Explicitly: entering when region is already 0 fires no change handler.
-    root.enterRegion(0)
+    // The first region with anything in it: a day can have tasks and no
+    // events, and entering the empty carousel highlights nothing at all.
+    var target = root.events.length > 0 ? 0 : (root.tasks.length > 0 ? 1 : 0)
+    root.region = target
+    // Explicitly: entering when the region is unchanged fires no handler.
+    root.enterRegion(target)
   }
 
   function pageKey(event) {

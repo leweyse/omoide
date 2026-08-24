@@ -56,10 +56,14 @@ Flickable {
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
   function focusFirst() {
-    root.region = 0
-    // rowsFor(0), not regionRows: entering when region is already 0 fires no
-    // change handler, and reading the binding here can see the region you left.
-    root.cursor = root.rowsFor(0).length > 0 ? 0 : -1
+    // Upcoming can be empty while suggestions are not; land on whichever has
+    // rows so entering the page always lights something up.
+    var target = root.rowsFor(0).length > 0 ? 0
+               : (root.rowsFor(1).length > 0 ? 1 : 0)
+    root.region = target
+    // rowsFor(target), not regionRows: entering when the region is unchanged
+    // fires no change handler, and the binding can see the region you left.
+    root.cursor = root.rowsFor(target).length > 0 ? 0 : -1
   }
 
   function pageKey(event) {

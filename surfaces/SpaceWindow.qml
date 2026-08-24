@@ -246,6 +246,11 @@ Item {
   function goTo(id) {
     root.section = id
     root.railCursor = root.sectionIndex()
+    // Going to a page means acting on it: the keyboard follows, whether the
+    // navigation was a sidebar click, Enter on a row, Ctrl+N, or a link in
+    // the content. Left or Shift+Tab is the one-key way back to the rail.
+    root.inContent = true
+    root.focusPageFirst()
     root.restoreFocus()
   }
 
@@ -284,9 +289,6 @@ Item {
         && event.key >= Qt.Key_1
         && event.key < Qt.Key_1 + root.sections.length) {
       root.goTo(root.sections[event.key - Qt.Key_1].id)
-      // Focus stays at whatever depth it was: jumping pages should not also
-      // move you between the sidebar and the content.
-      if (root.inContent) root.focusPageFirst()
       return true
     }
 
@@ -295,7 +297,6 @@ Item {
       // and start typing. callLater because the page does not exist yet at the
       // moment the section changes.
       root.goTo("library")
-      root.inContent = true
       Qt.callLater(function () {
         if (viewLoader.item && viewLoader.item.focusInput)
           viewLoader.item.focusInput()
@@ -340,8 +341,10 @@ Item {
       // memory away and show me the grid".
       if (root.railCursor !== root.sectionIndex())
         root.goTo(root.sections[root.railCursor].id)
-      root.inContent = true
-      root.focusPageFirst()
+      else {
+        root.inContent = true
+        root.focusPageFirst()
+      }
       return true
     }
     return false
