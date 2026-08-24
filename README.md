@@ -70,8 +70,9 @@ Open any task or event to edit it: title, date, time, and as many reminders on
 one item as you want. Nothing commits until Save, so closing the sheet drops a
 mistyped date.
 
-Reminders are `systemd-run` timers, rebuilt from the database at startup so they
-survive a reboot.
+Reminders are armed inside the shell from the database, so they survive a
+reboot and need nothing outside Omoide. One that came due while the machine was
+off still arrives, if it is less than half an hour late.
 
 Anything the agent inferred rather than being told arrives as a suggestion, a
 bullet with a `+` and no timer until you accept it.

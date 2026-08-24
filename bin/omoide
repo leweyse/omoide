@@ -5,7 +5,7 @@
 """Omoide helper CLI.
 
 Everything that touches disk lives here: SQLite, blobs, thumbnails, the AI
-enrichment pass, systemd reminder timers, and the derived index the QML side
+enrichment pass, reminder alarms, and the derived index the QML side
 renders from. The QML plugin is deliberately thin -- it spawns this and reads
 JSON back, the same split Omarchy uses for omarchy.agents and omarchy.dropbox.
 
@@ -78,8 +78,8 @@ PLUGIN_DIR = Path(__file__).resolve().parent.parent
 PLUGIN_ID = "leweyse.omoide"
 IPC_TARGET = "omoide"
 
-SCHEMA_VERSION = 1          # what this code understands
-INDEX_VERSION = 3           # bump when index.json's shape changes
+SCHEMA_VERSION = 2          # what this code understands
+INDEX_VERSION = 4           # bump when index.json's shape changes
 
 SHELL_JSON = Path(os.environ.get("OMOIDE_SHELL_JSON",
                                  HOME / ".config/omarchy/shell.json"))
@@ -407,8 +407,8 @@ def guard_paths() -> None:
                 f"inside the read-only Omarchy package tree", 1)
 
 
-# What counts as a scheduled alarm. sync_timers has the same rule in Python as
-# its `dead` check, and cmd_show spells it out inline; keeping one SQL copy stops
+# What counts as a scheduled alarm. sweep_reminders and fire_reminder both
+# build on it, and cmd_show spells it out inline; keeping one SQL copy stops
 # the read paths from disagreeing with the scheduler about what is pending.
 #
 # The JOIN is load-bearing beyond the WHERE clause: a reminder whose item no
@@ -878,7 +878,7 @@ MAX_BLOCKS = 24          # a real capture yields four or five
 MAX_LIST_ITEMS = 20
 MAX_TODOS = 20
 MAX_EVENTS = 8
-MAX_REMINDERS = 4        # per item, and every one is a systemd timer
+MAX_REMINDERS = 4        # per item, and every one interrupts someone
 MAX_MEMORY_REMINDERS = 12  # and per capture, which is the number that matters
 MAX_TITLE = 200          # the library truncates at 80
 MAX_LEDE = 400
@@ -910,8 +910,8 @@ def _http_url(value) -> str:
 def _clean_reminders(raw) -> list[dict]:
     """At most MAX_REMINDERS well-formed alarms.
 
-    Each one becomes a transient systemd unit, so the length of this list is
-    the length of a list a model wrote about someone else's web page.
+    Each one becomes a row that will interrupt someone, so the length of this
+    list is the length of a list a model wrote about someone else's web page.
     """
     out = []
     if not isinstance(raw, list):
@@ -1251,8 +1251,8 @@ def create_item(conn: sqlite3.Connection, memory_id: str, block_id: str | None,
 
     # Last, because the branches above can ADD a default alarm to an event or a
     # dated to-do: capping before them would be undone by them. Per-item caps
-    # also multiply -- eight events at four alarms each is thirty-two transient
-    # units from one screenshot -- so this counts across the whole memory.
+    # also multiply -- eight events at four alarms each is thirty-two toasts
+    # from one screenshot -- so this counts across the whole memory.
     room = MAX_MEMORY_REMINDERS - int(conn.execute(
         "SELECT COUNT(*) FROM reminders r JOIN items i ON i.id = r.item_id "
         "WHERE i.memory_id = ?", (memory_id,)).fetchone()[0])
@@ -1280,133 +1280,109 @@ def create_item(conn: sqlite3.Connection, memory_id: str, block_id: str | None,
     return item_id
 
 
-# --- systemd timers ---------------------------------------------------------
+# --- reminders --------------------------------------------------------------
 #
-# One transient unit per reminders row, never per item: an item with two alarms
-# gets two units, an item with none gets zero. Transient means nothing on disk,
-# which is also why sync_timers has to rebuild them after a reboot.
+# No system scheduler. The QML service is keepLoaded, so it runs for the whole
+# session, and every alarm it could fire needs that session up anyway --
+# omarchy-notification-send has nowhere to draw a toast without one. So the
+# database holds the fire times, index.json publishes the pending ones, and the
+# shell arms a single timer against the next.
+#
+# What the shell must not decide is *whether* an alarm is still owed. That
+# stays here, in fire_reminder, so a repeated trigger -- a resumed laptop, two
+# shells, a manual run -- costs a no-op instead of a second notification.
 
-FIRE_SCRIPT = (
-    'omarchy-notification-send -g "$4" -u normal --exec "$3" "$1" "$2"; '
-    'omarchy-shell -q omoide refresh >/dev/null 2>&1 || true'
-)
-
-
-def unit_name(reminder_id: str) -> str:
-    return f"omoide-reminder-{reminder_id}"
-
-
-def unit_active(unit: str) -> bool:
-    proc = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
-                "--plain", f"{unit}.timer"])
-    return bool(proc.stdout.strip())
-
-
-def schedule(conn: sqlite3.Connection, reminder: sqlite3.Row) -> None:
-    fire_at = parse_iso(reminder["fire_at"])
-    if not fire_at:
-        return
-    item = conn.execute("SELECT i.*, m.id AS mid FROM items i "
-                        "JOIN memories m ON m.id = i.memory_id "
-                        "WHERE i.id = ?", (reminder["item_id"],)).fetchone()
-    if not item:
-        return
-    unit = unit_name(reminder["id"])
-    local = fire_at.astimezone()
-    body_parts = [local.strftime("%H:%M %d %b")]
-    if item["location"]:
-        body_parts.append(notify_text(item["location"]))
-    proc = run([
-        "systemd-run", "--user", "--quiet", "--collect",
-        f"--on-calendar={local.strftime('%Y-%m-%d %H:%M:%S')}",
-        f"--unit={unit}",
-        "bash", "-c", FIRE_SCRIPT, "bash",
-        # $1 becomes the card's summary, which the shell does not sanitise.
-        notify_text(item["title"]), " · ".join(body_parts),
-        open_space_cmd(item["mid"]), GLYPH,
-    ])
-    if proc.returncode == 0:
-        conn.execute("UPDATE reminders SET unit = ? WHERE id = ?",
-                     (unit, reminder["id"]))
+# How late an alarm may be and still be worth showing. Past this it retires
+# without a toast: the machine was off for a day, or a to-do was reopened long
+# after its time, and a notification for a moment thoroughly gone is noise.
+# Inside it -- a reboot, a suspend, a shell restart -- is exactly when the
+# reminder is still the thing that was asked for. The systemd timers dropped
+# every one of those silently, because a transient unit died with the session.
+LATE_GRACE = timedelta(minutes=30)
 
 
-def stop_unit(unit: str | None) -> None:
-    if unit:
-        run(["systemctl", "--user", "stop", f"{unit}.timer"])
-        run(["systemctl", "--user", "stop", f"{unit}.service"])
+def reminder_alarms(conn: sqlite3.Connection) -> list[dict]:
+    """Pending alarms, for the shell to arm a timer against.
 
-
-def sweep_orphan_units(conn: sqlite3.Connection) -> int:
-    """Stop timers whose reminder row is gone.
-
-    sync_timers only reconciles units it can find a row for, so a unit outlived
-    its row whenever the row was deleted rather than cancelled -- a purged
-    database, a memory deleted while the shell was down, a throwaway test. The
-    unit stays active and eventually fires a notification pointing at a memory
-    that no longer exists, and nothing short of `uninstall` ever cleared it.
+    The id and the time, nothing else. The shell hands the id straight back to
+    `reminder fire`, which builds the notification from the database here, so
+    no text a model wrote has to travel through index.json to reach a toast.
     """
-    listed = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
-                  "--plain", "omoide-reminder-*"])
-    live = {row["id"] for row in conn.execute(
-        "SELECT id FROM reminders WHERE status = 'pending'")}
-    stopped = set()
-    for line in (listed.stdout or "").splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        unit = parts[0]
-        # omoide-reminder-<id>.timer / .service
-        base = unit.rsplit(".", 1)[0]
-        reminder_id = base[len("omoide-reminder-"):]
-        if reminder_id and reminder_id not in live and reminder_id not in stopped:
-            stop_unit(base)
-            stopped.add(reminder_id)
-    return len(stopped)
+    return [{"id": row["id"], "fireAt": row["fire_at"]}
+            for row in conn.execute(
+                "SELECT r.id, r.fire_at " + LIVE_REMINDER
+                + " ORDER BY r.fire_at LIMIT 200")]
 
 
-def sync_timers(conn: sqlite3.Connection) -> dict:
-    """Reconcile reminder rows against systemd units.
+def fire_reminder(conn: sqlite3.Connection, reminder_id: str) -> str:
+    """Deliver one alarm, at most once. Returns what happened.
 
-    Only active items are scheduled, so cancelling an item cancels its alarms.
-    An inferred to-do never reaches here with an alarm attached: create_item
-    gives it none, which is what keeps the agent from putting a notification on
-    someone's machine at a time they did not ask for.
+    'fired'    the notification went out
+    'expired'  owed, but too late to be useful -- retired without a toast
+    'skipped'  not owed: cancelled, completed, already fired, or still future
+
+    The row is marked before the notification is sent rather than after.
+    At-most-once is the right guarantee for an alarm: a toast that fails to
+    draw is one missed reminder, where a retry loop is a machine that will not
+    stop shouting.
     """
-    created = cancelled = fired = 0
+    row = conn.execute(
+        "SELECT r.id, r.fire_at, i.title, i.location, i.memory_id "
+        + LIVE_REMINDER + " AND r.id = ?", (reminder_id,)).fetchone()
+    if not row:
+        return "skipped"
+
+    fire_at = parse_iso(row["fire_at"])
     current = now()
+    if not fire_at or fire_at > current:
+        return "skipped"     # armed early; the next tick comes back for it
 
-    rows = conn.execute(
-        "SELECT r.*, i.status AS item_status, i.completed_at, i.due_at, i.starts_at "
-        "FROM reminders r JOIN items i ON i.id = r.item_id").fetchall()
+    conn.execute("UPDATE reminders SET status = 'fired' WHERE id = ?", (reminder_id,))
+    conn.commit()
 
-    for row in rows:
-        dead = (row["status"] != "pending"
-                or row["item_status"] != "active"
-                or row["completed_at"] is not None)
-        fire_at = parse_iso(row["fire_at"])
+    late = current - fire_at
+    if late > LATE_GRACE:
+        log("reminder.expired", id=reminder_id,
+            late_min=int(late.total_seconds() // 60))
+        return "expired"
 
-        if dead:
-            if row["unit"]:
-                stop_unit(row["unit"])
-                conn.execute("UPDATE reminders SET unit = NULL WHERE id = ?", (row["id"],))
-                cancelled += 1
-            continue
+    body = [fire_at.astimezone().strftime("%H:%M %d %b")]
+    if row["location"]:
+        body.append(row["location"])
+    notify(row["title"], " \u00b7 ".join(body), urgency="normal",
+           exec_cmd=open_space_cmd(row["memory_id"]))
+    return "fired"
 
-        if fire_at and fire_at <= current:
-            conn.execute("UPDATE reminders SET status = 'fired', unit = NULL "
-                         "WHERE id = ?", (row["id"],))
-            stop_unit(row["unit"])
+
+def sweep_reminders(conn: sqlite3.Connection) -> dict:
+    """Catch up on alarms whose moment passed while nothing was watching.
+
+    Run at shell start and after every mutation. Alarms are only ever late
+    here, never early: the shell's own timer handles everything still in the
+    future, and this covers the gap a reboot, a suspend or a killed shell
+    leaves behind.
+
+    Only active items are counted, so cancelling an item cancels its alarms. An
+    inferred to-do never reaches here with one attached: create_item gives it
+    none, which is what keeps the agent from putting a notification on someone's
+    machine at a time they did not ask for.
+    """
+    fired = expired = 0
+    # Ids first, then fire them one at a time: fire_reminder commits, and
+    # stepping a cursor across its own commits is how rows get skipped.
+    due = [row["id"] for row in conn.execute(
+        "SELECT r.id " + LIVE_REMINDER + " AND r.fire_at <= ? ORDER BY r.fire_at",
+        (iso(now()),))]
+    for reminder_id in due:
+        outcome = fire_reminder(conn, reminder_id)
+        if outcome == "fired":
             fired += 1
-            continue
-
-        if not row["unit"] or not unit_active(row["unit"]):
-            schedule(conn, row)
-            created += 1
+        elif outcome == "expired":
+            expired += 1
 
     conn.commit()
-    orphans = sweep_orphan_units(conn)
-    return {"created": created, "cancelled": cancelled, "fired": fired,
-            "orphansStopped": orphans}
+    pending = conn.execute("SELECT COUNT(*) AS n " + LIVE_REMINDER).fetchone()["n"]
+    return {"fired": fired, "expired": expired, "pending": int(pending or 0)}
 
 
 def reschedule_item(conn: sqlite3.Connection, item_id: str) -> None:
@@ -1425,8 +1401,6 @@ def reschedule_item(conn: sqlite3.Connection, item_id: str) -> None:
             fire_at = anchor + timedelta(minutes=int(row["trigger_offset_min"]))
             conn.execute("UPDATE reminders SET fire_at = ? WHERE id = ?",
                          (iso(fire_at), row["id"]))
-            stop_unit(row["unit"])
-            conn.execute("UPDATE reminders SET unit = NULL WHERE id = ?", (row["id"],))
     conn.commit()
 
 
@@ -1674,6 +1648,9 @@ def build_index(conn: sqlite3.Connection) -> dict:
         "todos": todos,
         "suggestions": suggestions,
         "collections": collections,
+        # What the shell arms its timer against. Last, because it is the only
+        # key here the shell acts on rather than renders.
+        "alarms": reminder_alarms(conn),
     }
 
 
@@ -2169,7 +2146,7 @@ def cmd_commit(args) -> int:
     conn.commit()
     commit_pidfile(args.id).unlink(missing_ok=True)
     refresh_fts(conn, args.id)
-    sync_timers(conn)
+    sweep_reminders(conn)
     write_index(conn)
     shell_ipc(IPC_TARGET, "refresh")
 
@@ -2478,8 +2455,7 @@ def item_payload(conn: sqlite3.Connection, item: sqlite3.Row) -> dict:
         "memoryTitle": memory["title"] if memory else "",
         "reminders": [{"id": r["id"], "fireAt": r["fire_at"],
                        "offsetMin": r["trigger_offset_min"],
-                       "status": r["status"],
-                       "scheduled": bool(r["unit"])}
+                       "status": r["status"]}
                       for r in conn.execute(
                           "SELECT * FROM reminders WHERE item_id = ? "
                           "ORDER BY fire_at", (item["id"],))],
@@ -2537,9 +2513,6 @@ def cmd_item(args) -> int:
                 # An undated to-do is valid, so clearing has to drop the alarms
                 # with it rather than leaving them pointing at nothing.
                 conn.execute(f"UPDATE items SET {column} = NULL WHERE id = ?", (args.id,))
-                for row in conn.execute("SELECT unit FROM reminders WHERE item_id = ?",
-                                        (args.id,)):
-                    stop_unit(row["unit"])
                 conn.execute("DELETE FROM reminders WHERE item_id = ?", (args.id,))
             elif args.at:
                 when = parse_iso(args.at) or parse_when(args.at)
@@ -2555,7 +2528,7 @@ def cmd_item(args) -> int:
                 conn.commit()
                 reschedule_item(conn, args.id)
         conn.commit()
-    sync_timers(conn)
+    sweep_reminders(conn)
     write_index(conn)
     shell_ipc(IPC_TARGET, "refresh")
     return 0
@@ -2582,12 +2555,18 @@ def cmd_reminder(args) -> int:
                      "status) VALUES (?,?,?,?,'pending')",
                      (new_id(), args.item, iso(fire_at), offset))
     elif args.action == "remove":
-        row = conn.execute("SELECT unit FROM reminders WHERE id = ?", (args.id,)).fetchone()
-        if row:
-            stop_unit(row["unit"])
         conn.execute("DELETE FROM reminders WHERE id = ?", (args.id,))
+    elif args.action == "fire":
+        # The shell's timer went off. Whether the alarm is still owed is
+        # decided here, not there, so a repeat is a no-op.
+        if not args.id:
+            die("fire needs --id")
+        outcome = fire_reminder(conn, args.id)
+        write_index(conn)
+        emit({"id": args.id, "outcome": outcome})
+        return 0
     conn.commit()
-    sync_timers(conn)
+    sweep_reminders(conn)
     write_index(conn)
     return 0
 
@@ -2642,10 +2621,6 @@ def cmd_collection(args) -> int:
 
 def cmd_delete(args) -> int:
     conn = connect()
-    for row in conn.execute(
-            "SELECT r.unit FROM reminders r JOIN items i ON i.id = r.item_id "
-            "WHERE i.memory_id = ?", (args.id,)):
-        stop_unit(row["unit"])
     discard(conn, args.id, drafts_only=False)
     write_index(conn)
     shell_ipc(IPC_TARGET, "refresh")
@@ -2712,10 +2687,6 @@ def cmd_enrich(args) -> int:
     stale = conn.execute("SELECT id FROM blocks WHERE memory_id = ? "
                          "AND origin = 'ai' AND edited = 0", (args.id,)).fetchall()
     for row in stale:
-        for unit in conn.execute("SELECT r.unit FROM reminders r "
-                                 "JOIN items i ON i.id = r.item_id "
-                                 "WHERE i.block_id = ?", (row["id"],)):
-            stop_unit(unit["unit"])
         conn.execute("DELETE FROM items WHERE block_id = ?", (row["id"],))
         conn.execute("DELETE FROM blocks WHERE id = ?", (row["id"],))
     renumber_blocks(conn, args.id)
@@ -2733,7 +2704,7 @@ def cmd_enrich(args) -> int:
         conn.execute("UPDATE memories SET ai_status = 'failed', ai_error = ? "
                      "WHERE id = ?", (one_line(reason, 500), args.id))
     conn.commit()
-    sync_timers(conn)
+    sweep_reminders(conn)
     refresh_fts(conn, args.id)
     write_index(conn)
     shell_ipc(IPC_TARGET, "refresh")
@@ -2852,12 +2823,12 @@ def sweep_drafts(conn: sqlite3.Connection, older_than_minutes: int = 10) -> int:
     return len(stale)
 
 
-def cmd_sync_timers(args) -> int:
-    """Startup reconciliation: timers rebuilt, dead drafts swept."""
+def cmd_sweep(args) -> int:
+    """Startup reconciliation: late alarms delivered, dead drafts swept."""
     conn = connect()
     swept = sweep_drafts(conn)
     stalled = sweep_stalled(conn)
-    result = sync_timers(conn)
+    result = sweep_reminders(conn)
     result["draftsSwept"] = swept
     result["stalledEnrichments"] = stalled
     write_index(conn)
@@ -2975,19 +2946,10 @@ def cmd_uninstall(args) -> int:
     # a chord that reports the shell is not running the plugin any more.
     omarchy("plugin", "disable", PLUGIN_ID)
 
-    if DB_PATH.exists():
-        conn = connect(write=False)
-        for row in conn.execute("SELECT unit FROM reminders WHERE unit IS NOT NULL"):
-            stop_unit(row["unit"])
-        conn.close()
-    # Belt and braces: catch units whose row is already gone.
-    listed = run(["systemctl", "--user", "list-units", "--all", "--no-legend",
-                  "--plain", "omoide-reminder-*"])
-    for line in (listed.stdout or "").splitlines():
-        unit = line.split()[0] if line.split() else ""
-        if unit:
-            run(["systemctl", "--user", "stop", unit])
-
+    # Nothing to unschedule. An alarm is a row in this database and a timer
+    # inside the shell, and both go with the plugin. Versions up to 0.2.1 used
+    # transient systemd units, which are gone at the next reboot whether or not
+    # anything stops them.
     shutil.rmtree(STATE_DIR, ignore_errors=True)   # derived: always removed
 
     if args.purge:
@@ -3192,7 +3154,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_item)
 
     p = sub.add_parser("reminder", help="alarms attached to an item")
-    p.add_argument("action", choices=["add", "remove"])
+    p.add_argument("action", choices=["add", "remove", "fire"])
     p.add_argument("--id")
     p.add_argument("--item")
     p.add_argument("--at")
@@ -3200,8 +3162,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="minutes relative to the item's time, e.g. -30")
     p.set_defaults(func=cmd_reminder)
 
-    p = sub.add_parser("sync-timers", help="reconcile systemd units with the database")
-    p.set_defaults(func=cmd_sync_timers)
+    # sync-timers is what shells older than this release call on startup. The
+    # alias costs a line and keeps an update from erroring until the shell
+    # reloads the QML that calls the new name.
+    p = sub.add_parser("sweep", aliases=["sync-timers"],
+                       help="deliver late alarms and clear dead drafts")
+    p.set_defaults(func=cmd_sweep)
 
     p = sub.add_parser("collection", help="collections")
     p.add_argument("action", choices=["new", "add", "remove", "rename", "delete"])

@@ -118,7 +118,7 @@ Item {
   }
 
   // Must match INDEX_VERSION in bin/omoide.
-  readonly property int indexVersion: 3
+  readonly property int indexVersion: 4
   property bool rebuildTried: false
 
   function applyIndex(text) {
@@ -162,7 +162,8 @@ Item {
     onLoadFailed: root.index = ({
       version: root.indexVersion, pendingCount: 0, failedCount: 0,
       memoryCount: 0, digest: { events: 0, todos: 0 },
-      memories: [], events: [], todos: [], suggestions: [], collections: []
+      memories: [], events: [], todos: [], suggestions: [], collections: [],
+      alarms: []
     })
   }
 
@@ -238,14 +239,67 @@ Item {
     }
   }
 
-  // Transient systemd units do not survive a reboot, so the database is the
-  // source of truth and the units are rebuilt from it at every shell start.
+  // Startup catch-up: deliver anything that came due while no shell was
+  // running, and clear dead drafts. Deliberately late -- the index has to load
+  // first, and nothing in it is urgent.
   Timer {
     interval: 2000
     running: true
     repeat: false
-    onTriggered: root.call(["sync-timers"], function () { root.refresh() })
+    onTriggered: root.call(["sweep"], function () { root.refresh() })
   }
+
+  // The scheduler.
+  //
+  // No system timer. This service is keepLoaded, so it outlives every window
+  // the plugin opens, and a notification needs the session up anyway -- there
+  // is nowhere to draw a toast without one. index.json carries the pending
+  // alarms and the FileView above watches it, so anything the CLI writes
+  // re-arms this within the same tick.
+  //
+  // The wait is capped even when the next alarm is hours out, and that cap IS
+  // the catch-up: a suspended laptop, a clock jump and a CLI that failed to
+  // write all resolve on the next tick. None of them send a signal worth
+  // waiting on.
+  readonly property int alarmTickMs: 60000
+
+  Timer {
+    id: alarmTimer
+    repeat: false
+    onTriggered: root.armAlarms()
+  }
+
+  // `index` is a property var, so this is its generated change signal. Every
+  // CLI mutation rewrites index.json, which lands here.
+  onIndexChanged: root.armAlarms()
+
+  function armAlarms() {
+    var alarms = (root.index && root.index.alarms) || []
+    var nowMs = Date.now()
+    var soonest = -1
+
+    for (var i = 0; i < alarms.length; i++) {
+      var at = Date.parse(alarms[i].fireAt)
+      if (isNaN(at))
+        continue
+      var wait = at - nowMs
+      if (wait > 0) {
+        if (soonest < 0 || wait < soonest)
+          soonest = wait
+        continue
+      }
+      // Due. Detached, and the CLI decides whether it is still owed, so a
+      // repeated tick or a second shell costs a no-op rather than a second
+      // toast. Firing rewrites index.json, which re-arms this from the top.
+      root.detach(["reminder", "fire", "--id", alarms[i].id])
+    }
+
+    alarmTimer.interval = soonest < 0 ? root.alarmTickMs
+                                      : Math.min(soonest, root.alarmTickMs)
+    alarmTimer.restart()
+  }
+
+  Component.onCompleted: root.armAlarms()
 
   IpcHandler {
     target: "omoide"
