@@ -2,7 +2,7 @@
 
 思い出 (*omoide*) is Japanese for a memory you keep.
 
-https://github.com/user-attachments/assets/6699df68-81dc-43ea-8182-eaad28a516b2
+https://github.com/user-attachments/assets/f6019266-45bc-47b5-b1b4-4b8119e7e821
 
 More in [assets/](assets): the library, the capture menu, agent settings.
 
