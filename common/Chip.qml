@@ -94,7 +94,7 @@ BorderSurface {
     text: root.label
     color: root.tint
     font.family: Style.font.resolvedFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.body
   }
 
   MouseArea {

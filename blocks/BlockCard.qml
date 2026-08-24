@@ -26,7 +26,7 @@ BorderSurface {
   // One token for the inset, so the card's height and its content's margins
   // cannot drift apart. This was md (6px), which left text almost touching
   // the border on every block in the page.
-  readonly property int pad: Style.spacing.xxl
+  readonly property int pad: Style.spacing.xxxl
 
   width: parent ? parent.width : 0
   height: layout.implicitHeight + root.pad * 2
@@ -57,10 +57,10 @@ BorderSurface {
     anchors.margins: root.pad
     // Keeps the content clear of the corner control when there is one.
     anchors.rightMargin: root.pad
-                         + (trailingSlot.item ? trailingSlot.width + Style.spacing.md : 0)
+                         + (trailingSlot.item ? trailingSlot.width + Style.spacing.lg : 0)
     // Heading to content. The same 12px every card's sections use, so a label
     // sits off its content by the same amount everywhere.
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     PanelSectionHeader {
       id: label
@@ -74,7 +74,7 @@ BorderSurface {
       // label twice-faded. One step up in size too -- at caption (10px) a
       // bold label under 12px body text was the smallest thing on the page.
       foreground: Color.popups.text
-      fontSize: Style.font.bodySmall
+      fontSize: Style.font.body
       fontFamily: Style.font.resolvedFamily
     }
 

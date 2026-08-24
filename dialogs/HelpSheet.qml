@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../common"
 
 // The keyboard reference, opened with "?".
 //
@@ -138,9 +139,8 @@ FocusScope {
   readonly property var leftGroups: root.groups.slice(0, root.splitAt)
   readonly property var rightGroups: root.groups.slice(root.splitAt)
 
-  Rectangle {
+  Scrim {
     anchors.fill: parent
-    color: Color.menu.scrim
     radius: root.scrimRadius
     MouseArea { anchors.fill: parent; onClicked: root.close() }
   }
@@ -175,13 +175,13 @@ FocusScope {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: Style.spacing.panelPadding
-        spacing: Style.spacing.xl
+        spacing: Style.spacing.xxl
 
         Text {
           text: "Keyboard"
           color: Color.menu.text
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.title
+          font.pixelSize: Style.font.heading
           font.bold: true
         }
 
@@ -195,7 +195,7 @@ FocusScope {
             delegate: Column {
               required property var modelData
               width: (parent.width - Style.spacing.huge) / 2
-              spacing: Style.spacing.xl
+              spacing: Style.spacing.xxl
 
               Repeater {
                 model: parent.modelData
@@ -203,13 +203,13 @@ FocusScope {
                 delegate: Column {
                   required property var modelData
                   width: parent.width
-                  spacing: Style.spacing.sm
+                  spacing: Style.spacing.md
 
                   Text {
                     text: modelData.title
                     color: Color.muted
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.font.caption
+                    font.pixelSize: Style.font.body
                     font.capitalization: Font.AllUppercase
                   }
 
@@ -232,7 +232,7 @@ FocusScope {
                         text: modelData.keys
                         color: Color.accent
                         font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.bodySmall
+                        font.pixelSize: Style.font.body
                       }
 
                       Text {
@@ -244,7 +244,7 @@ FocusScope {
                         wrapMode: Text.WordWrap
                         color: Color.menu.text
                         font.family: Style.font.menuFamily
-                        font.pixelSize: Style.font.bodySmall
+                        font.pixelSize: Style.font.body
                         lineHeight: 1.25
                       }
                     }
@@ -260,7 +260,7 @@ FocusScope {
           text: "Press any key to close."
           color: Color.muted
           font.family: Style.font.menuFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
       }
     }

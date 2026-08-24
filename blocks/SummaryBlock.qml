@@ -33,7 +33,7 @@ BlockCard {
     wrapMode: Text.WordWrap
     color: Color.popups.text
     font.family: Style.font.resolvedFamily
-    font.pixelSize: Style.font.body
+    font.pixelSize: Style.font.subtitle
     lineHeight: 1.25
   }
 }

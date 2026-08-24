@@ -49,11 +49,11 @@ BlockCard {
     // The card's own sections: the details, the rule, the reminders. A wider
     // gap than the lines WITHIN the details, so the grouping is legible --
     // 4px inside a group, 12px between groups.
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     Row {
       width: parent.width
-      spacing: Style.spacing.md
+      spacing: Style.spacing.lg
 
       DateBadge {
         id: badge
@@ -62,10 +62,10 @@ BlockCard {
       }
 
       Column {
-        width: parent.width - badge.width - Style.spacing.md
+        width: parent.width - badge.width - Style.spacing.lg
         // The time, the place and the map link sat 3px apart, which read as one
         // wrapped paragraph rather than three separate facts.
-        spacing: Style.spacing.sm
+        spacing: Style.spacing.md
 
         Text {
           width: parent.width
@@ -76,7 +76,7 @@ BlockCard {
           wrapMode: Text.WordWrap
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.subtitle
         }
 
         Text {
@@ -86,18 +86,18 @@ BlockCard {
           text: root.item ? (root.item.location || "") : ""
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
 
         Row {
-          spacing: Style.spacing.md
+          spacing: Style.spacing.lg
 
           Text {
             visible: !!(root.item && root.item.location)
             text: "Google Maps"
             color: Color.accent
             font.family: Style.font.resolvedFamily
-            font.pixelSize: Style.font.caption
+            font.pixelSize: Style.font.body
             MouseArea {
               anchors.fill: parent
               cursorShape: Qt.PointingHandCursor
@@ -131,7 +131,7 @@ BlockCard {
     Column {
       visible: root.pendingReminders > 0
       width: parent.width
-      spacing: Style.spacing.xs
+      spacing: Style.spacing.sm
 
       Repeater {
         model: root.item ? (root.item.reminders || []) : []
@@ -143,7 +143,7 @@ BlockCard {
           text: Model.reminderLine(modelData)
           color: Color.accent
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.caption
+          font.pixelSize: Style.font.body
         }
       }
     }

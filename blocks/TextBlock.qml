@@ -26,7 +26,7 @@ BlockCard {
 
   Column {
     width: parent.width
-    spacing: Style.spacing.xs
+    spacing: Style.spacing.sm
 
     Text {
       width: parent.width
@@ -35,7 +35,7 @@ BlockCard {
       wrapMode: Text.WordWrap
       color: Color.popups.text
       font.family: root.payload.language ? "monospace" : Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
     Text {
@@ -44,7 +44,7 @@ BlockCard {
       text: "— " + (root.payload.attribution || "")
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
   }
 }

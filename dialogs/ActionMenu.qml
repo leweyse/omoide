@@ -20,7 +20,7 @@ Item {
 
   // One inset for both axes of a row. They were rowPaddingX (12) across and
   // sm (4) down, so the highlight was padded three times wider than it was tall.
-  readonly property real rowInset: Style.spacing.lg
+  readonly property real rowInset: Style.spacing.xl
 
   readonly property bool opened: panel.open
   // Fails closed. `!== false` treated a missing flag as available, which is the
@@ -150,14 +150,14 @@ Item {
           }
         }
 
-        Item { width: 1; height: Style.spacing.sm }
+        Item { width: 1; height: Style.spacing.md }
 
         PanelSeparator {
           width: parent.width
           foreground: Color.popups.text
         }
 
-        Item { width: 1; height: Style.spacing.sm }
+        Item { width: 1; height: Style.spacing.md }
 
         Repeater {
           model: root.entries
@@ -212,7 +212,7 @@ Item {
                   text: "default"
                   color: Color.popups.text
                   font.family: Style.font.resolvedFamily
-                  font.pixelSize: Style.font.body
+                  font.pixelSize: Style.font.subtitle
                 }
 
                 // Sets the default capture mode rather than running it, so it
@@ -254,7 +254,7 @@ Item {
                     text: modelData.glyph || ""
                     color: Color.popups.text
                     font.family: Style.font.resolvedFamily
-                    font.pixelSize: Style.font.body
+                    font.pixelSize: Style.font.subtitle
                   }
 
                   Column {
@@ -262,14 +262,14 @@ Item {
                     // Row owns x; y is ours, and setting it directly avoids
                     // anchoring inside the positioner.
                     y: Math.round((rowLayout.height - height) / 2)
-                    spacing: Style.spacing.hairline
+                    spacing: Style.spacing.xxs
 
                     Text {
                       text: modelData.label
                       textFormat: Text.PlainText
                       color: Color.popups.text
                       font.family: Style.font.resolvedFamily
-                      font.pixelSize: Style.font.body
+                      font.pixelSize: Style.font.subtitle
                     }
 
                     Text {
@@ -278,7 +278,7 @@ Item {
                       textFormat: Text.PlainText
                       color: Color.muted
                       font.family: Style.font.resolvedFamily
-                      font.pixelSize: Style.font.caption
+                      font.pixelSize: Style.font.body
                     }
                   }
                 }

@@ -50,9 +50,9 @@ Item {
     // the ring has to clear it -- otherwise focused and unfocused are one line
     // of accent either way.
     hostBorder: Math.max(1, Style.space(2))
-    // Two-tone, because the backdrop here is whatever the user captured. A
-    // single line can vanish into a photo of the same tone.
-    twoTone: true
+    // Corner marks: their line-in-halo pair keeps contrast against whatever
+    // the user captured, which no single fixed line can promise.
+    cornersOnly: true
     hasCursor: root.hasCursor
     hot: false
   }

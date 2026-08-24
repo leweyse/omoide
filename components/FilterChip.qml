@@ -19,7 +19,7 @@ BorderSurface {
   // keeps its own fill, so the two states stay distinguishable.
   readonly property bool hot: mouse.containsMouse
 
-  implicitWidth: content.implicitWidth + Style.spacing.md * 2
+  implicitWidth: content.implicitWidth + Style.spacing.lg * 2
   implicitHeight: Style.space(24)
   width: implicitWidth
   height: implicitHeight
@@ -58,7 +58,7 @@ BorderSurface {
   Row {
     id: content
     anchors.centerIn: parent
-    spacing: Style.spacing.sm
+    spacing: Style.spacing.md
 
     Text {
       anchors.verticalCenter: parent.verticalCenter
@@ -66,7 +66,7 @@ BorderSurface {
       text: root.icon
       color: root.selected ? Color.accent : Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
 
     Text {
@@ -79,7 +79,7 @@ BorderSurface {
       font.underline: root.selected
       color: root.selected ? Color.accent : Color.popups.text
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
+      font.pixelSize: Style.font.body
     }
 
     // Level with the label, not raised. It was offset up as a superscript,
@@ -91,7 +91,7 @@ BorderSurface {
       text: root.count
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Math.max(8, Style.font.caption - 2)
+      font.pixelSize: Math.max(8, Style.font.body - 2)
     }
   }
 }

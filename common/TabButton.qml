@@ -65,7 +65,7 @@ BorderSurface {
   Row {
     id: content
     anchors.centerIn: parent
-    spacing: Style.spacing.md
+    spacing: Style.spacing.lg
 
     Text {
       anchors.verticalCenter: parent.verticalCenter
@@ -75,7 +75,7 @@ BorderSurface {
       font.underline: root.selected
       color: root.selected ? Color.accent : root.foreground
       font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
     Text {
@@ -84,7 +84,7 @@ BorderSurface {
       text: root.count
       color: Color.muted
       font.family: root.fontFamily
-      font.pixelSize: Math.max(8, Style.font.body - 2)
+      font.pixelSize: Math.max(8, Style.font.subtitle - 2)
     }
   }
 }

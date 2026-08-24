@@ -138,13 +138,13 @@ FocusScope {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
 
-    Rectangle { anchors.fill: parent; color: Color.menu.scrim }
+    Scrim { anchors.fill: parent }
     MouseArea { anchors.fill: parent; onClicked: root.close() }
 
     BorderSurface {
       id: sheet
       anchors.centerIn: parent
-      width: Math.min(Style.space(620), parent.width - Style.gapsOut * 2)
+      width: Math.min(Style.space(760), parent.width - Style.gapsOut * 2)
       height: Math.min(layout.implicitHeight + Style.spacing.panelPadding * 2,
                        parent.height - Style.gapsOut * 2)
       radius: Style.cornerRadius
@@ -174,7 +174,7 @@ FocusScope {
           anchors.right: parent.right
           anchors.top: parent.top
           anchors.margins: Style.spacing.panelPadding
-          spacing: Style.spacing.xxl
+          spacing: Style.spacing.xxxl
 
           Item {
             width: parent.width
@@ -248,8 +248,8 @@ FocusScope {
             id: providerGrid
             width: parent.width
             columns: 2
-            columnSpacing: Style.spacing.md
-            rowSpacing: Style.spacing.md
+            columnSpacing: Style.spacing.lg
+            rowSpacing: Style.spacing.lg
             readonly property real cellWidth: (width - columnSpacing) / columns
 
             Repeater {
@@ -292,7 +292,7 @@ FocusScope {
             foreground: Color.menu.text
             accent: Color.accent
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.subtitle
             placeholderText: "my-agent --json"
             onTextChanged: root.customCommand = text
             Keys.onEscapePressed: function (event) {
@@ -313,7 +313,7 @@ FocusScope {
             foreground: Color.menu.text
             accent: Color.accent
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.subtitle
             placeholderText: "model to run, e.g. llama3.2"
             onTextChanged: root.model = text
             Keys.onEscapePressed: function (event) {
@@ -329,7 +329,7 @@ FocusScope {
 
           Column {
             width: parent.width
-            spacing: Style.spacing.md
+            spacing: Style.spacing.lg
 
             Text {
               text: "What the agent sees from a screenshot"
@@ -349,8 +349,8 @@ FocusScope {
               id: visionGrid
               width: parent.width
               columns: 2
-              columnSpacing: Style.spacing.md
-              rowSpacing: Style.spacing.md
+              columnSpacing: Style.spacing.lg
+              rowSpacing: Style.spacing.lg
               readonly property real cellWidth: (width - columnSpacing) / columns
 
               ChoiceCard {

@@ -117,7 +117,7 @@ Flickable {
     if (!it) return
     var top = it.mapToItem(layout, 0, 0).y
     var bottom = top + it.height
-    var pad = Style.spacing.xxl
+    var pad = Style.spacing.xxxl
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -181,7 +181,7 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     // Buttons, not chips: a chip is a filter you add to a set, a tab is a
     // switch between whole views, and at chip size it read as neither.
@@ -253,7 +253,7 @@ Flickable {
                                    : "Nothing completed yet.")
       color: Color.muted
       font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.subtitle
     }
 
   }

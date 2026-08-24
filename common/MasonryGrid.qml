@@ -9,7 +9,7 @@ Item {
 
   property var items: []
   property int columns: 3
-  property int spacing: Style.spacing.md
+  property int spacing: Style.spacing.lg
   property Component delegate: null
 
   // The focused card, addressed by memory id rather than by index. The grid
@@ -80,7 +80,7 @@ Item {
               ? Math.max(root.columnWidth * 0.34,
                   Math.min(root.columnWidth * 1.25, root.columnWidth / aspect))
               : 0
-    var text = Style.spacing.md * 2
+    var text = Style.spacing.lg * 2
                  + Style.space(20)
                  + (item && item.lede ? Style.space(30) : 0)
                  + (item && ((item.tags && item.tags.length) || item.openTodos)

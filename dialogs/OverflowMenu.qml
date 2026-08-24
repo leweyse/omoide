@@ -71,14 +71,14 @@ FocusScope {
   BorderSurface {
     id: card
     width: Style.space(150)
-    height: items.implicitHeight + Style.spacing.sm * 2
+    height: items.implicitHeight + Style.spacing.md * 2
     // Kept inside the surface, so a button near an edge does not push the menu
     // out of view.
-    x: Math.max(Style.spacing.md,
-                Math.min(root.width - width - Style.spacing.md, root.anchorX - width))
-    y: Math.max(Style.spacing.md,
-                Math.min(root.height - height - Style.spacing.md,
-                         root.anchorY + Style.spacing.xs))
+    x: Math.max(Style.spacing.lg,
+                Math.min(root.width - width - Style.spacing.lg, root.anchorX - width))
+    y: Math.max(Style.spacing.lg,
+                Math.min(root.height - height - Style.spacing.lg,
+                         root.anchorY + Style.spacing.sm))
     radius: Style.cornerRadius
     color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
                    Color.menu.background.b, 1.0)
@@ -91,7 +91,7 @@ FocusScope {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.top: parent.top
-      anchors.margins: Style.spacing.sm
+      anchors.margins: Style.spacing.md
       spacing: 0
 
       Repeater {
@@ -138,8 +138,8 @@ FocusScope {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.leftMargin: Style.spacing.sm
-            spacing: Style.spacing.sm
+            anchors.leftMargin: Style.spacing.md
+            spacing: Style.spacing.md
 
             Text {
               // Fixed-width slot, so every label starts at the same x whatever
@@ -151,7 +151,7 @@ FocusScope {
               text: modelData.glyph || ""
               color: entryRow.tint
               font.family: Style.font.resolvedFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.subtitle
             }
 
             Text {
@@ -161,7 +161,7 @@ FocusScope {
               textFormat: Text.PlainText
               color: entryRow.tint
               font.family: Style.font.menuFamily
-              font.pixelSize: Style.font.body
+              font.pixelSize: Style.font.subtitle
             }
           }
         }

@@ -130,11 +130,11 @@ Flickable {
     x: Style.spacing.panelPadding
     y: 0
     width: root.width - Style.spacing.panelPadding * 2
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xxxl
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.lg
       visible: (root.index.events || []).length > 0
 
       Row {
@@ -158,7 +158,7 @@ Flickable {
         // uniform anyway, and each one centres its own content vertically.
         height: Style.space(96)
         orientation: ListView.Horizontal
-        spacing: Style.spacing.md
+        spacing: Style.spacing.lg
         clip: true
         model: root.events
 
@@ -179,7 +179,7 @@ Flickable {
 
     Column {
       width: parent.width
-      spacing: Style.spacing.sm
+      spacing: Style.spacing.lg
 
       Item {
         width: parent.width
@@ -200,7 +200,7 @@ Flickable {
           text: "›"
           color: Color.muted
           font.family: Style.font.resolvedFamily
-          font.pixelSize: Style.font.subtitle
+          font.pixelSize: Style.font.title
           MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
@@ -229,7 +229,7 @@ Flickable {
         text: "No open to-dos."
         color: Color.muted
         font.family: Style.font.resolvedFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.subtitle
       }
     }
   }

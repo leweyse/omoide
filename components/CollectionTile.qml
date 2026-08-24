@@ -23,7 +23,7 @@ BorderSurface {
   readonly property var thumbs: (collection && collection.thumbs) || []
   readonly property string cover: root.thumbs.length > 0 ? root.thumbs[0] : ""
 
-  readonly property real pad: Style.spacing.xxl
+  readonly property real pad: Style.spacing.xxxl
 
   // Wide, not square: the name needs room to wrap to two or three lines beside
   // the cover rather than being elided at every collection worth naming.
@@ -41,6 +41,7 @@ BorderSurface {
   FocusRing {
     anchors.fill: parent
     radius: root.radius
+    cornersOnly: true
     hasCursor: root.hasCursor
     hot: hoverArea.containsMouse
   }
@@ -77,7 +78,7 @@ BorderSurface {
     text: root.collection ? (root.collection.count || 0) : 0
     color: Color.muted
     font.family: Style.font.resolvedFamily
-    font.pixelSize: Style.font.caption
+    font.pixelSize: Style.font.body
   }
 
   // Bottom-aligned, so the name grows upward into the space the count leaves
@@ -97,6 +98,6 @@ BorderSurface {
     lineHeight: 1.15
     color: Color.popups.text
     font.family: Style.font.resolvedFamily
-    font.pixelSize: Style.font.subtitle
+    font.pixelSize: Style.font.title
   }
 }
