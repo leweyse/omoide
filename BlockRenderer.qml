@@ -24,6 +24,17 @@ Column {
   property var only: []
   property var except: []
 
+  // The focused block, by id. The page owns the cursor because the blocks are
+  // split across three renderers -- image above the title, event next, the rest
+  // below -- and only the page knows the order they read in.
+  property string cursorId: ""
+  // Whether to PAINT it. The page keeps its place when focus moves to a sibling
+  // region but must stop showing a ring, or two highlights sit on screen.
+  property bool cursorActive: true
+  // Row cursor for a to-dos card that has been drilled into, or -1. Applies to
+  // whichever card holds cursorId -- only the focused one can be drilled into.
+  property int rowCursor: -1
+
   readonly property var shownBlocks: {
     var all = (renderer.memory && renderer.memory.blocks) || []
     var out = []
@@ -59,7 +70,18 @@ Column {
     return out
   }
 
+  // The loaded cell for a block id, or null. Only the Repeater knows a card's
+  // real geometry, and cards vary in height by a factor of ten here.
+  function cellFor(id) {
+    for (var i = 0; i < rep.count; i++) {
+      var cell = rep.itemAt(i)
+      if (cell && cell.modelData && cell.modelData.id === id) return cell
+    }
+    return null
+  }
+
   Repeater {
+    id: rep
     model: renderer.shownBlocks
 
     delegate: Loader {
@@ -115,6 +137,20 @@ Column {
         target: slot.item
         property: "service"
         value: renderer.service
+      }
+
+      Binding {
+        target: slot.item
+        property: "cursor"
+        when: slot.modelData.type === "todos"
+        value: slot.modelData.id === renderer.cursorId ? renderer.rowCursor : -1
+      }
+
+      Binding {
+        target: slot.item
+        property: "hasCursor"
+        value: renderer.cursorActive && renderer.cursorId.length > 0
+               && slot.modelData.id === renderer.cursorId
       }
 
       Binding {

@@ -39,6 +39,11 @@ Flickable {
       root.results = []
       root.appliedQuery = ""
       root.awaiting = false
+      // Explicit, because assigning a property its existing value emits nothing:
+      // after a search that returned nothing, `results` is already [] and
+      // clearing the field leaves it [], so refreshView would never run and the
+      // grid would keep showing the empty result set.
+      root.refreshView()
       return
     }
     root.awaiting = true
@@ -113,12 +118,239 @@ Flickable {
   property var shownMemories: []
   property var shownFacets: []
 
+  // --- keyboard ------------------------------------------------------------
+  //
+  // Two Tab regions -- Collections, then Captures -- plus the filter chips,
+  // which are a drill-in reached with "f" and left with Esc rather than a Tab
+  // sibling. They are page state you toggle while watching the grid change, not
+  // a place you pass through on the way somewhere.
+
+  readonly property bool hasCollections:
+    !root.searching && (root.index.collections || []).length > 0
+
+  // Named, not numbered: region 0 is Collections when there are any and
+  // Captures when there are not, and an integer alone made that unreadable.
+  readonly property var regionNames:
+    root.hasCollections ? ["collections", "captures"] : ["captures"]
+  readonly property int regionCount: root.regionNames.length
+  property int region: 0
+  readonly property string regionName:
+    root.regionNames[Math.min(root.region, root.regionCount - 1)]
+
+  // Cursor within the collections row. The grid keeps its own, by memory id.
+  property int collectionCursor: -1
+  // Cursor within the filter chips, or -1 when the chips do not have focus.
+  //
+  // Indexes filterChips, NOT shownFacets: the "All" chip is drawn before the
+  // facet Repeater, so a cursor over shownFacets alone made Left off the first
+  // facet run past the start of the row and drop out of the chips entirely --
+  // "All" was unreachable.
+  property int filterCursor: -1
+
+  readonly property var filterChips:
+    [{ id: "", label: "All" }].concat(root.shownFacets)
+
+  // Takes the index explicitly instead of reading `regionName`.
+  //
+  // `regionName` is a binding on `region`, and the order between a binding
+  // updating and that property's own change handler running is not defined. Read
+  // from inside onRegionChanged it came back STALE -- still "captures" one frame
+  // after moving to Collections -- so the handler seeded the grid instead of the
+  // tile and nothing ended up focused at all. `regionNames` depends on
+  // hasCollections, not on region, so resolving through it here is safe.
+  function nameOf(i) {
+    var names = root.regionNames
+    return names[Math.max(0, Math.min(i, names.length - 1))]
+  }
+
+  // Seeds the cursor for whichever region just took focus. Entering Captures
+  // starts at column 0; a caller that wants a different column (crossing down
+  // from a tile) sets the region first and then moves it.
+  function enterRegion(i) {
+    root.filterCursor = -1
+    if (root.nameOf(i) === "collections")
+      root.collectionCursor = (root.index.collections || []).length > 0 ? 0 : -1
+    else
+      grid.focusColumn(0)
+  }
+
+  onRegionChanged: root.enterRegion(root.region)
+
+  function focusFirst() {
+    root.region = 0
+    // Explicitly, not via the change handler: entering the page when region is
+    // already 0 fires nothing at all.
+    root.enterRegion(0)
+  }
+
+  function pageKey(event) {
+    // The chips own every key while they have focus, so nothing here can steal
+    // one out from under them.
+    if (root.filterCursor >= 0) return root.filterKey(event)
+
+    // Search's second Esc rung. The field itself takes the first one and blurs
+    // to the page; this one puts the bar away. The dialog only gets the third.
+    if (event.key === Qt.Key_Escape && root.searchOpen) {
+      if (event.isAutoRepeat) return true
+      root.closeSearch()
+      return true
+    }
+
+    if (event.text === "f" && root.shownFacets.length > 0) {
+      // 0 is "All", the leftmost chip -- the same first-item rule as everywhere.
+      root.filterCursor = 0
+      return true
+    }
+
+    if (root.regionName === "collections") return root.collectionsKey(event)
+    return root.capturesKey(event)
+  }
+
+  function filterKey(event) {
+    var chips = root.filterChips
+    if (event.key === Qt.Key_Right || event.key === Qt.Key_Left) {
+      var moved = Model.stepList(chips.length, root.filterCursor,
+                                 event.key === Qt.Key_Right ? 1 : -1)
+      // Left off the first chip drops focus back to where it came from rather
+      // than escaping to the sidebar: the chips are a drill-in, one level deep.
+      if (moved === null) {
+        if (event.key === Qt.Key_Left) root.filterCursor = -1
+        return true
+      }
+      root.filterCursor = moved
+      return true
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      var chip = chips[root.filterCursor]
+      // "All" carries an empty id, so toggling it off would be a no-op. Clear.
+      if (chip) root.facet = (chip.id.length === 0 || root.facet === chip.id)
+                             ? "" : chip.id
+      return true
+    }
+    // Esc leaves the chips. Handled here so it never reaches the dialog's
+    // unwind and closes the whole window instead.
+    if (event.key === Qt.Key_Escape) {
+      if (!event.isAutoRepeat) root.filterCursor = -1
+      return true
+    }
+    return true
+  }
+
+  function collectionsKey(event) {
+    var all = root.index.collections || []
+    if (event.key === Qt.Key_Right || event.key === Qt.Key_Left) {
+      var moved = Model.stepList(all.length, root.collectionCursor,
+                                 event.key === Qt.Key_Right ? 1 : -1)
+      // Left off the first tile is not consumed: the dialog takes it and
+      // returns to the sidebar.
+      if (moved === null) return event.key === Qt.Key_Right
+      root.collectionCursor = moved
+      return true
+    }
+    if (event.key === Qt.Key_Down) {
+      // Cross into the grid under the tile you were on, not at the first card.
+      //
+      // The stride comes from the live delegate rather than a constant. It used
+      // to be Style.space(112) -- the tile's HEIGHT standing in for its width,
+      // which was already wrong and became wrong by 100px when the tile was
+      // reshaped. Asking the row cannot drift.
+      var first = collectionsRow.itemAtIndex(0)
+      var tileW = first ? first.width : Style.space(216)
+      var stride = tileW + collectionsRow.spacing
+      var centre = root.collectionCursor * stride + stride / 2
+      var col = Model.columnAt(centre, grid.columns, grid.columnWidth, grid.spacing)
+      if (root.regionCount > 1) {
+        root.region = root.regionNames.indexOf("captures")
+        // After the region change, so this wins over its column-0 default.
+        grid.focusColumn(col)
+        root.collectionCursor = -1
+      }
+      return true
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      var one = all[root.collectionCursor]
+      if (one) root.openCollection(one.name)
+      return true
+    }
+    return false
+  }
+
+  function capturesKey(event) {
+    if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
+        || event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+      var dx = event.key === Qt.Key_Right ? 1 : (event.key === Qt.Key_Left ? -1 : 0)
+      var dy = event.key === Qt.Key_Down ? 1 : (event.key === Qt.Key_Up ? -1 : 0)
+      if (grid.moveCursor(dx, dy)) return true
+      // Nothing that way. Up out of the grid goes back to the collections row;
+      // Left at the first column falls through so the dialog can take it.
+      if (dy < 0 && root.regionCount > 1) {
+        root.region = root.regionNames.indexOf("collections")
+        return true
+      }
+      return event.key !== Qt.Key_Left
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      if (grid.cursorId.length) root.openMemory(grid.cursorId)
+      return true
+    }
+    return false
+  }
+
+  // Content coordinates, via the layout Column: a card sits inside a column
+  // inside the grid, so its own y says nothing about where it is on the page.
+  function ensureVisible() {
+    var cell = grid.cursorCell
+    if (!cell) return
+    var top = cell.mapToItem(layout, 0, 0).y
+    var bottom = top + cell.height
+    var pad = Style.spacing.xxl
+    var limit = Math.max(0, root.contentHeight - root.height)
+    if (top - pad < root.contentY)
+      root.contentY = Math.max(0, top - pad)
+    else if (bottom + pad > root.contentY + root.height)
+      root.contentY = Math.min(limit, bottom + pad - root.height)
+  }
+
+  function facetOffered(id) {
+    for (var i = 0; i < root.shownFacets.length; i++)
+      if (root.shownFacets[i].id === id) return true
+    return false
+  }
+
   function refreshView() {
-    root.shownMemories = root.visibleMemories()
     root.shownFacets = root.computeFacets()
+
+    // Drop a filter the chip row no longer offers. It matches nothing, and with
+    // no chip on screen there is nothing left to click to undo it -- the grid
+    // reads as empty and broken. Clearing re-enters through onFacetChanged and
+    // falls straight through this branch the second time.
+    //
+    // Only while NOT searching: a query that narrows the set can legitimately
+    // leave a facet with no matches, and a facet on top of a query is a
+    // combination worth keeping rather than silently discarding.
+    if (!root.searching && root.facet.length > 0
+        && !root.facetOffered(root.facet)) {
+      root.facet = ""
+      return
+    }
+
+    root.shownMemories = root.visibleMemories()
+    // The grid's columns derive from shownMemories, so a first-item focus that
+    // ran before the index landed had no card to sit on. Seed it now.
+    if (root.filterCursor < 0) {
+      if (root.nameOf(root.region) === "captures" && grid.cursorId.length === 0)
+        grid.focusColumn(0)
+      else if (root.nameOf(root.region) === "collections"
+               && root.collectionCursor < 0
+               && (root.index.collections || []).length > 0)
+        root.collectionCursor = 0
+    }
   }
 
   onFacetChanged: refreshView()
+  // `searching` is derived from searchOpen, and it decides whether the grid
+  // reads the index or the result set. Nothing recomputed when it flipped.
+  onSearchOpenChanged: refreshView()
   onResultsChanged: refreshView()
   onAppliedQueryChanged: refreshView()
   Component.onCompleted: refreshView()
@@ -204,16 +436,25 @@ Flickable {
       }
 
       ListView {
+        id: collectionsRow
         width: parent.width
+        // Matches CollectionTile's own height. A horizontal ListView forces its
+        // delegates' height, so this IS the tile height.
         height: Style.space(112)
         orientation: ListView.Horizontal
         spacing: Style.spacing.md
         clip: true
         model: root.index.collections || []
 
+        // Wrapped so the exclusion ring is a SIBLING of the tile: a
+        // ShaderEffectSource pointing at an ancestor recurses.
         delegate: Root.CollectionTile {
           required property var modelData
+          required property int index
           collection: modelData
+          hasCursor: root.regionName === "collections"
+                     && root.filterCursor < 0
+                     && root.collectionCursor === index
           // Opens the collection as its own page. It used to toggle a facet on
           // this grid, which meant a collection had no place of its own and no
           // way to be renamed or removed.
@@ -284,6 +525,7 @@ Flickable {
             spacing: Style.spacing.sm
 
             Root.FilterChip {
+              hasCursor: root.filterCursor === 0
               label: "All"
               count: root.searching ? root.results.length
                                     : ((root.index.memories || []).length)
@@ -296,6 +538,9 @@ Flickable {
 
               delegate: Root.FilterChip {
                 required property var modelData
+                required property int index
+                // +1 for the "All" chip ahead of this Repeater.
+                hasCursor: root.filterCursor === index + 1
                 label: modelData.label
                 count: modelData.count
                 selected: root.facet === modelData.id
@@ -347,7 +592,9 @@ Flickable {
         height: root.searchOpen ? field.height + Style.spacing.lg : 0
         visible: root.searchOpen
 
-        TextField {
+        Root.AccentField {
+
+          ringBackdrop: Color.popups.background
           id: field
           anchors.left: parent.left
           anchors.right: parent.right
@@ -362,6 +609,9 @@ Flickable {
             searchDebounce.restart()
           }
           Keys.onEscapePressed: function (event) {
+            // Only on a real press. Holding Escape auto-repeats, and each repeat
+            // would dismiss another layer -- a held key unwound the whole stack.
+            if (event.isAutoRepeat) { event.accepted = true; return }
             // First Esc leaves the field, a second closes search entirely --
             // consistent with how Esc unwinds everywhere else.
             focusSink.forceActiveFocus()
@@ -388,8 +638,11 @@ Flickable {
 
 
       Root.MasonryGrid {
+        id: grid
         width: parent.width
         items: root.shownMemories
+        cursorActive: root.regionName === "captures" && root.filterCursor < 0
+        onCursorMoved: root.ensureVisible()
         columns: Math.max(2, Math.floor(width / Style.space(230)))
         delegate: cardDelegate
       }

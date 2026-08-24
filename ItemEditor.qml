@@ -16,7 +16,18 @@ import "MemoryModel.js" as Model
 // A to-do has no date of its own here. Its time follows its earliest reminder,
 // which is what the archive groups on. An event keeps its own Starts, because
 // an event's time is the thing itself and its reminders are offsets from it.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden -- a reminder row removed by its own delete
+// button -- or a field swallowing Escape left NOTHING focused, and with nothing
+// focused no Keys handler in the dialog could fire. The keyboard died and no
+// number of Escapes brought it back.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler below sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property var service: null
@@ -46,11 +57,28 @@ Item {
   // discards what is half-typed in the others.
   property var draftReminders: []
 
+  // False until the first load of a freshly opened dialog has placed focus.
+  property bool seeded: false
+
   function open(id) {
     root.itemId = id
     root.opened = true
+    root.seeded = false
     root.reload()
-    Qt.callLater(function () { editorKeys.forceActiveFocus() })
+    // The first item, not the key catcher: focusing the catcher left the dialog
+    // with nothing highlighted and no clue where Tab would go. The memory link
+    // comes before the To-do field when there is one, matching the reading order.
+    // Only for the case where reload() will NOT run, so nothing else would place
+    // focus. Testing `seeded` instead would be a race that this side always
+    // wins: callLater fires on the next tick, while reload waits on a
+    // subprocess, so the fallback would claim focus every time and the memory
+    // link would never get it.
+    if (!root.service || !root.itemId) {
+      Qt.callLater(function () {
+        root.seeded = true
+        titleField.forceActiveFocus()
+      })
+    }
   }
 
   function close() {
@@ -75,6 +103,18 @@ Item {
         rows.push({ id: reminders[i].id, date: parts.date, time: parts.time })
       }
       root.draftReminders = rows
+
+      // Focus here, not in open(): hasMemoryLink is derived from `item`, which
+      // this callback is what delivers. Deciding in open() always ran before the
+      // fetch returned, so the link was never the first stop.
+      //
+      // Guarded, because reload() also runs after a save -- re-focusing then
+      // would yank the cursor out from under whatever the user was doing.
+      if (!root.seeded) {
+        root.seeded = true
+        if (root.hasMemoryLink) memoryLink.forceActiveFocus()
+        else titleField.forceActiveFocus()
+      }
     })
   }
 
@@ -171,6 +211,23 @@ Item {
   }
 
   visible: opened
+
+  // Escape, on the ROOT so it catches the key wherever focus happens to be.
+  //
+  // Key events travel up the focused item's PARENT chain. An inner catcher that
+  // is a sibling of the content is never on that chain, so once anything else
+  // took focus -- a button, a chip, the memory link -- Escape passed the catcher
+  // by, reached SpaceWindow, and died there: unwind() steps aside for an open
+  // overlay, expecting the overlay to handle its own. The dialog became
+  // uncloseable by keyboard.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
   z: 50
 
   Rectangle {
@@ -200,7 +257,12 @@ Item {
       anchors.fill: parent
       focus: true
       Keys.onPressed: function (event) {
-        if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true }
+        if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
       }
     }
 
@@ -215,28 +277,95 @@ Item {
       // Where this to-do came from, at the top: it is context for everything
       // below, not one of the actions at the bottom. Its rule appears with it,
       // so the header block never leaves a stray line behind.
-      Text {
-        visible: root.hasMemoryLink
+      //
+      // Accepting a suggestion sits out here at the far right rather than in the
+      // bottom row, because it is not an edit: it changes what the item IS, and
+      // the bottom row is Cancel and Save for the fields. An Item, not a Row, so
+      // a long title elides against the button instead of shoving it off the
+      // edge.
+      Item {
+        visible: root.hasMemoryLink || root.suggested
         width: parent.width
-        text: root.item.memoryTitle
-              ? "in “" + Model.truncate(root.item.memoryTitle, 40) + "”" : ""
-        elide: Text.ElideRight
-        color: Color.accent
-        font.family: Style.font.menuFamily
-        font.pixelSize: Style.font.caption
+        height: Math.max(memoryLink.implicitHeight, acceptButton.height)
 
-        MouseArea {
-          anchors.fill: parent
-          cursorShape: Qt.PointingHandCursor
-          onClicked: {
+        Text {
+          id: memoryLink
+          visible: root.hasMemoryLink
+          // A real tab stop, not just a clickable label: it is the first thing
+          // in the dialog, so the keyboard has to be able to reach it.
+          activeFocusOnTab: root.hasMemoryLink
+          // Underlined rather than boxed. It is a link, and the text is already
+          // the accent colour, so an accent rule under it reads as focus without
+          // pretending to be a button or shifting the layout.
+          font.underline: memoryLink.activeFocus
+          Keys.onReturnPressed: function (event) {
             root.openMemory(root.item.memoryId)
             root.close()
+            event.accepted = true
           }
+          Keys.onEnterPressed: function (event) {
+            root.openMemory(root.item.memoryId)
+            root.close()
+            event.accepted = true
+          }
+          anchors.left: parent.left
+          anchors.right: acceptButton.visible ? acceptButton.left : parent.right
+          anchors.rightMargin: acceptButton.visible ? Style.spacing.md : 0
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.item.memoryTitle
+                ? "in “" + Model.truncate(root.item.memoryTitle, 40) + "”" : ""
+          elide: Text.ElideRight
+          color: Color.accent
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.caption
+
+          MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+              root.openMemory(root.item.memoryId)
+              root.close()
+            }
+          }
+        }
+
+        // Outlined, matching the reminder's remove button on the same sheet.
+        PanelActionButton {
+          focusable: true
+          FocusRing {
+            anchors.fill: parent
+            radius: parent.radius
+            gap: 1
+            hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+            hot: false
+          }
+          // Full-strength accent on focus. controlSpec("focus") applies
+          // focusBorderAlpha (0.25), which read as grey. No `selected` or
+          // `accent` on this type -- it has foreground and `bordered`.
+          borderSpec: activeFocus
+                      ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                      : (bordered
+                         ? Border.controlSpec("normal", foreground, foreground)
+                         : Border.none())
+          id: acceptButton
+          visible: root.suggested
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          bordered: true
+          iconText: "+"
+          tooltipText: "Add to-do"
+          size: Style.space(24)
+          foreground: Color.menu.text
+          hoverColor: Color.accent
+          fontFamily: Style.font.menuFamily
+          onClicked: root.runQueue([["item", "promote", "--id", root.itemId]],
+                                   function () { root.changed(); root.close() })
         }
       }
 
       PanelSeparator {
-        visible: root.hasMemoryLink
+        visible: root.hasMemoryLink || root.suggested
         width: parent.width
         foreground: Color.menu.text
       }
@@ -255,18 +384,15 @@ Item {
           fontFamily: Style.font.menuFamily
         }
 
-        TextField {
+        AccentField {
           id: titleField
+          escapeTo: editorKeys
           width: parent.width
           foreground: Color.menu.text
           accent: Color.accent
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.body
           placeholderText: "Title"
-          Keys.onEscapePressed: function (event) {
-            editorKeys.forceActiveFocus()
-            event.accepted = true
-          }
         }
       }
 
@@ -283,7 +409,7 @@ Item {
           font.pixelSize: Style.font.caption
         }
 
-        DateTimeField { id: startsField }
+        DateTimeField { id: startsField; escapeTo: editorKeys }
       }
 
       Column {
@@ -324,6 +450,7 @@ Item {
             visible: !removed
 
             DateTimeField {
+              escapeTo: editorKeys
               id: when
               anchors.left: parent.left
               Component.onCompleted: when.set(modelData.date, modelData.time)
@@ -333,6 +460,23 @@ Item {
             // floating beside two bordered fields read as decoration rather
             // than something you could press.
             PanelActionButton {
+              focusable: true
+              FocusRing {
+                anchors.fill: parent
+                radius: parent.radius
+                gap: 1
+                hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+                hot: false
+              }
+              // Full-strength accent on focus. controlSpec("focus") applies
+              // focusBorderAlpha (0.25), which read as grey. No `selected` or
+              // `accent` on this type -- it has foreground and `bordered`.
+              borderSpec: activeFocus
+                          ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                          : (bordered
+                             ? Border.controlSpec("normal", foreground, foreground)
+                             : Border.none())
               anchors.right: parent.right
               anchors.verticalCenter: when.verticalCenter
               bordered: true
@@ -342,7 +486,17 @@ Item {
               foreground: Color.menu.text
               hoverColor: Color.urgent
               fontFamily: Style.font.menuFamily
-              onClicked: reminderRow.removed = true
+              onClicked: {
+                // Focus FIRST, then hide. This button is what has focus, and an
+                // invisible item cannot hold it -- Qt drops it, and with nothing
+                // focused in the dialog no Keys handler fires at all, so the
+                // whole keyboard went dead including Escape.
+                //
+                // The Add chip, not the catcher: having just removed a row, the
+                // next thing within reach should be adding one.
+                addReminderChip.forceActiveFocus()
+                reminderRow.removed = true
+              }
             }
           }
         }
@@ -350,6 +504,8 @@ Item {
         // A chip, matching "Add to collection" and "Link a memory": all three
         // are the same thing -- an inline control that adds a row.
         Chip {
+          id: addReminderChip
+          focusable: true
           label: "+  Add a reminder"
           tint: Color.muted
           outlined: true
@@ -371,6 +527,22 @@ Item {
         // like the plain text of a link. Urgent accent, so its border and hover
         // read as destructive without the resting state shouting.
         Button {
+          focusable: true
+          FocusRing {
+            anchors.fill: parent
+            radius: parent.radius
+            gap: 1
+            hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+            hot: false
+          }
+          // Full-strength accent on focus. controlSpec("focus")
+          // applies focusBorderAlpha (0.25), which read as grey.
+          borderSpec: activeFocus
+                      ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                      : Border.controlSpec(
+                          selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+                          foreground, accent)
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
           text: "Delete"
@@ -393,6 +565,37 @@ Item {
           spacing: Style.spacing.controlGap
 
           Button {
+
+            focusable: true
+
+            FocusRing {
+
+              anchors.fill: parent
+
+              radius: parent.radius
+
+              gap: 1
+
+              hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+
+              hot: false
+
+            }
+
+            // Full-strength accent on focus. controlSpec("focus")
+
+            // applies focusBorderAlpha (0.25), which read as grey.
+
+            borderSpec: activeFocus
+
+                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+
+                        : Border.controlSpec(
+
+                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+
+                            foreground, accent)
             text: "Cancel"
             foreground: Color.menu.text
             background: Color.menu.background
@@ -400,23 +603,42 @@ Item {
             onClicked: root.close()
           }
 
-          // Accepting is its own act, not part of Save: a suggestion becomes a
-          // real to-do and picks up an alarm if it has a time.
           Button {
-            visible: root.suggested
-            text: "Add"
-            selected: true
-            foreground: Color.menu.text
-            background: Color.menu.background
-            accent: Color.accent
-            fontFamily: Style.font.menuFamily
-            onClicked: root.runQueue([["item", "promote", "--id", root.itemId]],
-                                     function () { root.changed(); root.close() })
-          }
 
-          Button {
+            focusable: true
+
+            FocusRing {
+
+              anchors.fill: parent
+
+              radius: parent.radius
+
+              gap: 1
+
+              hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+
+              hot: false
+
+            }
+
+            // Full-strength accent on focus. controlSpec("focus")
+
+            // applies focusBorderAlpha (0.25), which read as grey.
+
+            borderSpec: activeFocus
+
+                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+
+                        : Border.controlSpec(
+
+                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+
+                            foreground, accent)
             text: "Save"
-            selected: !root.suggested
+            // Primary on a suggestion too, now that accepting has moved up to
+            // the header and stopped competing with it down here.
+            selected: true
             foreground: Color.menu.text
             background: Color.menu.background
             accent: Color.accent

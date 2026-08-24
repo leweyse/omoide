@@ -9,7 +9,18 @@ import qs.Ui
 // against this plugin's sheets. Everything here comes from a token -- the
 // card's radius, its padding, the button chrome -- so it matches ItemEditor,
 // SettingsDialog and the compose overlay, and follows a theme change with them.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden -- a reminder row removed by its own delete
+// button -- or a field swallowing Escape left NOTHING focused, and with nothing
+// focused no Keys handler in the dialog could fire. The keyboard died and no
+// number of Escapes brought it back.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler below sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property bool opened: false
@@ -32,6 +43,16 @@ Item {
 
   visible: opened
 
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.canceled()
+      event.accepted = true
+    }
+  }
+
   Rectangle {
     anchors.fill: parent
     color: Color.menu.scrim
@@ -48,11 +69,13 @@ Item {
     focus: root.opened
 
     Keys.onPressed: function (event) {
+      // Both guarded. A held Escape unwound every layer; a held Return
+      // would fire a destructive confirm more than once.
       if (event.key === Qt.Key_Escape) {
-        root.canceled()
+        if (!event.isAutoRepeat) root.canceled()
         event.accepted = true
       } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-        root.confirmed()
+        if (!event.isAutoRepeat) root.confirmed()
         event.accepted = true
       }
     }

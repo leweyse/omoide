@@ -32,6 +32,45 @@ Flickable {
   contentWidth: width
   // Bottom inset only. The gap above belongs to the window's view loader, so it
   // is chrome and survives scrolling.
+  // --- keyboard ------------------------------------------------------------
+  //
+  // One region: the captures grid. The walk itself belongs to MasonryGrid, so
+  // this page only says what opening a card means and where to scroll.
+
+  readonly property int regionCount: 1
+  property int region: 0
+
+  function focusFirst() { grid.focusColumn(0) }
+
+  function pageKey(event) {
+    if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
+        || event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+      var dx = event.key === Qt.Key_Right ? 1 : (event.key === Qt.Key_Left ? -1 : 0)
+      var dy = event.key === Qt.Key_Down ? 1 : (event.key === Qt.Key_Up ? -1 : 0)
+      if (grid.moveCursor(dx, dy)) return true
+      // Left at the first column falls through so the dialog can take it.
+      return event.key !== Qt.Key_Left
+    }
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      if (grid.cursorId.length) root.openMemory(grid.cursorId)
+      return true
+    }
+    return false
+  }
+
+  function ensureVisible() {
+    var cell = grid.cursorCell
+    if (!cell) return
+    var top = cell.mapToItem(layout, 0, 0).y
+    var bottom = top + cell.height
+    var pad = Style.spacing.xxl
+    var limit = Math.max(0, root.contentHeight - root.height)
+    if (top - pad < root.contentY)
+      root.contentY = Math.max(0, top - pad)
+    else if (bottom + pad > root.contentY + root.height)
+      root.contentY = Math.min(limit, bottom + pad - root.height)
+  }
+
   contentHeight: layout.implicitHeight + Style.spacing.panelPadding
   clip: true
   boundsBehavior: Flickable.StopAtBounds
@@ -103,8 +142,10 @@ Flickable {
     }
 
     Root.MasonryGrid {
+      id: grid
       width: parent.width
       items: root.memories
+      onCursorMoved: root.ensureVisible()
       columns: Math.max(2, Math.floor(width / Style.space(230)))
       delegate: cardDelegate
     }

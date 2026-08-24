@@ -8,6 +8,7 @@ BorderSurface {
   id: root
 
   property var memory: ({})
+  property bool hasCursor: false
   signal opened()
   signal removed()
 
@@ -19,7 +20,14 @@ BorderSurface {
                      label.implicitHeight + Style.spacing.md * 2 + Style.space(14))
   radius: Style.cornerRadius
   color: Color.popups.background
-  borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+  // The outline-button border, not popups.border -- that token defaults to the
+  // ACCENT, so an accent focus ring was invisible against every unfocused card.
+  // Accent on focus. The width does NOT change -- a card measures its height
+  // as content plus border widths, so a thicker focus border would resize the
+  // card and reflow the grid on every arrow key.
+  borderSpec: root.hasCursor
+              ? Border.flat(Color.accent, 1)
+              : Border.controlSpec("normal", Color.popups.text, Color.accent)
   clip: true
 
   RoundedImage {
@@ -32,7 +40,20 @@ BorderSurface {
     radius: Math.max(0, Style.cornerRadius - root.borderLeft)
   }
 
+  FocusRing {
+    anchors.fill: parent
+    radius: root.radius
+    hasCursor: root.hasCursor
+    // Artwork bleeds under the ring on this card, so it gets the dark
+    // companion line: whichever of the two loses contrast against the
+    // thumbnail, the other keeps it.
+    twoTone: true
+    hot: relatedHover.containsMouse
+  }
+
   MouseArea {
+    id: relatedHover
+    hoverEnabled: true
     anchors.fill: parent
     cursorShape: Qt.PointingHandCursor
     onClicked: root.opened()

@@ -3,7 +3,8 @@ import qs.Commons
 import qs.Ui
 import "MemoryModel.js" as Model
 
-// Related captures: only what the user linked, plus a picker to link more.
+// Related captures: only what the user linked, plus a chip that opens the
+// link picker. The picker itself is a dialog owned by SpaceWindow.
 //
 // Nothing is inferred. Whether two captures are related is a judgement about
 // meaning, and scoring shared tags and word overlap either offered everything
@@ -14,9 +15,16 @@ Column {
   property var service: null
   property string memoryId: ""
   property var linked: []
-  property bool picking: false
+  // Which linked capture the keyboard is on, or -1.
+  property int cursor: -1
+  // The cursor sits on the section's own chip when it is one past the last card.
+  readonly property bool chipFocused:
+    root.cursor >= 0 && root.cursor === (root.linked || []).length
 
   signal openMemory(string id)
+  // The link picker is a dialog owned by the window, so this section only
+  // asks for it -- it no longer swaps a search field in under the cursor.
+  signal linkRequested()
 
   spacing: Style.spacing.sm
 
@@ -29,28 +37,13 @@ Column {
     })
   }
 
-  function loadCandidates(query) {
-    if (!service || !memoryId) return
-    var args = ["candidates", "--id", memoryId]
-    if (query && query.trim().length) args = args.concat(["--q", query.trim()])
-    service.call(args, function (code, json) {
-      picker.candidates = (json && json.candidates) || []
-    })
-  }
-
   function act(verb, otherId) {
     if (!service) return
     service.call(["link", verb, "--from", root.memoryId, "--to", otherId],
-                 function () {
-                   root.reload()
-                   if (root.picking) root.loadCandidates(picker.query)
-                 })
+                 function () { root.reload() })
   }
 
-  onMemoryIdChanged: {
-    root.picking = false
-    reload()
-  }
+  onMemoryIdChanged: reload()
 
   PanelSectionHeader {
     text: "Related captures"
@@ -58,126 +51,12 @@ Column {
     fontFamily: Style.font.resolvedFamily
   }
 
-  // --- the picker ----------------------------------------------------------
-  Column {
-    id: picker
-    property var candidates: []
-    property string query: ""
-
-    width: parent.width
-    spacing: Style.spacing.sm
-    visible: root.picking
-
-    TextField {
-      width: parent.width
-      foreground: Color.popups.text
-      accent: Color.accent
-      font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.body
-      placeholderText: "Search memories to link…"
-      onTextChanged: {
-        picker.query = text
-        pickerDebounce.restart()
-      }
-      Keys.onEscapePressed: function (event) {
-        focusSink.forceActiveFocus()
-        event.accepted = true
-      }
-    }
-
-    Timer {
-      id: pickerDebounce
-      interval: 180
-      onTriggered: root.loadCandidates(picker.query)
-    }
-
-    Text {
-      visible: picker.candidates.length === 0
-      text: "No other memories to link."
-      color: Color.muted
-      font.family: Style.font.resolvedFamily
-      font.pixelSize: Style.font.caption
-    }
-
-    Repeater {
-      model: picker.candidates
-
-      delegate: CursorSurface {
-        required property var modelData
-        width: picker.width
-        height: Style.spacing.popupRowHeight
-        bordered: false
-        foreground: Color.popups.text
-
-        MouseArea {
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.act("add", modelData.id)
-        }
-
-        Row {
-          anchors.fill: parent
-          anchors.leftMargin: Style.spacing.sm
-          anchors.rightMargin: Style.spacing.sm
-          spacing: Style.spacing.sm
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "+"
-            color: Color.accent
-            font.family: Style.font.resolvedFamily
-            font.pixelSize: Style.font.body
-          }
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: picker.width - Style.space(40)
-            text: Model.truncate(modelData.title, 70)
-            elide: Text.ElideRight
-            color: Color.popups.text
-            font.family: Style.font.resolvedFamily
-            font.pixelSize: Style.font.caption
-          }
-        }
-      }
-    }
-  }
-
-  // --- linked --------------------------------------------------------------
-  Grid {
-    width: parent.width
-    columns: 2
-    columnSpacing: Style.spacing.md
-    rowSpacing: Style.spacing.md
-    visible: root.linked.length > 0
-
-    Repeater {
-      model: root.linked
-      delegate: RelatedCard {
-        required property var modelData
-        memory: modelData
-        width: (root.width - Style.spacing.md) / 2
-        onOpened: root.openMemory(modelData.id)
-        onRemoved: root.act("remove", modelData.id)
-      }
-    }
-  }
-
-  // The action, after whatever content exists -- the same shape Collections
-  // uses. An empty section then offers the action instead of describing its
-  // own emptiness, so neither needs a separate placeholder line.
-  // A chip, not a Button: it sits in the same class of inline affordance as
-  // Collections' "Add to collection" one section below, and the two were at
-  // different heights and text sizes.
   Chip {
-    label: root.picking ? "Done" : "+  Link a memory"
+    hasCursor: root.chipFocused
+    label: "+  Link a memory"
     tint: Color.muted
     outlined: true
     interactive: true
-    onClicked: {
-      root.picking = !root.picking
-      if (root.picking) root.loadCandidates("")
-    }
+    onClicked: root.linkRequested()
   }
 }

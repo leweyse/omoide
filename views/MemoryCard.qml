@@ -13,6 +13,8 @@ BorderSurface {
   id: card
 
   property var memory: ({})
+  // Keyboard focus, set by the grid from its cursor.
+  property bool hasCursor: false
   signal activated()
 
   // One inset for the whole card. The thumbnail deliberately bleeds to the
@@ -23,13 +25,34 @@ BorderSurface {
   height: cardLayout.implicitHeight + card.borderTop + card.borderBottom
   radius: Style.cornerRadius
   color: Color.popups.background
-  borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+  // The outline-button border, not popups.border -- that token defaults to
+  // the ACCENT, so an accent focus ring on a card was invisible against every
+  // unfocused card beside it. Same width, so nothing reflows.
+  // Accent on focus. The width does NOT change -- a card measures its height
+  // as content plus border widths, so a thicker focus border would resize the
+  // card and reflow the grid on every arrow key.
+  borderSpec: card.hasCursor
+              ? Border.flat(Color.accent, 1)
+              : Border.controlSpec("normal", Color.popups.text, Color.accent)
   clip: true
 
   MouseArea {
+    id: hoverArea
     anchors.fill: parent
+    hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
     onClicked: card.activated()
+  }
+
+  Root.FocusRing {
+    anchors.fill: parent
+    radius: card.radius
+    hasCursor: card.hasCursor
+    // Artwork bleeds under the ring on this card, so it gets the dark
+    // companion line: whichever of the two loses contrast against the
+    // thumbnail, the other keeps it.
+    twoTone: true
+    hot: hoverArea.containsMouse
   }
 
   Column {

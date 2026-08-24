@@ -11,7 +11,18 @@ import qs.Ui
 //
 // Saving marks the row `edited`, which is what stops a later retry overwriting
 // the correction. That flag is the whole reason this sheet is worth having.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden -- a reminder row removed by its own delete
+// button -- or a field swallowing Escape left NOTHING focused, and with nothing
+// focused no Keys handler in the dialog could fire. The keyboard died and no
+// number of Escapes brought it back.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler below sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property bool opened: false
@@ -31,7 +42,12 @@ Item {
     headingField.text = heading || ""
     bodyEdit.text = body || ""
     root.opened = true
-    Qt.callLater(function () { bodyEdit.forceActiveFocus() })
+    // The heading first when the block has one: it sits above the body, so it
+    // is the first item in reading order.
+    Qt.callLater(function () {
+      if (root.hasHeading) headingField.forceActiveFocus()
+      else bodyEdit.forceActiveFocus()
+    })
   }
 
   function close() {
@@ -49,6 +65,23 @@ Item {
   }
 
   visible: opened
+
+  // Escape, on the ROOT so it catches the key wherever focus happens to be.
+  //
+  // Key events travel up the focused item's PARENT chain. An inner catcher that
+  // is a sibling of the content is never on that chain, so once anything else
+  // took focus -- a button, a chip, the memory link -- Escape passed the catcher
+  // by, reached SpaceWindow, and died there: unwind() steps aside for an open
+  // overlay, expecting the overlay to handle its own. The dialog became
+  // uncloseable by keyboard.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
 
   Rectangle {
     anchors.fill: parent
@@ -74,6 +107,24 @@ Item {
                                    Math.max(1, Style.space(2)))
 
     MouseArea { anchors.fill: parent; onClicked: {} }
+
+    // Esc closes the dialog. This is the rung the fields blur INTO: they release
+    // focus on the first Esc, and the second lands here. Without it the dialog
+    // became uncloseable by keyboard once a field had let go, because
+    // SpaceWindow's unwind() steps aside for whatever overlay is open.
+    Item {
+      id: editorKeys
+      anchors.fill: parent
+      focus: true
+      Keys.onPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+      }
+    }
 
     Column {
       id: layout
@@ -102,8 +153,9 @@ Item {
           font.pixelSize: Style.font.caption
         }
 
-        TextField {
+        AccentField {
           id: headingField
+          escapeTo: editorKeys
           width: parent.width
           foreground: Color.menu.text
           accent: Color.accent
@@ -135,11 +187,31 @@ Item {
           radius: Style.cornerRadius
           color: Style.controlFill(bodyEdit.activeFocus, false,
                                    Color.menu.text, Color.accent)
-          borderSpec: Border.controlSpec(bodyEdit.activeFocus ? "focus" : "normal",
-                                         Color.menu.text, Color.accent)
+          // Border.flat on focus, NOT controlSpec("focus"): that applies
+          // focusBorderAlpha (0.25), so the accent came out at quarter strength
+          // and the textarea looked unfocused while it had the cursor. Same
+          // treatment as AccentField, so the two inputs in this dialog match.
+          borderSpec: bodyEdit.activeFocus
+                      ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                      : Border.controlSpec("normal", Color.menu.text, Color.accent)
+
+          FocusRing {
+            anchors.fill: parent
+            radius: Style.cornerRadius
+            gap: 1
+            hasCursor: bodyEdit.activeFocus
+            hot: false
+            backdrop: Color.menu.background
+          }
 
           TextEdit {
             id: bodyEdit
+            // TextEdit stays out of the tab order by default, so Tab from the
+            // heading skipped the body entirely and landed on Cancel. Turning it
+            // on also means Tab LEAVES the field rather than inserting a tab
+            // character, which is right here: the body is a list of lines, not
+            // code, so nothing in it wants a literal tab.
+            activeFocusOnTab: true
             anchors.fill: parent
             anchors.margins: Style.spacing.controlPaddingX
             wrapMode: TextEdit.Wrap
@@ -149,8 +221,14 @@ Item {
             font.family: Style.font.menuFamily
             font.pixelSize: Style.font.body
 
+            // Blur, not close. Esc in a text field closing the dialog threw
+            // away whatever had been typed; a second press, once the field
+            // has let go, still closes it.
             Keys.onEscapePressed: function (event) {
-              root.close()
+              // Only on a real press. Holding Escape auto-repeats, and each repeat
+              // would dismiss another layer -- a held key unwound the whole stack.
+              if (event.isAutoRepeat) { event.accepted = true; return }
+              editorKeys.forceActiveFocus()
               event.accepted = true
             }
           }
@@ -167,6 +245,22 @@ Item {
           spacing: Style.spacing.controlGap
 
           Button {
+            focusable: true
+            FocusRing {
+              anchors.fill: parent
+              radius: parent.radius
+              gap: 1
+              hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+              hot: false
+            }
+            // Full-strength accent on focus: controlSpec("focus") applies
+            // focusBorderAlpha (0.25), which reads as grey.
+            borderSpec: activeFocus
+                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                        : Border.controlSpec(
+                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+                            foreground, accent)
             text: "Cancel"
             foreground: Color.menu.text
             background: Color.menu.background
@@ -175,6 +269,22 @@ Item {
           }
 
           Button {
+            focusable: true
+            FocusRing {
+              anchors.fill: parent
+              radius: parent.radius
+              gap: 1
+              hasCursor: parent.activeFocus
+  backdrop: Color.menu.background
+              hot: false
+            }
+            // Full-strength accent on focus: controlSpec("focus") applies
+            // focusBorderAlpha (0.25), which reads as grey.
+            borderSpec: activeFocus
+                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                        : Border.controlSpec(
+                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+                            foreground, accent)
             text: "Save"
             selected: root.valid
             enabled: root.valid

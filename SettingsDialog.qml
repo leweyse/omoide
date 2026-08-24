@@ -14,11 +14,30 @@ import qs.Ui
 // Its own surface, owned by the service rather than the Space dialog: choosing
 // a model has nothing to do with browsing memories, and hosting it inside
 // Space meant both had to open at once.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden or a field swallowing Escape left NOTHING
+// focused, and with nothing focused no Keys handler in the dialog could fire.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property var service: null
   property bool opened: false
+
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
   property var config: ({ providers: [], visionMode: "ocr", enabled: false })
 
   property string chosen: ""
@@ -136,7 +155,12 @@ Item {
         anchors.fill: parent
         focus: true
         Keys.onPressed: function (event) {
-          if (event.key === Qt.Key_Escape) { root.close(); event.accepted = true }
+          if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
         }
 
         Column {
@@ -224,7 +248,9 @@ Item {
             }
           }
 
-          TextField {
+          AccentField {
+
+            ringBackdrop: Color.menu.background
             width: parent.width
             visible: root.isCustom
             text: root.customCommand
@@ -235,12 +261,17 @@ Item {
             placeholderText: "my-agent --json"
             onTextChanged: root.customCommand = text
             Keys.onEscapePressed: function (event) {
+              // Only on a real press. Holding Escape auto-repeats, and each repeat
+              // would dismiss another layer -- a held key unwound the whole stack.
+              if (event.isAutoRepeat) { event.accepted = true; return }
               keys.forceActiveFocus()
               event.accepted = true
             }
           }
 
-          TextField {
+          AccentField {
+
+            ringBackdrop: Color.menu.background
             width: parent.width
             visible: !!(root.chosenProvider && root.chosenProvider.needsModel)
             text: root.model
@@ -251,6 +282,9 @@ Item {
             placeholderText: "model to run, e.g. llama3.2"
             onTextChanged: root.model = text
             Keys.onEscapePressed: function (event) {
+              // Only on a real press. Holding Escape auto-repeats, and each repeat
+              // would dismiss another layer -- a held key unwound the whole stack.
+              if (event.isAutoRepeat) { event.accepted = true; return }
               keys.forceActiveFocus()
               event.accepted = true
             }

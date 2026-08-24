@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".." as Root
 import "../MemoryModel.js" as Model
 
 // One to-do, used both inside a memory and in the archive, so the two can
@@ -20,6 +21,9 @@ Item {
   property var item: ({})
   property var service: null
   property bool dimmed: false
+  // Keyboard cursor. Mouse hover deliberately does not set it: two
+  // highlights at once is worse than none on the row you are not pointing at.
+  property bool hasCursor: false
   signal changed()
   signal activated()
 
@@ -33,7 +37,6 @@ Item {
 
   width: parent ? parent.width : 0
   height: Math.max(Style.space(34), layout.height + Style.spacing.sm * 2)
-  opacity: root.done || root.dimmed ? 0.5 : 1.0
 
   function accept() {
     if (!service || !item) return
@@ -58,6 +61,7 @@ Item {
   // a top-aligned text Column, which is what put the two out of line.
   Item {
     id: layout
+    opacity: root.done || root.dimmed ? 0.5 : 1.0
     anchors.left: parent.left
     anchors.right: parent.right
     anchors.verticalCenter: parent.verticalCenter
@@ -79,10 +83,23 @@ Item {
       x: Math.round((layout.slot - width) / 2)
       y: Math.round(layout.firstLineCentre - height / 2)
       radius: width / 2
-      color: root.suggested ? Color.muted
+      color: root.suggested ? (root.hasCursor ? Color.accent : Color.muted)
                             : (root.done ? Color.accent : "transparent")
       border.width: root.suggested ? 0 : 1
-      border.color: root.done ? Color.accent : Color.muted
+      // Accent on focus, so the box is what carries it. A suggestion is a 6px
+      // dot with no border, so there the fill takes the accent instead.
+      border.color: root.hasCursor ? Color.accent
+                                   : (root.done ? Color.accent : Color.muted)
+
+      // The inner ring, concentric because the box is a circle: radius less the
+      // inset lands exactly on the smaller circle's edge.
+      Root.FocusRing {
+        anchors.fill: parent
+        radius: parent.width / 2
+        gap: 1
+        hasCursor: root.hasCursor && !root.suggested
+        hot: false
+      }
 
       MouseArea {
         anchors.fill: parent
@@ -134,6 +151,9 @@ Item {
       Text {
         id: titleText
         width: parent.width
+        // Underlined rather than boxed: the row is not a card, and a rule under
+        // the words says "this one" without enclosing anything.
+        font.underline: root.hasCursor
         text: root.item ? (root.item.title || "") : ""
         wrapMode: Text.WordWrap
         color: Color.popups.text

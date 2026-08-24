@@ -23,6 +23,9 @@ Row {
   property color foreground: Color.menu.text
   property color accent: Color.accent
   property string fontFamily: Style.font.menuFamily
+  // Forwarded to both halves, so Esc in the date or the time behaves the
+  // same as Esc in any other input.
+  property Item escapeTo: null
   property alias dateWidth: dateField.width
 
   function set(nextDate, nextTime) {
@@ -34,8 +37,9 @@ Row {
 
   spacing: Style.spacing.controlGap
 
-  TextField {
+  AccentField {
     id: dateField
+    escapeTo: root.escapeTo
     width: Style.space(118)
     inputMask: "99/99/9999"
     foreground: root.foreground
@@ -51,8 +55,9 @@ Row {
       Qt.callLater(function () { dateField.cursorPosition = 0 })
   }
 
-  TextField {
+  AccentField {
     id: timeField
+    escapeTo: root.escapeTo
     width: Style.space(74)
     inputMask: "99:99"
     foreground: root.foreground

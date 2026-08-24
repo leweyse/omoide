@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import ".." as Root
 
 BorderSurface {
   id: root
@@ -8,6 +9,10 @@ BorderSurface {
   // rather than being threaded through the ones that happen to be editable.
   property string blockId: ""
   property string blockType: ""
+  // Keyboard cursor. Every card takes it, including the ones Enter does nothing
+  // on: arrows walking card to card is how this page scrolls, so skipping an
+  // inert card would leave a hole in the scroll path.
+  property bool hasCursor: false
 
   property alias heading: label.text
   default property alias body: holder.data
@@ -27,7 +32,22 @@ BorderSurface {
   height: layout.implicitHeight + root.pad * 2
   radius: Style.cornerRadius
   color: Color.popups.background
-  borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+  // The outline-button border, not popups.border -- that token defaults to
+  // the ACCENT, so an accent focus ring was invisible against every unfocused
+  // card beside it. Same width, so nothing reflows.
+  // Accent on focus. The width does NOT change -- a card measures its height
+  // as content plus border widths, so a thicker focus border would resize the
+  // card and reflow the grid on every arrow key.
+  borderSpec: root.hasCursor
+              ? Border.flat(Color.accent, 1)
+              : Border.controlSpec("normal", Color.popups.text, Color.accent)
+
+  Root.FocusRing {
+    anchors.fill: parent
+    radius: root.radius
+    hasCursor: root.hasCursor
+    hot: false
+  }
 
   Column {
     id: layout

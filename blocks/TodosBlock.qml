@@ -8,6 +8,8 @@ BlockCard {
   property var payload: ({})
   property var items: []
   property var service: null
+  // Which row the drill-in is on, or -1 when the card itself holds focus.
+  property int cursor: -1
   signal changed()
   signal openItem(var item)
   heading: "To-dos"
@@ -26,6 +28,8 @@ BlockCard {
 
       delegate: TodoRow {
         required property var modelData
+        required property int index
+        hasCursor: root.cursor === index
         width: parent.width
         item: modelData
         service: root.service

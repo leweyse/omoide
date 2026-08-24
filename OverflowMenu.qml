@@ -12,7 +12,16 @@ import qs.Ui
 // Entries in, one signal out. It was hardcoded to a memory's Delete; a
 // collection needs Edit and Remove, and a second near-identical file would
 // have drifted the first time either changed.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden or a field swallowing Escape left NOTHING
+// focused, and with nothing focused no Keys handler in the dialog could fire.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property bool opened: false
@@ -41,6 +50,16 @@ Item {
   }
 
   visible: opened
+
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.opened = false
+      event.accepted = true
+    }
+  }
 
   // Click anywhere else to dismiss. Safe here: the menu is a child of this
   // same item, so it is hit-tested above the dismiss area.

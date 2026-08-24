@@ -13,6 +13,8 @@ BorderSurface {
   id: root
 
   property var event: ({})
+  // Keyboard cursor, set by the carousel from the page's cursor.
+  property bool hasCursor: false
   signal activated()
 
   readonly property var badge: Model.dateBadge(event ? event.startsAt : "")
@@ -29,9 +31,30 @@ BorderSurface {
   height: Math.max(Style.space(96), body.implicitHeight + root.pad * 2)
   radius: Style.cornerRadius
   color: Color.popups.background
-  borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+  // The outline-button border, not popups.border -- that token defaults to the
+  // ACCENT, so an accent focus ring on a card was invisible against every
+  // unfocused card beside it. Same width, so nothing reflows.
+  // Accent on focus. The width does NOT change -- a card measures its height
+  // as content plus border widths, so a thicker focus border would resize the
+  // card and reflow the grid on every arrow key.
+  borderSpec: root.hasCursor
+              ? Border.flat(Color.accent, 1)
+              : Border.controlSpec("normal", Color.popups.text, Color.accent)
+
+  FocusRing {
+    anchors.fill: parent
+    radius: root.radius
+    hasCursor: root.hasCursor
+    // Artwork bleeds under the ring on this card, so it gets the dark
+    // companion line: whichever of the two loses contrast against the
+    // thumbnail, the other keeps it.
+    twoTone: true
+    hot: hoverArea.containsMouse
+  }
 
   MouseArea {
+    id: hoverArea
+    hoverEnabled: true
     anchors.fill: parent
     cursorShape: Qt.PointingHandCursor
     onClicked: root.activated()

@@ -98,6 +98,87 @@ function digestLine(digest) {
 
 // Assign items to the shortest column. QML has no masonry layout, and a naive
 // round-robin leaves ragged columns once thumbnails vary in height.
+// Where a list cursor lands after one arrow press.
+//
+// `cursor` of -1 means nothing is focused yet: the first press enters at the top
+// going down and at the bottom going up, rather than at whichever end -1 + d
+// happens to fall on. Returns null when the press should be left alone -- an
+// empty list, or an arrow already at the end -- so the caller can hand the key
+// back for something else to use. That is what lets Left at the first Tasks tab
+// fall through to the sidebar instead of being swallowed.
+function stepList(count, cursor, d) {
+  if (!count || count < 1) return null
+  if (d === 0) return null
+  // Out of range as well as unset: a cursor left over from a longer list must
+  // re-enter rather than hand the key away, or a stale index would silently
+  // bounce the user out to the sidebar.
+  if (cursor < 0 || cursor >= count) return d > 0 ? 0 : count - 1
+  var next = cursor + d
+  if (next < 0 || next >= count) return null
+  return next
+}
+
+// Where the grid cursor lands after one arrow key.
+//
+// `buckets` is column-major, the shape MasonryGrid already builds, so a card's
+// column and row are known exactly rather than guessed from a flat index.
+// Returns null to mean "I did not use this key", which is what lets Left at the
+// first column fall through to the sidebar.
+//
+// Three rules that are easy to get wrong, all covered by tests:
+//   - a first press with no cursor enters at the top of the first non-empty
+//     column, whichever direction it was
+//   - sideways into a shorter column clamps to that column's last row, so the
+//     cursor can never fall out of the grid
+//   - sideways over an empty column steps past it instead of stalling on it
+function stepGrid(buckets, cursorId, dx, dy) {
+  if (!buckets || !buckets.length) return null
+
+  var col = -1
+  var row = -1
+  for (var c = 0; c < buckets.length; c++) {
+    var column = buckets[c] || []
+    for (var r = 0; r < column.length; r++)
+      if (column[r] && column[r].id === cursorId) { col = c; row = r }
+  }
+
+  if (col < 0) {
+    for (var c2 = 0; c2 < buckets.length; c2++)
+      if ((buckets[c2] || []).length) return buckets[c2][0].id
+    return null
+  }
+
+  if (dx !== 0) {
+    var next = col + dx
+    while (next >= 0 && next < buckets.length && !(buckets[next] || []).length)
+      next += dx
+    if (next < 0 || next >= buckets.length) return null
+    var target = buckets[next]
+    return target[Math.min(row, target.length - 1)].id
+  }
+
+  if (dy !== 0) {
+    var r2 = row + dy
+    if (r2 < 0 || r2 >= buckets[col].length) return null
+    return buckets[col][r2].id
+  }
+
+  return null
+}
+
+// Which grid column a horizontal position belongs to, for crossing DOWN out of
+// the collections row into the grid. Landing on the first card would ignore
+// where you already were; landing under your finger is what the eye expects.
+//
+// `x` is the centre of the tile you are leaving, in the grid's own coordinates.
+function columnAt(x, columnCount, columnWidth, gap) {
+  if (!columnCount || columnCount < 1) return 0
+  var stride = columnWidth + (gap || 0)
+  if (stride <= 0) return 0
+  var i = Math.floor(x / stride)
+  return Math.max(0, Math.min(columnCount - 1, i))
+}
+
 function balanceColumns(items, columnCount, heightOf) {
   var columns = []
   var heights = []
@@ -263,6 +344,9 @@ if (typeof module !== "undefined") {
     archiveGroup: archiveGroup,
     digestLine: digestLine,
     balanceColumns: balanceColumns,
+    stepList: stepList,
+    stepGrid: stepGrid,
+    columnAt: columnAt,
     isRenderable: isRenderable,
     truncate: truncate,
     itemsToLines: itemsToLines,

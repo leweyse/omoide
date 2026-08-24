@@ -118,8 +118,9 @@ Item {
         id: overlayKeys
         anchors.fill: parent
         Keys.onPressed: function (event) {
+          // A held Escape must discard once, not repeatedly.
           if (event.key === Qt.Key_Escape) {
-            root.discard()
+            if (!event.isAutoRepeat) root.discard()
             event.accepted = true
           }
         }
@@ -232,7 +233,9 @@ Item {
           width: parent.width
           height: noteField.height
 
-          TextField {
+          AccentField {
+
+            ringBackdrop: Color.menu.background
             id: noteField
             anchors.left: parent.left
             anchors.right: dictateButton.left
@@ -249,10 +252,11 @@ Item {
             Keys.onPressed: function (event) {
               if (event.key === Qt.Key_Escape) {
                 // Step out of the input; a second Esc discards the capture.
-                overlayKeys.forceActiveFocus()
+                if (!event.isAutoRepeat) overlayKeys.forceActiveFocus()
                 event.accepted = true
               } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                root.submit()
+                // A held Return would commit the capture more than once.
+                if (!event.isAutoRepeat) root.submit()
                 event.accepted = true
               }
             }

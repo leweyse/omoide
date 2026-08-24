@@ -8,7 +8,18 @@ import qs.Ui
 // Clicking a screenshot used to jump straight to tensaku, which is an editor --
 // a heavy answer to "let me see that properly". This shows the image, and
 // offers the editor as one of the things you can then do with it.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden -- a reminder row removed by its own delete
+// button -- or a field swallowing Escape left NOTHING focused, and with nothing
+// focused no Keys handler in the dialog could fire. The keyboard died and no
+// number of Escapes brought it back.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler below sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property string source: ""
@@ -34,6 +45,16 @@ Item {
 
   visible: opened
 
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
+
   Rectangle {
     anchors.fill: parent
     color: Color.menu.scrim
@@ -50,7 +71,7 @@ Item {
     focus: root.opened
     Keys.onPressed: function (event) {
       if (event.key === Qt.Key_Escape) {
-        root.close()
+        if (!event.isAutoRepeat) root.close()
         event.accepted = true
       }
     }

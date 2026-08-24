@@ -20,6 +20,7 @@ Item {
   // the capture, not something the agent wrote, so there is nothing to edit.
   property string blockId: ""
   property string blockType: ""
+  property bool hasCursor: false
   signal previewRequested(string path)
 
   // The stored dimensions when we have them, falling back to what the loaded
@@ -35,6 +36,26 @@ Item {
 
   width: parent ? parent.width : 0
   height: shot.height
+
+  // Sized and positioned to the picture, not the block: the block spans the
+  // page width while the image is centred at its own aspect, so a ring on the
+  // block bounds would float in the margin beside the photo.
+  Root.FocusRing {
+    x: shot.x
+    y: shot.y
+    width: shot.width
+    height: shot.height
+    radius: Style.cornerRadius
+    // RoundedImage draws a 2px frame of its own, and it is already accent, so
+    // the ring has to clear it -- otherwise focused and unfocused are one line
+    // of accent either way.
+    hostBorder: Math.max(1, Style.space(2))
+    // Two-tone, because the backdrop here is whatever the user captured. A
+    // single line can vanish into a photo of the same tone.
+    twoTone: true
+    hasCursor: root.hasCursor
+    hot: false
+  }
 
   Root.RoundedImage {
     id: shot

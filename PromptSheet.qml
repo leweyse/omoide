@@ -6,7 +6,18 @@ import qs.Ui
 //
 // The same shape as ConfirmSheet, which answers a yes/no question. This one
 // answers "what should it be called", which a confirmation cannot.
-Item {
+// A FocusScope, not a plain Item.
+//
+// A scope keeps activeFocus when the child holding it disappears or declines a
+// key: focus falls back to the scope instead of vanishing. Without that, a
+// focused control being hidden -- a reminder row removed by its own delete
+// button -- or a field swallowing Escape left NOTHING focused, and with nothing
+// focused no Keys handler in the dialog could fire. The keyboard died and no
+// number of Escapes brought it back.
+//
+// Being the root also puts it on the parent chain of every control inside, so
+// the Escape handler below sees keys wherever focus actually sits.
+FocusScope {
   id: root
 
   property bool opened: false
@@ -44,6 +55,16 @@ Item {
   }
 
   visible: opened
+
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.canceled()
+      event.accepted = true
+    }
+  }
 
   Rectangle {
     anchors.fill: parent
@@ -84,7 +105,9 @@ Item {
         fontFamily: Style.font.menuFamily
       }
 
-      TextField {
+      AccentField {
+
+        ringBackdrop: Color.menu.background
         id: field
         width: parent.width
         foreground: Color.menu.text
@@ -94,6 +117,9 @@ Item {
         placeholderText: root.placeholder
         onAccepted: root.submit()
         Keys.onEscapePressed: function (event) {
+          // Only on a real press. Holding Escape auto-repeats, and each repeat
+          // would dismiss another layer -- a held key unwound the whole stack.
+          if (event.isAutoRepeat) { event.accepted = true; return }
           root.canceled()
           event.accepted = true
         }

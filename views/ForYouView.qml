@@ -16,6 +16,87 @@ Flickable {
 
   readonly property var index: service ? service.index : ({})
 
+  // --- keyboard ------------------------------------------------------------
+  //
+  // Two regions: the events carousel, then the task rows. Tab crosses between
+  // them, and so does Down at the bottom of Events -- the carousel is one row
+  // deep, so Down there has nothing else to mean.
+
+  readonly property var events: root.index.events || []
+  readonly property var tasks: (root.index.todos || []).slice(0, 8)
+
+  readonly property int regionCount: 2
+  property int region: 0
+  property int cursor: -1
+
+  readonly property var regionRows: root.region === 1 ? root.tasks : root.events
+
+  // Takes the index explicitly rather than reading `regionRows`, which is a
+  // binding on `region`: the order between a binding updating and that
+  // property's own change handler is undefined, so reading it in here can see
+  // the region you just left.
+  function rowsFor(i) { return i === 1 ? root.tasks : root.events }
+
+  function enterRegion(i) {
+    root.cursor = root.rowsFor(i).length > 0 ? 0 : -1
+  }
+
+  onRegionChanged: root.enterRegion(root.region)
+
+  // Called by the dialog when you enter this page, so the first row lights up
+  // straight away rather than waiting for an arrow key.
+  function focusFirst() {
+    root.region = 0
+    // Explicitly: entering when region is already 0 fires no change handler.
+    root.enterRegion(0)
+  }
+
+  function pageKey(event) {
+    // Events is horizontal, so it takes the horizontal keys; Tasks is vertical
+    // and takes none, which is what lets Left there fall through to the sidebar.
+    if (root.region === 0
+        && (event.key === Qt.Key_Right || event.key === Qt.Key_Left)) {
+      var moved = Model.stepList(root.events.length, root.cursor,
+                                 event.key === Qt.Key_Right ? 1 : -1)
+      // Left at the first event is not consumed: the dialog takes it and
+      // returns to the sidebar. Right at the last one is simply swallowed.
+      if (moved === null) return event.key === Qt.Key_Right
+      root.cursor = moved
+      return true
+    }
+
+    if (event.key === Qt.Key_Down || event.key === Qt.Key_Up) {
+      var d = event.key === Qt.Key_Down ? 1 : -1
+
+      // Events is ONE row deep. It owns the horizontal keys, so a vertical key
+      // there can only mean "leave" -- stepping the events list on Down walked
+      // to the next card instead of crossing into Tasks.
+      if (root.region === 0) {
+        if (d > 0 && root.tasks.length > 0) root.region = 1
+        return true
+      }
+
+      var next = Model.stepList(root.tasks.length, root.cursor, d)
+      if (next !== null) { root.cursor = next; return true }
+      // Up off the first task goes back to the carousel. One continuous column,
+      // which is how the page reads even though the halves differ in shape.
+      if (d < 0 && root.events.length > 0) root.region = 0
+      return true
+    }
+
+    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      var row = root.regionRows[root.cursor]
+      if (!row) return true
+      // An event goes straight to its capture; a task opens its editor. Same
+      // split as the mouse, so the keyboard is not a second set of rules.
+      if (root.region === 0) root.openMemory(row.memoryId)
+      else root.openItem(row.id)
+      return true
+    }
+
+    return false
+  }
+
   // Bottom inset only. The gap above belongs to the window's view
   // loader, so it is chrome and survives scrolling.
   contentHeight: layout.implicitHeight + Style.spacing.panelPadding
@@ -71,11 +152,13 @@ Flickable {
         orientation: ListView.Horizontal
         spacing: Style.spacing.md
         clip: true
-        model: root.index.events || []
+        model: root.events
 
         delegate: Root.EventCard {
           required property var modelData
+          required property int index
           event: modelData
+          hasCursor: root.region === 0 && root.cursor === index
           // Straight to the capture, not to the item editor. An event's own
           // fields are on its memory page anyway, and the reason you tap one
           // here is to see what you saved -- the ticket, the poster, the page.
@@ -119,12 +202,14 @@ Flickable {
       }
 
       Repeater {
-        model: (root.index.todos || []).slice(0, 8)
+        model: root.tasks
 
         delegate: Blocks.TodoRow {
           required property var modelData
+          required property int index
           width: parent.width
           item: modelData
+          hasCursor: root.region === 1 && root.cursor === index
           service: root.service
           onChanged: if (root.service) root.service.refresh()
           onActivated: root.openItem(modelData.id)
