@@ -83,8 +83,6 @@ INDEX_VERSION = 3           # bump when index.json's shape changes
 SHELL_JSON = Path(os.environ.get("OMOIDE_SHELL_JSON",
                                  HOME / ".config/omarchy/shell.json"))
 HYPR_BINDINGS = HOME / ".config/hypr/bindings.lua"
-MARK_BEGIN = "-- >>> omoide (managed) >>>"
-MARK_END = "-- <<< omoide (managed) <<<"
 DEFAULT_ACCEL = "SUPER + CTRL + M"   # M for memory; E is Omarchy's emoji picker
 
 GLYPH = "\U000f0a37"  # 󰨷 -- nf-md-lightbulb_on_outline
@@ -2569,7 +2567,6 @@ def cmd_sync_timers(args) -> int:
 # Clean, not merely reversible: all-or-nothing, byte-exact restoration, no
 # residue outside the data dir, and idempotent in both directions.
 
-PRISTINE_BINDINGS = "bindings.lua.pristine"
 
 MOD_BITS = {"SHIFT": 1, "CAPS": 2, "CTRL": 4, "CONTROL": 4, "ALT": 8,
             "MOD2": 16, "MOD3": 32, "SUPER": 64, "MOD5": 128}
@@ -2607,65 +2604,35 @@ def keybind_conflict(accel: str) -> str | None:
     return None
 
 
-def bindings_block(accel: str) -> str:
-    return (f'{MARK_BEGIN}\n'
-            f'o.bind("{accel}", "Omoide capture",\n'
-            f'       "omarchy-shell -q {IPC_TARGET} capture screenshot")\n'
-            f'{MARK_END}')
+def bindings_snippet(accel: str) -> str:
+    """The line to paste into ~/.config/hypr/bindings.lua."""
+    return (f'o.bind("{accel}", "Omoide capture",\n'
+            f'       "omarchy-shell -q {IPC_TARGET} capture screenshot")')
 
 
-def strip_block(content: str) -> str:
-    pattern = re.compile(re.escape(MARK_BEGIN) + r".*?" + re.escape(MARK_END),
-                         re.DOTALL)
-    return pattern.sub("", content)
+def cmd_keybind(args) -> int:
+    """Print a binding for the user to add themselves.
 
-
-def install_keybind(accel: str) -> tuple[bool, str]:
-    if not HYPR_BINDINGS.exists():
-        return False, f"{HYPR_BINDINGS} does not exist"
-
+    The plugin used to write this into ~/.config/hypr/bindings.lua inside
+    sentinel markers, with a rollback copy and a conflict check -- the one file
+    outside the plugin directory it touched directly. That is now gone: a
+    keybinding is the user's own configuration, and a plugin that edits it has to
+    be trusted to edit it back. Handing over the line to paste needs no trust and
+    cannot leave residue.
+    """
+    accel = args.accel or DEFAULT_ACCEL
+    snippet = bindings_snippet(accel)
     conflict = keybind_conflict(accel)
+    if args.json:
+        emit({"accel": accel, "snippet": snippet, "file": str(HYPR_BINDINGS),
+              "conflict": conflict})
+        return 0
+    print(snippet)
     if conflict:
-        return False, f"{accel} is already bound to: {conflict}"
-
-    original = HYPR_BINDINGS.read_text()
-    # Kept for the lifetime of the install so uninstall can restore byte-exactly
-    # when the user has not otherwise touched the file.
-    pristine = STATE_DIR / PRISTINE_BINDINGS
-    if not pristine.exists():
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        pristine.write_text(strip_block(original))
-
-    # Replace rather than append, so running install twice leaves one block.
-    body = strip_block(original).rstrip("\n")
-    updated = f"{body}\n\n{bindings_block(accel)}\n"
-    HYPR_BINDINGS.write_text(updated)
-
-    run(["hyprctl", "reload"])
-    errors = run(["hyprctl", "configerrors"])
-    text = (errors.stdout or "").strip()
-    if text and "no errors" not in text.lower():
-        HYPR_BINDINGS.write_text(original)   # roll the write back immediately
-        run(["hyprctl", "reload"])
-        return False, f"hyprland rejected the config: {text.splitlines()[0]}"
-    return True, accel
-
-
-def remove_keybind() -> None:
-    if not HYPR_BINDINGS.exists():
-        return
-    current = HYPR_BINDINGS.read_text()
-    if MARK_BEGIN not in current:
-        return
-    pristine = STATE_DIR / PRISTINE_BINDINGS
-    stripped = strip_block(current).rstrip("\n") + "\n"
-    if pristine.exists() and stripped.rstrip("\n") == pristine.read_text().rstrip("\n"):
-        # Untouched since install: restore the original bytes exactly.
-        HYPR_BINDINGS.write_text(pristine.read_text())
-    else:
-        # The user edited it since; keep their edits, remove only our block.
-        HYPR_BINDINGS.write_text(stripped)
-    run(["hyprctl", "reload"])
+        # Reported, not enforced: it is the user's config, and they may well be
+        # replacing the binding they already have.
+        print(f"\n# note: {accel} currently runs: {conflict}", file=sys.stderr)
+    return 0
 
 
 def omarchy(*args: str) -> subprocess.CompletedProcess:
@@ -2676,8 +2643,6 @@ def cmd_install(args) -> int:
     done: list[str] = []
 
     def rollback(reason: str) -> int:
-        if "keybind" in done:
-            remove_keybind()
         if "plugin" in done:
             omarchy("plugin", "disable", PLUGIN_ID)
         die(f"install failed ({reason}); rolled back", 1)
@@ -2691,27 +2656,20 @@ def cmd_install(args) -> int:
 
     omarchy("bar", "put", PLUGIN_ID, "--section", "right", "--after", "omarchy.agents")
 
-    accel = args.accel or DEFAULT_ACCEL
-    keybind_note = ""
-    if args.no_keybind:
-        keybind_note = "skipped (--no-keybind)"
-    else:
-        ok, detail = install_keybind(accel)
-        if ok:
-            done.append("keybind")
-            keybind_note = f"bound {detail}"
-        else:
-            # Not a failed install: the bar icon is the primary entry point.
-            keybind_note = f"not bound — {detail}"
-
     shell_ipc("shell", "rescanPlugins")
-    emit({"installed": True, "keybind": keybind_note,
+    # No keybinding is installed. The bar icon is the entry point; anyone wanting
+    # a chord runs `omoide keybind` and pastes the line themselves.
+    emit({"installed": True,
+          "keybind": bindings_snippet(args.accel or DEFAULT_ACCEL),
+          "keybindFile": str(HYPR_BINDINGS),
           "aiConfigured": bool(resolve_provider(ai_settings()))})
     return 0
 
 
 def cmd_uninstall(args) -> int:
-    remove_keybind()
+    # Nothing to undo in bindings.lua: the plugin never wrote there. A line the
+    # user pasted is theirs, and removing it silently would be worse than leaving
+    # a chord that reports the shell is not running the plugin any more.
     omarchy("plugin", "disable", PLUGIN_ID)
 
     if DB_PATH.exists():
@@ -2742,7 +2700,12 @@ def cmd_uninstall(args) -> int:
     return 0
 
 
-# --- setup-ai (the second sanctioned direct write) --------------------------
+# --- setup-ai ---------------------------------------------------------------
+#
+# Once "the second sanctioned direct write", back when it edited shell.json. It
+# writes ~/.config/omoide/config.json now, and with the keybinding handed to the
+# user rather than installed, the plugin writes nothing outside its own state and
+# data directories at all.
 
 def cmd_ai_config(args) -> int:
     """Everything the settings dialog needs to render itself."""
@@ -2950,10 +2913,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--disable", action="store_true")
     p.set_defaults(func=cmd_setup_ai)
 
-    p = sub.add_parser("install", help="enable the plugin and bind the shortcut")
-    p.add_argument("--accel", default=DEFAULT_ACCEL)
-    p.add_argument("--no-keybind", action="store_true")
+    p = sub.add_parser("install", help="enable the plugin and place the bar widget")
+    p.add_argument("--accel", default=DEFAULT_ACCEL,
+                   help="the chord to suggest in the printed keybinding")
     p.set_defaults(func=cmd_install)
+
+    p = sub.add_parser("keybind",
+                       help="print a keybinding to paste into hypr/bindings.lua")
+    p.add_argument("--accel", default=DEFAULT_ACCEL)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=cmd_keybind)
 
     p = sub.add_parser("uninstall", help="remove everything this plugin added")
     p.add_argument("--purge", action="store_true",

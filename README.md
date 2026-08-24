@@ -122,9 +122,13 @@ the dialog dimmed with the reason rather than hidden.
 `--vision ocr` is the default. Tesseract pulls text out of the screenshot and
 only that text goes to the agent, which works everywhere including with a local
 model, and the image never leaves the machine. `--vision image` sends the file
-instead and reads charts and dense pages far better. Only claude, codex, gemini
-and a custom command can use it. Anything else falls back to OCR, so the
-dialog dims that choice and names the agent that cannot take it.
+instead and reads charts and dense pages far better. claude, codex, gemini,
+opencode and a custom command can use it. Anything else falls back to OCR, so
+the dialog dims that choice and names the agent that cannot take it.
+
+opencode gets the file attached outright, with `opencode run --file`. The other
+three are handed the path inside the prompt and have to choose to read it, which
+is why claude also gets `--allowed-tools Read`.
 
 With no agent at all you still get the screenshot, your note, full-text search
 across OCR'd text, collections, and a reminder from an explicit "remind me to
@@ -134,33 +138,42 @@ call the vet tomorrow at 3pm".
 
 ```bash
 bin/omoide install
-bin/omoide install --accel "SUPER + ALT + M"
-bin/omoide install --no-keybind
 bin/omoide uninstall
 bin/omoide uninstall --purge
+
+bin/omoide keybind
+bin/omoide keybind --accel "SUPER + ALT + M"
 ```
 
-`install` enables the plugin, puts the widget in the bar's right section, and
-binds SUPER + CTRL + M. Run it twice and you still have one installation. If a
-later step fails it reverses the ones that already succeeded.
+`install` enables the plugin and puts the widget in the bar's right section. Run
+it twice and you still have one installation. If a later step fails it reverses
+the one that already succeeded.
 
-Everything outside this directory changes through Omarchy's own commands,
-`omarchy plugin enable` and `omarchy bar put`, so it comes undone the same way.
-One thing has no Omarchy command behind it and gets written directly.
+Nothing outside this directory is written. The plugin is enabled and placed
+through Omarchy's own commands, `omarchy plugin enable` and `omarchy bar put`, so
+it comes undone the same way. Agent settings live in
+`~/.config/omoide/config.json`, which is the plugin's own file.
 
-The keybind goes into a marked block in `~/.config/hypr/bindings.lua`.
-`install` replaces that block instead of appending to it, refuses and tells you
-if the chord is already bound, and rolls the write back if `hyprctl
-configerrors` returns anything. A refused keybind is not a failed install,
-since the bar icon is the main entry point anyway.
+There is no keybinding. `install` used to write one into
+`~/.config/hypr/bindings.lua` inside sentinel markers, with a conflict check and
+a rollback copy. That was the one file outside this directory it touched, and it
+is gone: a keybinding is your configuration, and a plugin that edits it has to be
+trusted to edit it back.
 
-That is now the only one. `setup-ai` used to be the second, writing the agent
-block into `shell.json`; it writes `~/.config/omoide/config.json` instead.
+`keybind` prints the line instead:
 
-The keybind write leaves no `.bak` file anywhere. Its rollback copy lives in the
-plugin's state directory and is deleted on success. `uninstall` puts
-`bindings.lua` back byte for byte and removes only what the plugin itself added,
-so an edit you made after installing survives.
+```lua
+o.bind("SUPER + CTRL + M", "Omoide capture",
+       "omarchy-shell -q omoide capture screenshot")
+```
+
+Paste it into `~/.config/hypr/bindings.lua` wherever you keep your own bindings.
+`--accel` changes the chord. If the chord is already taken, `keybind` says what
+currently uses it and prints the line anyway, since replacing an existing binding
+is a reasonable thing to want.
+
+The bar icon is the primary entry point, so the plugin is fully usable without
+adding anything.
 
 `uninstall` keeps your memories and your agent settings. `--purge` deletes both,
 with no undo.
@@ -197,7 +210,7 @@ and never touches SQLite, which keeps the bar and the library off the I/O path.
 capture   commit     discard    list     show      search   archive
 state     item       reminder   sync-timers        collection
 link      related    candidates block    delete
-reindex   migrate    ai-config  setup-ai install   uninstall
+reindex   migrate    ai-config  setup-ai install   uninstall  keybind
 ```
 
 `bin/omoide <command> --help` covers each one.
