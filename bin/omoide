@@ -538,10 +538,19 @@ def harden(argv: list[str], provider: str, vision: bool,
             argv += ["--add-dir", os.path.dirname(image_path)]
 
     elif provider == "codex":
+        # read-only restricts what a command may WRITE, not what it may read:
+        # a prompt-injected capture could still have the model cat any
+        # user-readable file into its own context, which is disclosure to the
+        # provider. Switching the shell tool off removes command execution
+        # outright; image mode never needed it, because -i attaches the pixels.
+        # The sandbox stays as the backstop -- codex ignores a -c key it does
+        # not know (only --strict-config errors), so an older codex degrades
+        # to sandbox-only instead of failing to run.
         # A command-line -s beats sandbox_mode in the user's config.toml, so
         # this holds whatever they have configured globally. --ephemeral keeps
         # a picture of their screen out of codex's session files on disk.
-        argv = argv + ["-s", "read-only", "--ephemeral"]
+        argv = argv + ["-s", "read-only", "--ephemeral",
+                       "-c", "features.shell_tool=false"]
         if vision and image_path:
             argv += ["-i", image_path]
 
@@ -2980,7 +2989,7 @@ def cmd_uninstall(args) -> int:
 # the screenshot. A label that outlived its argv would be worse than none.
 RESTRICTIONS = {
     "claude":   ("tools disabled", "no tools but reading the screenshot"),
-    "codex":    ("read-only sandbox, no session files kept",) * 2,
+    "codex":    ("shell tool off, read-only sandbox behind it",) * 2,
     "gemini":   ("read-only mode",) * 2,
     "opencode": ("every tool permission denied",) * 2,
 }
