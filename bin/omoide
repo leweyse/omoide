@@ -357,7 +357,13 @@ AI_PRESETS = {
     "aichat":   ["aichat"],
 }
 
-VISION_CAPABLE = {"claude", "codex", "gemini"}
+# Providers that can look at the screenshot rather than its OCR text.
+#
+# opencode belongs here: `opencode run -f <path>` attaches the file outright,
+# which is a stronger guarantee than the others give -- claude, codex and gemini
+# are handed the path inside the prompt and have to choose to read it. It was
+# excluded on an assumption, never a test.
+VISION_CAPABLE = {"claude", "codex", "gemini", "opencode"}
 
 
 def read_shell_json() -> dict:
@@ -844,9 +850,17 @@ def run_ai(note: str, ocr_text: str, image_path: str | None,
     vision = (str(ai.get("visionMode")) == "image"
               and bool(image_path)
               and (ai.get("provider") in VISION_CAPABLE or bool(ai.get("command"))))
-    if vision and ai.get("provider") == "claude" and not ai.get("command"):
-        # The prompt names a file; claude needs Read to open it, and nothing else.
-        argv = argv + ["--allowed-tools", "Read"]
+    if vision and not ai.get("command"):
+        provider = ai.get("provider")
+        if provider == "claude":
+            # The prompt names a file; claude needs Read to open it, and nothing
+            # else.
+            argv = argv + ["--allowed-tools", "Read"]
+        elif provider == "opencode":
+            # Attached, not merely named. opencode takes the file as an argument,
+            # so the model is handed the pixels instead of being asked to go and
+            # fetch them -- and the prompt still carries the path for context.
+            argv = argv + ["--file", image_path]
 
     timeout = max(5.0, float(ai.get("timeoutMs") or 45000) / 1000.0)
     started = time.monotonic()
