@@ -77,6 +77,7 @@ BorderSurface {
   // inside it. gap 1, not 2 -- a chip is only ~26px tall, and 3px of inset would
   // start crowding the label.
   FocusRing {
+    sideBars: true
     anchors.fill: parent
     radius: root.radius
     gap: 1

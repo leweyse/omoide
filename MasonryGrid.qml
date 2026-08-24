@@ -112,6 +112,11 @@ Item {
         required property var modelData
         width: root.columnWidth
         spacing: root.spacing
+        // A column can genuinely be empty -- balanceColumns leaves one
+        // spare when there are fewer captures than columns, which is why
+        // stepGrid steps over them. An empty Column is zero-width but still
+        // claims a spacing slot in the Row, leaving a double gap.
+        visible: (modelData || []).length > 0
 
         Repeater {
           model: parent.modelData

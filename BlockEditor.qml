@@ -185,7 +185,9 @@ FocusScope {
           height: Math.max(Style.space(120),
                            bodyEdit.implicitHeight + Style.spacing.inputPaddingY * 2)
           radius: Style.cornerRadius
-          color: Style.controlFill(bodyEdit.activeFocus, false,
+          // Constant. The accent border and the inner ring mark focus; a fill
+          // change behind a block of text you are editing only costs contrast.
+          color: Style.controlFill(false, false,
                                    Color.menu.text, Color.accent)
           // Border.flat on focus, NOT controlSpec("focus"): that applies
           // focusBorderAlpha (0.25), so the accent came out at quarter strength
@@ -196,6 +198,7 @@ FocusScope {
                       : Border.controlSpec("normal", Color.menu.text, Color.accent)
 
           FocusRing {
+            sideBars: true
             anchors.fill: parent
             radius: Style.cornerRadius
             gap: 1
@@ -247,6 +250,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
+              sideBars: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1
@@ -271,6 +275,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
+              sideBars: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1

@@ -52,7 +52,7 @@ FocusScope {
   readonly property bool done: !!(item && item.completedAt)
   readonly property bool isEvent: item && item.kind === "event"
 
-  // Seeds the reminder rows. Rebuilt only when a row is added or removed, and
+  // Seeds the reminder rows. Rebuilt whenever a row is added or removed, and
   // always from the delegates' current values, so appending a row never
   // discards what is half-typed in the others.
   property var draftReminders: []
@@ -126,7 +126,7 @@ FocusScope {
     var out = []
     for (var i = 0; i < reminderRows.count; i++) {
       var row = reminderRows.itemAt(i)
-      if (!row || row.removed) continue
+      if (!row) continue
       out.push({ id: row.existingId, date: row.field.date, time: row.field.time })
     }
     return out
@@ -135,6 +135,21 @@ FocusScope {
   function addReminderRow() {
     var next = root.collectReminders()
     next.push({ id: "", date: "", time: "" })
+    root.draftReminders = next
+  }
+
+  // Drops the row from the MODEL, not by hiding its delegate. `removed` was a
+  // flag on the delegate while draftReminders kept the row, so view and model
+  // disagreed: a later add rebuilt an array of the same length, the stale
+  // delegate could survive with removed still true, and no amount of clicking
+  // Add produced a visible row.
+  //
+  // Collecting first preserves whatever the other rows currently have typed in
+  // them, which a plain splice on draftReminders would discard.
+  function removeReminderRow(i) {
+    var next = root.collectReminders()
+    if (i < 0 || i >= next.length) return
+    next.splice(i, 1)
     root.draftReminders = next
   }
 
@@ -333,6 +348,7 @@ FocusScope {
         PanelActionButton {
           focusable: true
           FocusRing {
+            sideBars: true
             anchors.fill: parent
             radius: parent.radius
             gap: 1
@@ -438,16 +454,13 @@ FocusScope {
           delegate: Item {
             id: reminderRow
             required property var modelData
+            required property int index
 
-            // Removal is staged like everything else, so closing the sheet
-            // brings the row back.
-            property bool removed: false
             property string existingId: modelData.id || ""
             property alias field: when
 
             width: layout.width
-            height: removed ? 0 : when.height
-            visible: !removed
+            height: when.height
 
             DateTimeField {
               escapeTo: editorKeys
@@ -462,6 +475,7 @@ FocusScope {
             PanelActionButton {
               focusable: true
               FocusRing {
+                sideBars: true
                 anchors.fill: parent
                 radius: parent.radius
                 gap: 1
@@ -492,10 +506,10 @@ FocusScope {
                 // focused in the dialog no Keys handler fires at all, so the
                 // whole keyboard went dead including Escape.
                 //
-                // The Add chip, not the catcher: having just removed a row, the
-                // next thing within reach should be adding one.
-                addReminderChip.forceActiveFocus()
-                reminderRow.removed = true
+                // The Add button, not the key catcher: having just removed a
+                // row, the next thing within reach should be adding one.
+                addReminderButton.forceActiveFocus()
+                root.removeReminderRow(reminderRow.index)
               }
             }
           }
@@ -503,14 +517,43 @@ FocusScope {
 
         // A chip, matching "Add to collection" and "Link a memory": all three
         // are the same thing -- an inline control that adds a row.
-        Chip {
-          id: addReminderChip
-          focusable: true
-          label: "+  Add a reminder"
-          tint: Color.muted
-          outlined: true
-          interactive: true
-          onClicked: root.addReminderRow()
+        // An Item, so the button can be centred and given room above it. A Column
+        // spacing applies to every gap equally; this one gap wants to be bigger,
+        // because the button is an action under a list rather than another row.
+        Item {
+          width: parent.width
+          height: addReminderButton.height + Style.spacing.xl
+        
+          Button {
+            id: addReminderButton
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            focusable: true
+            // Full-strength accent on focus. controlSpec("focus") applies
+            // focusBorderAlpha (0.25), which reads as grey.
+            borderSpec: activeFocus
+                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
+                        : Border.controlSpec(
+                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
+                            foreground, accent)
+            bordered: true
+            text: "+  Add a reminder"
+            foreground: Color.menu.text
+            background: Color.menu.background
+            accent: Color.accent
+            fontFamily: Style.font.menuFamily
+            onClicked: root.addReminderRow()
+        
+            FocusRing {
+              sideBars: true
+              anchors.fill: parent
+              radius: parent.radius
+              gap: 1
+              hasCursor: parent.activeFocus
+              backdrop: Color.menu.background
+              hot: false
+            }
+          }
         }
       }
 
@@ -529,6 +572,7 @@ FocusScope {
         Button {
           focusable: true
           FocusRing {
+            sideBars: true
             anchors.fill: parent
             radius: parent.radius
             gap: 1
@@ -570,6 +614,8 @@ FocusScope {
 
             FocusRing {
 
+              sideBars: true
+
               anchors.fill: parent
 
               radius: parent.radius
@@ -608,6 +654,8 @@ FocusScope {
             focusable: true
 
             FocusRing {
+
+              sideBars: true
 
               anchors.fill: parent
 

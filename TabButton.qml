@@ -46,6 +46,7 @@ BorderSurface {
   Behavior on color { ColorAnimation { duration: 120 } }
 
   FocusRing {
+    sideBars: true
     anchors.fill: parent
     radius: root.radius
     gap: 1

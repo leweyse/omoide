@@ -45,7 +45,11 @@ TextField {
   property color ringBackdrop: Color.menu.background
 
   background: BorderSurface {
-    color: Style.controlFill(root.activeFocus, root.hovered,
+    // Hover only, never focus. A fill change on focus lowers contrast against
+    // the text you are about to type, and the accent border plus the inner ring
+    // already say where the keyboard is. Passing false for `focused` keeps the
+    // kit's hover and resting fills untouched.
+    color: Style.controlFill(false, root.hovered,
                              root.foreground, root.accent)
     borderSpec: root.activeFocus
                 ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
@@ -56,6 +60,7 @@ TextField {
     // Inside the background rather than as a child of the field: a TextField's
     // children draw over its text, and this has to sit behind it.
     FocusRing {
+      sideBars: true
       anchors.fill: parent
       radius: Style.cornerRadius
       gap: 1

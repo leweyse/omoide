@@ -21,6 +21,27 @@ Rectangle {
   property bool hasCursor: false
   property bool hot: false
 
+  // Two vertical bars, just inside the left and right edges, instead of a full
+  // ring. Named for what it draws: it started as a single left bar, and a
+  // property called leftOnly that drew both sides would mislead the next reader.
+  //
+  // For a control -- a button, a chip, a text field -- a closed ring inside an
+  // already-bordered box reads as a second frame, and on something only 24px
+  // tall the two lines nearly touch. A pair of side bars brackets the control
+  // without closing a second outline around it. Cards keep the ring: they are
+  // big enough for it to read as depth rather than as a mistake.
+  property bool sideBars: false
+
+  // How far the bar is held off the top and bottom, so it runs alongside the
+  // straight part of the edge rather than the curve.
+  //
+  // Capped, because a pill's radius is half its height: FilterChip sets
+  // `radius: height / 2`, which leaves no straight run at all and made the bar
+  // vanish. The cap keeps at least 10px of bar, so the shape degrades to a short
+  // tick rather than to nothing.
+  readonly property real barInset:
+    Math.min(root.radius, Math.max(0, (root.height - Style.space(10)) / 2))
+
   // Distance from the host's edge to the ring: the host's own border plus the
   // transparent gap. `hostBorder` is stated rather than assumed because the
   // image block's frame is 2px, not 1 -- and that frame is already accent, so
@@ -65,7 +86,7 @@ Rectangle {
   property bool twoTone: false
 
   Rectangle {
-    visible: root.twoTone
+    visible: root.twoTone && !root.sideBars
     anchors.fill: parent
     anchors.margins: root.inset + 1
     color: "transparent"
@@ -74,7 +95,40 @@ Rectangle {
     border.color: Qt.rgba(0, 0, 0, 0.55)
   }
 
+  // The two bars, one per side.
+  //
+  // A pixel further in than the ring would be, because a bar sitting at the
+  // ring's inset read as crowding the border it runs beside.
+  //
+  // Vertically each spans only the STRAIGHT run of its edge -- from the corner
+  // radius to the same distance off the bottom. Running the full height put the
+  // ends alongside the curve, where the border is already sweeping away and the
+  // two stop looking parallel. Rounded caps for the same reason.
+  //
+  // A Repeater over the two sides rather than the same block written twice: the
+  // pair has to stay identical, and mirroring by index is the cheapest way to
+  // guarantee it.
+  Repeater {
+    model: root.sideBars ? 2 : 0
+
+    delegate: Rectangle {
+      required property int index
+
+      // index 0 anchors from the left, index 1 the same distance from the right.
+      x: index === 0 ? root.inset + 1
+                     : root.width - root.inset - 1 - width
+      y: root.barInset
+      width: Math.max(1, Style.space(1))
+      height: Math.max(0, root.height - root.barInset * 2)
+      radius: width / 2
+      color: Qt.rgba(root.tint.r, root.tint.g, root.tint.b, root.tintAlpha)
+
+      Behavior on color { ColorAnimation { duration: 60 } }
+    }
+  }
+
   Rectangle {
+    visible: !root.sideBars
     anchors.fill: parent
     anchors.margins: root.inset
     color: "transparent"

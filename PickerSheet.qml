@@ -112,7 +112,10 @@ FocusScope {
       anchors.right: parent.right
       anchors.top: parent.top
       anchors.margins: Style.spacing.panelPadding
-      spacing: Style.spacing.xl
+      // Title, field and results are three sections, not three controls, so
+      // they get a section-sized gap. At xl (10) the heading sat on the field
+      // and the field on the results.
+      spacing: Style.space(20)
 
       Text {
         text: root.title
@@ -176,6 +179,10 @@ FocusScope {
       Column {
         width: parent.width
         spacing: Style.spacing.xs
+        // Invisible, not merely empty: a zero-height Column still takes a
+        // spacing slot from its parent, which left 20px of dead air under the
+        // "nothing to choose from" line.
+        visible: (root.rows || []).length > 0
 
         Repeater {
           model: root.rows || []

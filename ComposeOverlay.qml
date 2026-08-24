@@ -9,7 +9,11 @@ import qs.Ui
 // It opens only after the screenshot has been taken, so it is never in its own
 // shot. Submitting closes it immediately: the model runs detached afterwards,
 // and the bar icon reports progress from there.
-Item {
+// A FocusScope, so focus falls back here when a child holding it goes away,
+// and so the Escape handler below is on the parent chain of every control
+// inside. `overlayKeys` was a sibling of the content: a key the note field
+// declined bubbled past it and died.
+FocusScope {
   id: root
 
   property var service: null
@@ -111,18 +115,15 @@ Item {
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
-      // Esc is two-stage: the note field hands focus back here on the first
-      // press, and this closes on the second. With the handler only inside the
-      // field there was no way to close a focused overlay from the keyboard.
-      Item {
-        id: overlayKeys
-        anchors.fill: parent
-        Keys.onPressed: function (event) {
-          // A held Escape must discard once, not repeatedly.
-          if (event.key === Qt.Key_Escape) {
-            if (!event.isAutoRepeat) root.discard()
-            event.accepted = true
-          }
+      // Esc discards, from anywhere in the overlay, on one press. This is a
+      // capture surface: the only thing to lose is an unsaved note, and the
+      // contract has always been that Esc throws the draft away with its image.
+      // A two-stage blur-then-discard made the first press look like nothing.
+      Keys.onPressed: function (event) {
+        if (event.key === Qt.Key_Escape) {
+          // Once, not once per auto-repeat.
+          if (!event.isAutoRepeat) root.discard()
+          event.accepted = true
         }
       }
 
@@ -134,13 +135,23 @@ Item {
         anchors.topMargin: card.contentTopInset
         anchors.leftMargin: card.contentLeftInset
         anchors.rightMargin: card.contentRightInset
-        // Capture, note field and actions are separate sections of the dialog,
-        // so they get a section-sized gap rather than a control-sized one.
-        //
-        // No heading. The dialog opens on a screenshot with a focused text
-        // field: what to do with it is already obvious, and the placeholder
-        // says the rest.
-        spacing: Style.spacing.xxl
+        // Title, capture, note field and actions are four separate sections, so
+        // they get a section-sized gap. Larger than any spacing token: at 12,
+        // and even at 18, the capture's bright frame made the field look
+        // attached to the picture rather than the next thing to do.
+        spacing: Style.space(24)
+
+        // The plugin's name, so the surface says what it belongs to. It used
+        // to have no heading, on the grounds that a screenshot above a focused
+        // field explains itself -- true, but it left the dialog anonymous when
+        // it appears over an unrelated window.
+        Text {
+          text: "Omoide"
+          color: Color.menu.text
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.title
+          font.bold: true
+        }
 
         // The screenshot, at the shape you selected. Removing it turns a
         // screenshot capture into a note-only one. No clip here: it would cut
@@ -234,9 +245,8 @@ Item {
           height: noteField.height
 
           AccentField {
-
-            ringBackdrop: Color.menu.background
             id: noteField
+            ringBackdrop: Color.menu.background
             anchors.left: parent.left
             anchors.right: dictateButton.left
             anchors.rightMargin: Style.spacing.controlGap
@@ -249,12 +259,10 @@ Item {
                              ? "Optional — add a note, or press Enter to save"
                              : "What do you want to remember?"
 
+            // No Escape branch: it bubbles to the root, which discards. Handling
+            // it here only stole the key to move focus somewhere invisible.
             Keys.onPressed: function (event) {
-              if (event.key === Qt.Key_Escape) {
-                // Step out of the input; a second Esc discards the capture.
-                if (!event.isAutoRepeat) overlayKeys.forceActiveFocus()
-                event.accepted = true
-              } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 // A held Return would commit the capture more than once.
                 if (!event.isAutoRepeat) root.submit()
                 event.accepted = true
