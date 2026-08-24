@@ -154,6 +154,7 @@ Item {
         // Underlined rather than boxed: the row is not a card, and a rule under
         // the words says "this one" without enclosing anything.
         font.underline: root.hasCursor
+        textFormat: Text.PlainText
         text: root.item ? (root.item.title || "") : ""
         wrapMode: Text.WordWrap
         color: Color.popups.text

@@ -347,6 +347,23 @@ function linesToItems(body) {
   return out
 }
 
+// Qt's Text defaults to AutoText, which sniffs its input for markup and renders
+// it as rich text -- and rich text loads <img src> over the network. Everything
+// a block carries is derived from whatever was on screen when the capture was
+// taken, so it is untrusted: a caption that says <img src="http://host/?x"> is a
+// request off this machine, made by the desktop, on open.
+//
+// Fields that need no markup set textFormat: Text.PlainText at the binding,
+// which is the cheaper guarantee. This exists for the one place that does want
+// markup of its own -- a list item's bold label -- where the model's text has to
+// survive being concatenated into a StyledText string.
+function escapeMarkup(text) {
+  return String(text === null || text === undefined ? "" : text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+}
+
 function truncate(text, limit) {
   var value = String(text || "")
   return value.length <= limit ? value : value.slice(0, limit - 1) + "…"
@@ -366,6 +383,7 @@ if (typeof module !== "undefined") {
     columnAt: columnAt,
     isRenderable: isRenderable,
     truncate: truncate,
+    escapeMarkup: escapeMarkup,
     itemsToLines: itemsToLines,
     linesToItems: linesToItems,
     formatLead: formatLead,

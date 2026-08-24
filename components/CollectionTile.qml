@@ -89,6 +89,7 @@ BorderSurface {
     anchors.bottomMargin: root.pad
     anchors.right: art.visible ? art.left : parent.right
     anchors.rightMargin: root.pad
+    textFormat: Text.PlainText
     text: root.collection ? (root.collection.name || "") : ""
     wrapMode: Text.WordWrap
     maximumLineCount: 3

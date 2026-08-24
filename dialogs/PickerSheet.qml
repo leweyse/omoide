@@ -220,6 +220,7 @@ FocusScope {
 
               Text {
                 width: parent.width
+                textFormat: Text.PlainText
                 text: pick.modelData.label || ""
                 elide: Text.ElideRight
                 color: Color.menu.text
@@ -230,6 +231,7 @@ FocusScope {
               Text {
                 visible: text.length > 0
                 width: parent.width
+                textFormat: Text.PlainText
                 text: pick.modelData.sublabel || ""
                 elide: Text.ElideRight
                 color: Color.muted

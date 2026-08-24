@@ -61,6 +61,7 @@ CursorSurface {
       Text {
         width: parent.width
         elide: Text.ElideRight
+        textFormat: Text.PlainText
         text: root.title
         color: Color.menu.text
         font.family: Style.font.menuFamily
@@ -69,6 +70,7 @@ CursorSurface {
 
       Text {
         width: parent.width
+        textFormat: Text.PlainText
         text: root.detail
         wrapMode: Text.WordWrap
         color: Color.muted

@@ -107,6 +107,14 @@ to the screenshot itself, which reads charts and dense pages far better. Only
 claude, codex, gemini and opencode take images, and the card says so for the
 rest.
 
+Presets run with their tools switched off, in an empty working directory: a
+capture is a transcription of whatever was on screen, which can include a
+paragraph written to be read by whatever handles it next, and these are coding
+agents with a shell. Omoide passes each CLI's own flag for this, so claude gets
+no tools, codex a read-only sandbox, gemini its read-only mode, and opencode a
+deny-all permission set merged over your config. `custom` is run exactly as you
+wrote it, so add your agent's own read-only flag to the command yourself.
+
 With no agent you still get the capture, your note, search over OCR'd text, and
 a reminder from an explicit "remind me to call the vet tomorrow at 3pm".
 

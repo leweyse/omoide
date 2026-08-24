@@ -88,6 +88,9 @@ BorderSurface {
   Text {
     id: chipLabel
     anchors.centerIn: parent
+    // A chip's label is a tag or a collection name, so it is model output or
+    // something the user typed. Neither ever wants markup.
+    textFormat: Text.PlainText
     text: root.label
     color: root.tint
     font.family: Style.font.resolvedFamily

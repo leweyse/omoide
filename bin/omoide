@@ -26,6 +26,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -114,9 +115,16 @@ def parse_iso(value: str | None) -> datetime | None:
 
 
 def new_id(prefix: str = "") -> str:
-    """Sortable and filesystem-safe: a timestamp plus enough entropy."""
+    """Sortable and filesystem-safe: a timestamp plus enough entropy.
+
+    12 hex, not 6. The stamp has one-second resolution, so the entropy is all
+    that separates two ids made in the same second: at 6 hex a capture that
+    produced a few thousand rows hit UNIQUE on reminders.id about a third of
+    the time. Ordinary use never came close, which is exactly why it would
+    have gone unnoticed.
+    """
     stamp = now().strftime("%Y%m%dT%H%M%S")
-    return f"{prefix}{stamp}-{uuid.uuid4().hex[:6]}"
+    return f"{prefix}{stamp}-{uuid.uuid4().hex[:12]}"
 
 
 def which(name: str) -> str | None:
@@ -156,9 +164,17 @@ def log(event: str, **fields) -> None:
         pass
 
 
+CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
 def one_line(text: str | None, limit: int = 300) -> str:
-    """Provider output flattened for a log line or an error column."""
-    flat = " ".join((text or "").split())
+    """Provider output flattened for a log line or an error column.
+
+    Control characters go too. split() drops newlines and tabs but keeps ESC,
+    and this text is provider stdout heading for a log someone will cat in a
+    terminal.
+    """
+    flat = " ".join(CONTROL_CHARS.sub("", text or "").split())
     return flat[:limit]
 
 
@@ -167,6 +183,128 @@ def run(cmd: list[str], *, check: bool = False, timeout: float | None = None,
     """Run argv. Never a shell string -- user text is always an argv element."""
     return subprocess.run(cmd, capture_output=True, text=True, check=check,
                           timeout=timeout, input=stdin_text)
+
+
+AGENT_OUTPUT_CAP = 1024 * 1024   # a JSON answer that needs a megabyte is not one
+
+
+def _drain(stream, sink: list, cap: int, over: "threading.Event") -> None:
+    """Read a stream, keeping at most `cap` bytes and flagging if it went over."""
+    kept = 0
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            if kept >= cap:
+                over.set()
+                break
+            room = cap - kept
+            if len(chunk) > room:
+                # Flag here, not on the next read. The chunk that crosses the
+                # cap can also be the last one with data in it, and waiting for
+                # a read that never comes let a truncated answer through as if
+                # the provider had simply printed bad JSON.
+                over.set()
+                sink.append(chunk[:room])
+                kept += room
+                break
+            sink.append(chunk)
+            kept += len(chunk)
+    except OSError:
+        pass
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def run_agent(argv: list[str], *, timeout: float, stdin_text: str,
+              cwd: str | None = None, env: dict | None = None,
+              cap: int = AGENT_OUTPUT_CAP) -> subprocess.CompletedProcess:
+    """Run an agent, reading at most `cap` bytes from each of its streams.
+
+    run() uses capture_output, which reads to EOF: a provider that streams --
+    a wedged loop, JSONL events, a debug log left on -- is bounded only by the
+    timeout, and every byte it printed is held in memory before anything looks
+    at it. Here the cap is the ceiling and crossing it ends the run, because
+    output that large is a malfunction and not an answer worth parsing.
+
+    stdin is written from its own thread. The prompt is comfortably under a
+    pipe buffer today, but a clipboard capture decides how big the note is, and
+    a blocking write to a provider that never reads stdin would hang past the
+    deadline.
+    """
+    proc = subprocess.Popen(
+        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, cwd=cwd, env=env)
+
+    out: list[bytes] = []
+    err: list[bytes] = []
+    over = threading.Event()
+
+    def feed() -> None:
+        try:
+            if stdin_text:
+                proc.stdin.write(stdin_text.encode("utf-8", "replace"))
+            proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    workers = [
+        threading.Thread(target=_drain, args=(proc.stdout, out, cap, over)),
+        threading.Thread(target=_drain, args=(proc.stderr, err, cap, over)),
+        threading.Thread(target=feed),
+    ]
+    for worker in workers:
+        worker.daemon = True
+        worker.start()
+
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            proc.wait(timeout=0.2)
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if over.is_set():
+            log("ai.capped", cap=cap)
+            proc.kill()
+            proc.wait()
+            break
+        if time.monotonic() >= deadline:
+            proc.kill()
+            proc.wait()
+            raise subprocess.TimeoutExpired(argv, timeout)
+
+    for worker in workers:
+        worker.join(timeout=1)
+
+    result = subprocess.CompletedProcess(
+        argv, proc.returncode,
+        b"".join(out).decode("utf-8", "replace"),
+        b"".join(err).decode("utf-8", "replace"))
+    # The caller needs to tell "we stopped it" from "it failed", because a
+    # killed process reports a signal and the reason column would otherwise
+    # read "exited -9" over a megabyte of whatever it was printing.
+    result.capped = over.is_set()
+    return result
+
+
+def notify_text(value: str | None, limit: int = 200) -> str:
+    """Text safe to hand a notification.
+
+    The shell's notification card renders its SUMMARY with Qt's default
+    AutoText, which sniffs for markup, and markup loads <img src> over the
+    network. Its body is sanitised upstream; the summary is not, and a to-do's
+    title is written by a model reading someone else's web page, so it lands
+    there as untrusted text. Angle brackets are dropped rather than escaped,
+    because an escaped entity would just render as literal "&lt;".
+
+    Not our bug to fix in the shell, but ours not to feed.
+    """
+    return one_line(str(value or "").replace("<", "").replace(">", ""), limit)
 
 
 def notify(headline: str, body: str = "", *, exec_cmd: str | None = None,
@@ -190,9 +328,9 @@ def notify(headline: str, body: str = "", *, exec_cmd: str | None = None,
         cmd += ["--image", image]
     if exec_cmd:
         cmd += ["--exec", exec_cmd]
-    cmd.append(headline)
+    cmd.append(notify_text(headline))
     if body:
-        cmd.append(body)
+        cmd.append(notify_text(body, 300))
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
@@ -346,18 +484,97 @@ AI_PRESETS = {
     "claude":   ["claude", "-p"],
     "codex":    ["codex", "exec", "--skip-git-repo-check", "-"],
     "opencode": ["opencode", "run"],
-    "gemini":   ["gemini", "-p"],
+    # -p takes a value, and a bare `gemini -p` with the prompt on stdin fails
+    # argument parsing outright ("Not enough arguments following: p"), so this
+    # preset never ran. The empty value is what selects headless mode while
+    # leaving stdin as the whole prompt: -p's own text is appended to stdin,
+    # and putting a screen's worth of OCR in argv would publish it to `ps`.
+    "gemini":   ["gemini", "-p", ""],
     "ollama":   ["ollama", "run"],          # model appended
     "aichat":   ["aichat"],
 }
 
 # Providers that can look at the screenshot rather than its OCR text.
 #
-# opencode belongs here: `opencode run -f <path>` attaches the file outright,
-# which is a stronger guarantee than the others give -- claude, codex and gemini
-# are handed the path inside the prompt and have to choose to read it. It was
-# excluded on an assumption, never a test.
+# opencode and codex belong here twice over: `opencode run -f <path>` and
+# `codex exec -i <path>` attach the file outright, which is a stronger
+# guarantee than naming a path in the prompt and hoping the model reads it.
+# Attaching also means neither needs a file-reading tool to do vision, so they
+# stay locked down in image mode as well as in ocr mode.
 VISION_CAPABLE = {"claude", "codex", "gemini", "opencode"}
+
+# Providers that are a model and nothing else. No tools to restrict, so nothing
+# below applies to them.
+PLAIN_MODEL = {"ollama", "aichat"}
+
+
+def harden(argv: list[str], provider: str, vision: bool,
+           image_path: str | None) -> tuple[list[str], dict]:
+    """Add each CLI's own way of saying "answer, do not act".
+
+    A capture is OCR of whatever was on screen, so its text is untrusted in the
+    ordinary sense: a page can contain a paragraph addressed to whatever reads
+    it next. These are general coding agents with a shell, so the prompt has to
+    arrive with their tools already shut off rather than relying on the model
+    to decline.
+
+    This used to live inside the vision branch, which meant the shipped default
+    (visionMode "ocr") restricted nobody -- and ocr mode is the case that needs
+    no tools at all, because the text is already in the prompt.
+
+    Returns (argv, environment overrides).
+    """
+    env: dict = {}
+
+    if provider == "claude":
+        # --tools controls which tools EXIST, where --allowed-tools only
+        # pre-approves ones that still do. "" is documented as none at all.
+        argv = argv + ["--tools", "Read" if vision else ""]
+        # Read alone is not enough once we moved the agent into an empty
+        # working directory: claude refuses to read outside its workspace, and
+        # the screenshot lives under the data dir. Grant that one capture's own
+        # folder -- two files, its png and its thumbnail -- and nothing else.
+        if vision and image_path:
+            argv += ["--add-dir", os.path.dirname(image_path)]
+
+    elif provider == "codex":
+        # A command-line -s beats sandbox_mode in the user's config.toml, so
+        # this holds whatever they have configured globally. --ephemeral keeps
+        # a picture of their screen out of codex's session files on disk.
+        argv = argv + ["-s", "read-only", "--ephemeral"]
+        if vision and image_path:
+            argv += ["-i", image_path]
+
+    elif provider == "gemini":
+        # plan is gemini's own read-only mode. --allowed-tools is deprecated in
+        # 0.56 in favour of the policy engine, and default approval mode is
+        # only safe by accident: it asks, and headless has nobody to ask.
+        argv = argv + ["--approval-mode", "plan"]
+        # Same workspace problem as claude, same narrow answer.
+        if vision and image_path:
+            argv += ["--include-directories", os.path.dirname(image_path)]
+        # gemini refuses to run in a directory it does not trust, and the empty
+        # directory we hand it is by definition one of those. Trust here grants
+        # nothing: the gate exists to stop a workspace's own .gemini config,
+        # extensions and MCP servers loading, and ours is empty and ours. It is
+        # the untrusted case that was worse, when gemini ran in whatever
+        # directory the shell was started in and read what it found there.
+        env["GEMINI_CLI_TRUST_WORKSPACE"] = "true"
+
+    elif provider == "opencode":
+        # opencode has no argv flag for this, but OPENCODE_CONFIG_CONTENT MERGES
+        # over the user's opencode.json rather than replacing it (verified with
+        # `opencode debug config`), so their providers, agents and plugins all
+        # survive and only the permissions change.
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps({"permission": {
+            key: "deny" for key in
+            ("bash", "edit", "read", "glob", "grep", "list", "task", "webfetch")
+        }})
+        argv = argv + ["--pure"]
+        if vision and image_path:
+            argv += ["--file", image_path]
+
+    return argv, env
 
 
 def read_shell_json() -> dict:
@@ -652,8 +869,57 @@ def extract_json(text: str) -> dict | None:
     return None
 
 
-def _clean_text(value) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+# Ceilings on what one agent answer may turn into. Nothing here is a guess at
+# what a good answer looks like -- the prompt already asks for a handful of
+# blocks -- they are the point past which a reply stops being an answer and
+# starts being a way to fill a database or the session's timer table. A capture
+# is OCR of someone else's page, so the number is not ours to trust either.
+MAX_BLOCKS = 24          # a real capture yields four or five
+MAX_LIST_ITEMS = 20
+MAX_TODOS = 20
+MAX_EVENTS = 8
+MAX_REMINDERS = 4        # per item, and every one is a systemd timer
+MAX_MEMORY_REMINDERS = 12  # and per capture, which is the number that matters
+MAX_TITLE = 200          # the library truncates at 80
+MAX_LEDE = 400
+MAX_BODY = 4000          # summary, text, quote, code
+MAX_TAG = 40
+MAX_TEXT = 2000          # default ceiling for every _clean_text field
+
+
+def _clean_text(value, limit: int = MAX_TEXT) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+# A model-supplied URL is only ever handed to a browser, so http(s) is the whole
+# allowed set. Anything else -- file://, javascript:, a bare word -- is dropped.
+HTTP_URL = re.compile(r"^(https?)://([^/\s]+)", re.I)
+
+
+def _http_url(value) -> str:
+    """A model-supplied URL, or "" when it is not one we will open.
+
+    source has always checked this. map_url never did, and it ends up in
+    `omarchy launch browser` behind a button that says "Google Maps", so the
+    label and the destination were free to disagree.
+    """
+    url = _clean_text(value)
+    return url if HTTP_URL.match(url) else ""
+
+
+def _clean_reminders(raw) -> list[dict]:
+    """At most MAX_REMINDERS well-formed alarms.
+
+    Each one becomes a transient systemd unit, so the length of this list is
+    the length of a list a model wrote about someone else's web page.
+    """
+    out = []
+    if not isinstance(raw, list):
+        return out
+    for entry in raw[:MAX_REMINDERS]:
+        if isinstance(entry, dict) and ("at" in entry or "offset_min" in entry):
+            out.append(entry)
+    return out
 
 
 def validate_blocks(raw_blocks) -> list[dict]:
@@ -667,7 +933,12 @@ def validate_blocks(raw_blocks) -> list[dict]:
     if not isinstance(raw_blocks, list):
         return result
 
+    events = 0
     for raw in raw_blocks:
+        if len(result) >= MAX_BLOCKS:
+            log("ai.truncated", what="blocks", kept=MAX_BLOCKS,
+                offered=len(raw_blocks))
+            break
         if not isinstance(raw, dict):
             continue
         kind = str(raw.get("type") or "").strip().lower()
@@ -679,7 +950,7 @@ def validate_blocks(raw_blocks) -> list[dict]:
 
         if kind == "source":
             url = _clean_text(raw.get("url"))
-            match = re.match(r"^(https?)://([^/\s]+)", url, re.I)
+            match = HTTP_URL.match(url)
             if not match:
                 continue
             result.append({"type": "source", "payload": {
@@ -691,7 +962,8 @@ def validate_blocks(raw_blocks) -> list[dict]:
             }})
 
         elif kind in ("summary", "text", "quote", "code"):
-            body = str(raw.get("text") or "").strip()
+            # Not _clean_text: a summary keeps its newlines. Still capped.
+            body = str(raw.get("text") or "").strip()[:MAX_BODY]
             if not body:
                 continue
             payload = {"text": body}
@@ -703,7 +975,7 @@ def validate_blocks(raw_blocks) -> list[dict]:
 
         elif kind == "list":
             items = []
-            for entry in (raw.get("items") or []):
+            for entry in (raw.get("items") or [])[:MAX_LIST_ITEMS]:
                 if isinstance(entry, str):
                     text_value = _clean_text(entry)
                     if text_value:
@@ -725,9 +997,15 @@ def validate_blocks(raw_blocks) -> list[dict]:
             }})
 
         elif kind == "event":
+            # Every event is created active and gets an alarm, so this is the
+            # one block type where the count alone decides how many timers a
+            # single capture can put on the machine.
+            if events >= MAX_EVENTS:
+                continue
             starts = parse_iso(raw.get("start") or raw.get("starts_at"))
             if not starts:
                 continue
+            events += 1
             ends = parse_iso(raw.get("end") or raw.get("ends_at"))
             result.append({"type": "event", "item": {
                 "kind": "event",
@@ -736,14 +1014,14 @@ def validate_blocks(raw_blocks) -> list[dict]:
                 "ends_at": iso(ends) if ends else None,
                 "all_day": 1 if raw.get("all_day") else 0,
                 "location": _clean_text(raw.get("location")),
-                "map_url": _clean_text(raw.get("map_url")),
-                "remind": raw.get("remind") or [],
+                "map_url": _http_url(raw.get("map_url")),
+                "remind": _clean_reminders(raw.get("remind")),
                 "suggested": raw.get("suggested", True),
             }})
 
         elif kind == "todos":
             items = []
-            for entry in (raw.get("items") or []):
+            for entry in (raw.get("items") or [])[:MAX_TODOS]:
                 if not isinstance(entry, dict):
                     continue
                 title = _clean_text(entry.get("title"))
@@ -754,7 +1032,7 @@ def validate_blocks(raw_blocks) -> list[dict]:
                     "kind": "todo",
                     "title": title,
                     "due_at": iso(due) if due else None,
-                    "remind": entry.get("remind") or [],
+                    "remind": _clean_reminders(entry.get("remind")),
                     # Default to suggested when the flag is missing, so an
                     # under-specified response errs toward scheduling nothing.
                     "suggested": entry.get("suggested", True),
@@ -771,7 +1049,9 @@ def build_prompt(note: str, ocr_text: str, image_path: str | None,
     template = (PLUGIN_DIR / "prompts/enrich.txt").read_text()
     local = now().astimezone()
     context = {
-        "note": note or "",
+        # Capped like ocr_text below. A clipboard capture decides how long this
+        # is, and the full text is on the memory either way.
+        "note": (note or "")[:4000],
         "ocr_text": "" if vision else (ocr_text or "")[:8000],
         "image_path": image_path if vision else "",
         "now_iso": iso(local),
@@ -789,14 +1069,14 @@ def apply_enrichment(conn: sqlite3.Connection, memory_id: str,
     would. Blocks land with origin 'ai', which is what lets a retry tell its own
     output apart from the capture's and the user's.
     """
-    title = _clean_text(enriched.get("title"))
-    lede = _clean_text(enriched.get("lede"))
+    title = _clean_text(enriched.get("title"), MAX_TITLE)
+    lede = _clean_text(enriched.get("lede"), MAX_LEDE)
     if title:
         conn.execute("UPDATE memories SET title = ? WHERE id = ?", (title, memory_id))
     if lede:
         conn.execute("UPDATE memories SET lede = ? WHERE id = ?", (lede, memory_id))
     for tag in (enriched.get("tags") or [])[:8]:
-        tag = _clean_text(tag).lower()
+        tag = _clean_text(tag, MAX_TAG).lower()
         if tag:
             conn.execute("INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?,?)",
                          (memory_id, tag))
@@ -841,29 +1121,37 @@ def run_ai(note: str, ocr_text: str, image_path: str | None,
         log("ai.skip", reason="no provider resolved")
         return None, "no agent is configured"
 
+    provider = str(ai.get("provider") or "")
+    custom = bool(ai.get("command"))
     vision = (str(ai.get("visionMode")) == "image"
               and bool(image_path)
-              and (ai.get("provider") in VISION_CAPABLE or bool(ai.get("command"))))
-    if vision and not ai.get("command"):
-        provider = ai.get("provider")
-        if provider == "claude":
-            # The prompt names a file; claude needs Read to open it, and nothing
-            # else.
-            argv = argv + ["--allowed-tools", "Read"]
-        elif provider == "opencode":
-            # Attached, not merely named. opencode takes the file as an argument,
-            # so the model is handed the pixels instead of being asked to go and
-            # fetch them -- and the prompt still carries the path for context.
-            argv = argv + ["--file", image_path]
+              and (provider in VISION_CAPABLE or custom))
+
+    env_overrides: dict = {}
+    if not custom and provider not in PLAIN_MODEL:
+        argv, env_overrides = harden(argv, provider, vision, image_path)
+
+    # An empty directory of our own, not whatever the shell happened to be
+    # started in. Every provider scopes at least part of what it can touch to
+    # its working directory, and this is the only restriction that also covers a
+    # custom command, where there are no flags of ours to add.
+    workdir = STATE_DIR / "agent-cwd"
+    try:
+        workdir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        workdir = None
+    env = {**os.environ, **env_overrides} if env_overrides else None
 
     timeout = max(5.0, float(ai.get("timeoutMs") or 45000) / 1000.0)
     started = time.monotonic()
     log("ai.start", argv=" ".join(argv), vision=vision, timeout=timeout,
+        hardened=not custom and provider not in PLAIN_MODEL,
         note_len=len(note or ""), ocr_len=len(ocr_text or ""))
 
     try:
         prompt = build_prompt(note, ocr_text, image_path, vision)
-        proc = run(argv, timeout=timeout, stdin_text=prompt)
+        proc = run_agent(argv, timeout=timeout, stdin_text=prompt,
+                         cwd=str(workdir) if workdir else None, env=env)
     except subprocess.TimeoutExpired:
         log("ai.timeout", seconds=round(time.monotonic() - started, 1))
         return None, f"{argv[0]} did not answer within {timeout:.0f}s"
@@ -872,6 +1160,10 @@ def run_ai(note: str, ocr_text: str, image_path: str | None,
         return None, f"{type(exc).__name__}: {one_line(str(exc), 200)}"
 
     elapsed = round(time.monotonic() - started, 1)
+    if getattr(proc, "capped", False):
+        log("ai.exit", rc=proc.returncode, seconds=elapsed, detail="output cap")
+        return None, (f"{argv[0]} printed more than "
+                      f"{AGENT_OUTPUT_CAP // 1024}KB and was stopped")
     if proc.returncode != 0:
         detail = one_line(proc.stderr) or one_line(proc.stdout) or "no output"
         log("ai.exit", rc=proc.returncode, seconds=elapsed, detail=detail)
@@ -929,13 +1221,17 @@ def create_item(conn: sqlite3.Connection, memory_id: str, block_id: str | None,
         " starts_at, ends_at, all_day, location, map_url, status, source, created_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (item_id, memory_id, block_id, kind,
-         spec.get("title") or "Untitled", spec.get("notes"), spec.get("due_at"),
+         _clean_text(spec.get("title"), MAX_TITLE) or "Untitled",
+         spec.get("notes"), spec.get("due_at"),
          spec.get("starts_at"), spec.get("ends_at"),
          1 if spec.get("all_day") else 0, spec.get("location"), spec.get("map_url"),
          status, source, iso(now())))
 
     anchor = parse_iso(spec.get("due_at") or spec.get("starts_at"))
-    requested = spec.get("remind") or []
+    # Bounded here as well as in validate_blocks: this is the last thing before
+    # the reminders table, and it is reached from the editors too.
+    requested = (spec.get("remind") or [])[:MAX_REMINDERS]
+
 
     if kind == "event":
         # An event gets a reminder whether or not the note asked for one. Being
@@ -952,6 +1248,15 @@ def create_item(conn: sqlite3.Connection, memory_id: str, block_id: str | None,
     elif not requested and anchor:
         # An explicit dated to-do gets one alarm at its due time.
         requested = [{"offset_min": 0}]
+
+    # Last, because the branches above can ADD a default alarm to an event or a
+    # dated to-do: capping before them would be undone by them. Per-item caps
+    # also multiply -- eight events at four alarms each is thirty-two transient
+    # units from one screenshot -- so this counts across the whole memory.
+    room = MAX_MEMORY_REMINDERS - int(conn.execute(
+        "SELECT COUNT(*) FROM reminders r JOIN items i ON i.id = r.item_id "
+        "WHERE i.memory_id = ?", (memory_id,)).fetchone()[0])
+    requested = requested[:max(0, room)]
 
     for entry in requested:
         if not isinstance(entry, dict):
@@ -1010,13 +1315,14 @@ def schedule(conn: sqlite3.Connection, reminder: sqlite3.Row) -> None:
     local = fire_at.astimezone()
     body_parts = [local.strftime("%H:%M %d %b")]
     if item["location"]:
-        body_parts.append(item["location"])
+        body_parts.append(notify_text(item["location"]))
     proc = run([
         "systemd-run", "--user", "--quiet", "--collect",
         f"--on-calendar={local.strftime('%Y-%m-%d %H:%M:%S')}",
         f"--unit={unit}",
         "bash", "-c", FIRE_SCRIPT, "bash",
-        item["title"], " · ".join(body_parts),
+        # $1 becomes the card's summary, which the shell does not sanitise.
+        notify_text(item["title"]), " · ".join(body_parts),
         open_space_cmd(item["mid"]), GLYPH,
     ])
     if proc.returncode == 0:
@@ -2704,14 +3010,45 @@ def cmd_uninstall(args) -> int:
 # user rather than installed, the plugin writes nothing outside its own state and
 # data directories at all.
 
+# What each provider's restriction actually is, for the settings dialog. The
+# argv shows most of it, but opencode's lives in an environment variable and
+# gemini's workspace trust does too, so neither is visible in the command line.
+# (ocr, image). They differ where the mode does: claude has no tools at all
+# when the text is already in the prompt, and exactly one when it has to open
+# the screenshot. A label that outlived its argv would be worse than none.
+RESTRICTIONS = {
+    "claude":   ("tools disabled", "no tools but reading the screenshot"),
+    "codex":    ("read-only sandbox, no session files kept",) * 2,
+    "gemini":   ("read-only mode",) * 2,
+    "opencode": ("every tool permission denied",) * 2,
+}
+
+
+def display_argv(argv: list[str]) -> str:
+    """argv as a line someone can read, with empty arguments made visible."""
+    return " ".join("''" if part == "" else part for part in argv)
+
+
 def cmd_ai_config(args) -> int:
     """Everything the settings dialog needs to render itself."""
     current = ai_settings()
     providers = []
     for name, preset in AI_PRESETS.items():
+        # The command the dialog shows is the command that runs, hardening
+        # included. Deriving both from harden() is what stops the dialog
+        # claiming one thing while run_ai does another.
+        plain = name in PLAIN_MODEL
+        ocr_argv = list(preset) if plain else harden(list(preset), name, False, None)[0]
+        # A placeholder with a directory in it, because the vision argv now
+        # carries the capture's folder and dirname of a bare word is "".
+        img_argv = (list(preset) if plain
+                    else harden(list(preset), name, True, "<capture>/screenshot.png")[0])
         providers.append({
             "id": name,
-            "command": " ".join(preset),
+            "command": display_argv(ocr_argv),
+            "commandImage": display_argv(img_argv),
+            "restriction": RESTRICTIONS.get(name, ("", ""))[0],
+            "restrictionImage": RESTRICTIONS.get(name, ("", ""))[1],
             "available": has(preset[0]),
             "vision": name in VISION_CAPABLE,
             "needsModel": name == "ollama",
@@ -2760,11 +3097,22 @@ def cmd_setup_ai(args) -> int:
             die("--command is empty")
         current["command"] = argv
         current["provider"] = "custom"
+        # Said plainly, because it is the one configuration where none of the
+        # tool restrictions apply. A preset is invoked with its own CLI's
+        # read-only or no-tools flag; a custom command is invoked as written,
+        # and rewriting someone's argv would be worse than not sandboxing it.
+        print("omoide: a custom command is run as given. Omoide cannot switch "
+              "off its tools,\n        and a capture is OCR of whatever was on "
+              "screen. Add your agent's own\n        read-only or no-tools flag "
+              "to --command.", file=sys.stderr)
     elif provider in AI_PRESETS:
         current["provider"] = provider
         current["command"] = []
         if not has(provider):
             die(f"{provider} is not on PATH")
+        if provider not in PLAIN_MODEL:
+            print(f"omoide: {provider} runs with its tools switched off and an "
+                  f"empty working directory.", file=sys.stderr)
     else:
         die(f"unknown provider: {provider}")
 

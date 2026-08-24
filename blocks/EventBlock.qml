@@ -81,6 +81,7 @@ BlockCard {
         Text {
           visible: !!(root.item && root.item.location)
           width: parent.width
+          textFormat: Text.PlainText
           text: root.item ? (root.item.location || "") : ""
           color: Color.muted
           font.family: Style.font.resolvedFamily

@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../MemoryModel.js" as Model
 
 // The heading here is the MODEL's, not a label: it describes these specific
 // items ("Key Interior Design Trends for 2026"), so it lives in the payload.
@@ -53,10 +54,15 @@ BlockCard {
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
           font.pixelSize: Style.font.body
+          // StyledText, because the label is bold and the text beside it is
+          // not, and they have to wrap as one paragraph. That makes this the
+          // one binding where model output is concatenated into markup, so
+          // both halves are escaped on the way in.
           textFormat: Text.StyledText
           text: modelData.label && modelData.label.length
-                ? "<b>" + modelData.label + ":</b> " + modelData.text
-                : (modelData.text || "")
+                ? "<b>" + Model.escapeMarkup(modelData.label) + ":</b> "
+                  + Model.escapeMarkup(modelData.text)
+                : Model.escapeMarkup(modelData.text)
         }
       }
     }

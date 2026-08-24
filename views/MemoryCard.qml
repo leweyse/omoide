@@ -112,6 +112,7 @@ BorderSurface {
 
         Text {
           width: parent.width
+          textFormat: Text.PlainText
           text: Model.truncate(card.memory.title, 80)
           wrapMode: Text.WordWrap
           maximumLineCount: 2
@@ -125,6 +126,7 @@ BorderSurface {
         Text {
           visible: !!card.memory.lede
           width: parent.width
+          textFormat: Text.PlainText
           text: Model.truncate(card.memory.lede, 110)
           wrapMode: Text.WordWrap
           maximumLineCount: 2
@@ -154,6 +156,7 @@ BorderSurface {
             }
 
             Text {
+              textFormat: Text.PlainText
               text: (card.memory.tags || []).slice(0, 3).join(" · ")
               color: Color.muted
               font.family: Style.font.resolvedFamily

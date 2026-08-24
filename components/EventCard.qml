@@ -110,6 +110,7 @@ BorderSurface {
 
       Text {
         width: parent.width
+        textFormat: Text.PlainText
         text: Model.truncate(root.event ? root.event.title : "", 70)
         wrapMode: Text.WordWrap
         maximumLineCount: 2

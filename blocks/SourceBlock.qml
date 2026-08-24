@@ -28,6 +28,7 @@ BlockCard {
         Text {
           id: chipText
           anchors.centerIn: parent
+          textFormat: Text.PlainText
           text: root.payload.chip || ""
           color: Color.popups.text
           font.family: Style.font.resolvedFamily
@@ -37,6 +38,7 @@ BlockCard {
 
       Text {
         anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
         text: root.payload.byline || ""
         color: Color.muted
         font.family: Style.font.resolvedFamily
@@ -46,6 +48,7 @@ BlockCard {
 
     Text {
       width: parent.width
+      textFormat: Text.PlainText
       text: root.payload.domain || ""
       color: Color.popups.text
       font.family: Style.font.resolvedFamily
@@ -54,6 +57,7 @@ BlockCard {
 
     Text {
       width: parent.width
+      textFormat: Text.PlainText
       text: Model.truncate(root.payload.url || "", 90)
       elide: Text.ElideRight
       color: Color.muted

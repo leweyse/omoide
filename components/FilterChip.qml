@@ -71,6 +71,8 @@ BorderSurface {
 
     Text {
       anchors.verticalCenter: parent.verticalCenter
+      // Facet labels are tags, which the model writes. Never markup.
+      textFormat: Text.PlainText
       text: root.label
       // The label alone, not the count: a rule running under both reads as one
       // long line rather than as emphasis on the name.

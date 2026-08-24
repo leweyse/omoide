@@ -328,6 +328,7 @@ FocusScope {
           anchors.right: acceptButton.visible ? acceptButton.left : parent.right
           anchors.rightMargin: acceptButton.visible ? Style.spacing.md : 0
           anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
           text: root.item.memoryTitle
                 ? "in “" + Model.truncate(root.item.memoryTitle, 40) + "”" : ""
           elide: Text.ElideRight

@@ -59,6 +59,9 @@ FocusScope {
     out.push({
       id: "custom",
       command: "reads a prompt on stdin, prints JSON",
+      // The presets are invoked with their own CLI's read-only flag. A custom
+      // command is invoked as written, so say so where the choice is made.
+      restriction: "run as written, so add your agent's own read-only flag",
       available: true,
       vision: false,
       needsModel: false
@@ -219,6 +222,23 @@ FocusScope {
             font.pixelSize: Style.font.caption
           }
 
+          // The one thing worth saying before the choice rather than after it.
+          // These are coding agents with a shell, and a capture is text off a
+          // screen that the user did not necessarily write, so how each one is
+          // invoked matters more than which one it is. Brighter than the
+          // paragraph above because it is a guarantee, not background.
+          Text {
+            width: parent.width
+            text: "Agents run with their tools switched off, in an empty "
+                  + "directory, so nothing on a captured screen can make one "
+                  + "read a file or run a command. A custom command is the "
+                  + "exception, and runs exactly as you wrote it."
+            wrapMode: Text.WordWrap
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.caption
+          }
+
           // One row per preset, plus custom. An uninstalled provider is shown
           // disabled with the reason rather than hidden.
           // Two columns. Seven choices at a comfortable gap do not fit the
@@ -240,9 +260,22 @@ FocusScope {
 
                 width: providerGrid.cellWidth
                 title: modelData.id + (modelData.vision ? "   · reads images" : "")
-                detail: modelData.available
-                        ? modelData.command
-                        : modelData.id + " is not installed"
+                // The command as it will actually be invoked, which differs
+                // between the two vision modes: ocr needs no tools at all,
+                // image needs the screenshot attached or read. Both strings
+                // come from the CLI, so this cannot drift from what runs.
+                detail: {
+                  if (!modelData.available)
+                    return modelData.id + " is not installed"
+                  var image = root.vision === "image"
+                  var line = (image && modelData.commandImage)
+                             ? modelData.commandImage
+                             : modelData.command
+                  var note = (image && modelData.restrictionImage)
+                             ? modelData.restrictionImage
+                             : modelData.restriction
+                  return note ? line + "\n" + note : line
+                }
                 picked: root.chosen === modelData.id
                 selectable: modelData.available
                 onChose: root.chosen = modelData.id

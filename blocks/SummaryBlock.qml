@@ -28,6 +28,7 @@ BlockCard {
 
   Text {
     width: parent.width
+    textFormat: Text.PlainText
     text: root.payload.text || ""
     wrapMode: Text.WordWrap
     color: Color.popups.text

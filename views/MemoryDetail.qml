@@ -511,6 +511,7 @@ Flickable {
         Text {
           id: titleText
           width: parent.width
+          textFormat: Text.PlainText
           text: root.memory.title || ""
           wrapMode: Text.WordWrap
           color: Color.popups.text
@@ -521,6 +522,7 @@ Flickable {
         Text {
           visible: !!root.memory.lede
           width: parent.width
+          textFormat: Text.PlainText
           text: root.memory.lede || ""
           wrapMode: Text.WordWrap
           color: Color.muted
@@ -669,6 +671,7 @@ Flickable {
         width: parent.width
         // With the reason, when there is one. An unexplained failure tells the
         // user nothing they can act on, and until schema v5 nothing recorded it.
+        textFormat: Text.PlainText
         text: (root.memory.aiError && root.memory.aiError.length)
               ? "Enrichment failed: " + root.memory.aiError
                 + ". Your note and screenshot are intact."

@@ -30,6 +30,7 @@ BlockCard {
 
     Text {
       width: parent.width
+      textFormat: Text.PlainText
       text: root.payload.text || ""
       wrapMode: Text.WordWrap
       color: Color.popups.text
@@ -39,6 +40,7 @@ BlockCard {
 
     Text {
       visible: !!root.payload.attribution
+      textFormat: Text.PlainText
       text: "— " + (root.payload.attribution || "")
       color: Color.muted
       font.family: Style.font.resolvedFamily

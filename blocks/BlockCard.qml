@@ -65,6 +65,10 @@ BorderSurface {
     PanelSectionHeader {
       id: label
       visible: text.length > 0
+      // A list block's heading is the model's own words, so it is untrusted and
+      // must not be sniffed for markup. PanelSectionHeader is a Text, so this
+      // overrides its AutoText default from out here.
+      textFormat: Text.PlainText
       // popups.text rather than muted: PanelSectionHeader darkens whatever it
       // is given by 1.4, so handing it an already-dim colour rendered the
       // label twice-faded. One step up in size too -- at caption (10px) a

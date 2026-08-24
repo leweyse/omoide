@@ -73,6 +73,7 @@ BorderSurface {
     Text {
       id: label
       width: parent.width
+      textFormat: Text.PlainText
       text: Model.truncate(root.memory ? root.memory.title : "", 60)
       wrapMode: Text.WordWrap
       maximumLineCount: 2
