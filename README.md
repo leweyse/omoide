@@ -132,6 +132,10 @@ a reminder from an explicit "remind me to call the vet tomorrow at 3pm".
 ~/.local/state/omoide/           derived cache, rebuildable
 ```
 
+The plugin writes nothing else. `XDG_*_HOME` moves the base directory, but the
+`omoide/` leaf is always hardcoded, so `uninstall` can only delete a directory
+the plugin made itself. No environment variable hands it a path to remove.
+
 ## TODO list
 
 **Voice dictation.** Voxtype does the transcription and the wiring is in, but I
