@@ -23,14 +23,15 @@ Item {
   readonly property string sourceDir: (manifest && manifest.__sourceDir) || ""
   readonly property string binPath: sourceDir ? sourceDir + "/bin/omoide" : "omoide"
 
-  // Matches the CLI: plain XDG data (NOT under .local/share/omarchy, which is
-  // a symlink to the read-only package tree), and state under omarchy/.
+  // Matches the CLI: plain XDG paths under our own name. Not .local/share/omarchy,
+  // which is a symlink to the read-only package tree, and not .local/state/omarchy,
+  // which is Omarchy's own namespace.
   readonly property string dataHome:
     (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share"))
     + "/omoide"
   readonly property string stateHome:
     (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state"))
-    + "/omarchy/omoide"
+    + "/omoide"
 
   // Everything the bar and the Space window render comes from this cache, so
   // no QML code ever opens the database.

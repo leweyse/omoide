@@ -51,7 +51,7 @@ XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or (HOME / ".config"))
 DATA_DIR = Path(os.environ.get("OMOIDE_DATA_DIR",
                                XDG_DATA / "omoide"))
 STATE_DIR = Path(os.environ.get("OMOIDE_STATE_DIR",
-                                XDG_STATE / "omarchy/omoide"))
+                                XDG_STATE / "omoide"))
 DB_PATH = DATA_DIR / "memories.db"
 BLOB_DIR = DATA_DIR / "blobs"
 INDEX_PATH = STATE_DIR / "index.json"
@@ -313,10 +313,6 @@ def connect(*, write: bool = True) -> sqlite3.Connection:
             conn.commit()
             if backup.exists():
                 backup.unlink()   # clean on success; no litter left behind
-            # v4 added attachment dimensions. SQL cannot read a PNG header, so
-            # the rows that predate the column are measured here, once.
-            if version < 4:
-                backfill_dimensions(conn)
 
     return conn
 
@@ -1658,9 +1654,10 @@ def image_size(path: Path) -> tuple[int, int] | None:
 def backfill_dimensions(conn: sqlite3.Connection) -> int:
     """Measure image attachments recorded before dimensions were stored.
 
-    Called once when the v4 migration applies, and again by `reindex` so there
-    is an explicit way to redo it. A file that has gone missing is skipped
-    rather than treated as an error: the row is still a valid memory.
+    Attachments record their dimensions at insert time, so this exists for the
+    rows a future migration adds a column to, and for `reindex` as an explicit
+    way to redo the measurement. A file that has gone missing is skipped rather
+    than treated as an error: the row is still a valid memory.
     """
     filled = 0
     rows = conn.execute("SELECT id, rel_path FROM attachments WHERE kind = 'image' "
