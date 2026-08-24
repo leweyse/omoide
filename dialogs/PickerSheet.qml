@@ -120,6 +120,7 @@ FocusScope {
 
       Text {
         text: root.title
+        textFormat: Text.PlainText
         color: Color.menu.text
         font.family: Style.font.menuFamily
         font.pixelSize: Style.font.subtitle
@@ -172,6 +173,7 @@ FocusScope {
         visible: (root.rows || []).length === 0
         width: parent.width
         text: root.emptyText
+        textFormat: Text.PlainText
         color: Color.muted
         font.family: Style.font.menuFamily
         font.pixelSize: Style.font.bodySmall

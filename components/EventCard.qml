@@ -127,6 +127,7 @@ BorderSurface {
               ? Model.formatRange(root.event.startsAt, root.event.endsAt,
                                   root.event.allDay)
               : ""
+        textFormat: Text.PlainText
         elide: Text.ElideRight
         color: Color.popups.text
         font.family: Style.font.resolvedFamily
@@ -136,7 +137,9 @@ BorderSurface {
       Text {
         width: parent.width
         visible: root.place.length > 0
+        // location and domain are model output, so never sniffed for markup.
         text: root.place
+        textFormat: Text.PlainText
         elide: Text.ElideRight
         color: Color.muted
         font.family: Style.font.resolvedFamily

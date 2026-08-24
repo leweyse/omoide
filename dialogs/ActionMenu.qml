@@ -266,6 +266,7 @@ Item {
 
                     Text {
                       text: modelData.label
+                      textFormat: Text.PlainText
                       color: Color.popups.text
                       font.family: Style.font.resolvedFamily
                       font.pixelSize: Style.font.body
@@ -274,6 +275,7 @@ Item {
                     Text {
                       visible: modelData.enabled === false && !!modelData.reason
                       text: modelData.reason || ""
+                      textFormat: Text.PlainText
                       color: Color.muted
                       font.family: Style.font.resolvedFamily
                       font.pixelSize: Style.font.caption

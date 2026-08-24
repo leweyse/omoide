@@ -711,6 +711,7 @@ Item {
             anchors.right: closeButton.left
             anchors.rightMargin: Style.spacing.md
             text: root.pageTitle
+            textFormat: Text.PlainText
             elide: Text.ElideRight
             color: Color.menu.text
             font.family: Style.font.menuFamily

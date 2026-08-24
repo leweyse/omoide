@@ -124,6 +124,7 @@ Flickable {
           id: nameText
           width: parent.width
           text: root.collectionName
+          textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           color: Color.popups.text
           font.family: Style.font.resolvedFamily

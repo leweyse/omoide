@@ -106,6 +106,7 @@ FocusScope {
         Text {
           width: parent.width
           text: root.message
+          textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           color: Color.menu.text
           font.family: Style.font.menuFamily

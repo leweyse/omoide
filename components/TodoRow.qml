@@ -172,6 +172,7 @@ Item {
         visible: text.length > 0
         text: root.item
               ? Model.formatWhen(root.item.completedAt || root.item.dueAt) : ""
+        textFormat: Text.PlainText
         // Overdue but still open reads red, and is never auto-hidden.
         color: root.overdue ? Color.urgent : Color.muted
         font.family: Style.font.resolvedFamily

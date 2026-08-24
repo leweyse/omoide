@@ -72,6 +72,7 @@ BlockCard {
           text: root.item
                 ? Model.formatRange(root.item.startsAt, root.item.endsAt, root.item.allDay)
                 : ""
+          textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           color: Color.popups.text
           font.family: Style.font.resolvedFamily

@@ -158,6 +158,7 @@ FocusScope {
               height: parent.height
               verticalAlignment: Text.AlignVCenter
               text: modelData.label || ""
+              textFormat: Text.PlainText
               color: entryRow.tint
               font.family: Style.font.menuFamily
               font.pixelSize: Style.font.body
