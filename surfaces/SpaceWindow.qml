@@ -946,11 +946,9 @@ Item {
           onSubmitted: function (text) { root.fileInto(text); collectionPicker.close() }
         }
 
+        // A window of its own, so the reference can outgrow this card.
         HelpSheet {
           id: helpSheet
-          anchors.fill: parent
-          scrimRadius: root.cardRadius
-          z: 60
           onClosed: root.restoreFocus()
         }
 
