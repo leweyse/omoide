@@ -41,18 +41,30 @@ from pathlib import Path
 
 HOME = Path.home()
 
+
+def xdg(var: str, default: str) -> Path:
+    """An XDG base directory, or its default under $HOME.
+
+    A relative value is ignored, as the spec says to: it would otherwise
+    resolve against whatever directory the CLI happened to be started in.
+    """
+    value = os.environ.get(var, "")
+    return Path(value) if value.startswith("/") else HOME / default
+
+
 # Plain XDG for data, deliberately NOT under an "omarchy" subdirectory:
 # ~/.local/share/omarchy is a symlink to the read-only package tree
 # (/usr/share/omarchy) on a stock install, so writing there would fail -- and
 # would be writing into a package directory even if it did not.
-XDG_DATA = Path(os.environ.get("XDG_DATA_HOME") or (HOME / ".local/share"))
-XDG_STATE = Path(os.environ.get("XDG_STATE_HOME") or (HOME / ".local/state"))
-XDG_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME") or (HOME / ".config"))
-
-DATA_DIR = Path(os.environ.get("OMOIDE_DATA_DIR",
-                               XDG_DATA / "omoide"))
-STATE_DIR = Path(os.environ.get("OMOIDE_STATE_DIR",
-                                XDG_STATE / "omoide"))
+#
+# Every path below ends in a component this file writes literally, and there is
+# no OMOIDE_DATA_DIR/OMOIDE_STATE_DIR/OMOIDE_CONFIG to move it. That is the
+# whole of uninstall's safety: it deletes these paths, so what it deletes is
+# always a directory named "omoide" that we created. Relocate them by pointing
+# XDG_*_HOME somewhere else -- the "omoide" leaf comes from here either way, so
+# the worst a mistyped value can cost is a directory of ours in an odd place.
+DATA_DIR = xdg("XDG_DATA_HOME", ".local/share") / "omoide"
+STATE_DIR = xdg("XDG_STATE_HOME", ".local/state") / "omoide"
 DB_PATH = DATA_DIR / "memories.db"
 BLOB_DIR = DATA_DIR / "blobs"
 INDEX_PATH = STATE_DIR / "index.json"
@@ -68,8 +80,7 @@ INDEX_PATH = STATE_DIR / "index.json"
 # shell.json is still READ for the bar-widget settings the shell injects
 # (defaultAction, captureMode). Those are the platform's own extension point and
 # are written only by `omarchy bar set` or the shell's updateEntryInline.
-CONFIG_PATH = Path(os.environ.get("OMOIDE_CONFIG",
-                                  XDG_CONFIG / "omoide/config.json"))
+CONFIG_PATH = xdg("XDG_CONFIG_HOME", ".config") / "omoide/config.json"
 
 LOG_PATH = STATE_DIR / "omoide.log"
 LOG_MAX_BYTES = 256 * 1024   # a few thousand lines; days of ordinary use
@@ -2949,28 +2960,13 @@ def cmd_install(args) -> int:
     return 0
 
 
-def ours_to_remove(path: Path, markers: tuple[str, ...]) -> bool:
-    """True when `path` is recognisably an Omoide directory.
-
-    DATA_DIR and STATE_DIR follow the OMOIDE_* environment overrides, which is
-    how tests point them at scratch space -- and how a mistyped override would
-    hand rmtree something like $HOME. Deleting is the one operation where
-    obeying the override blindly is worse than doing nothing, so a directory
-    must look like ours before it goes: named omoide, or holding a file only
-    our layout produces.
-    """
-    try:
-        resolved = path.resolve()
-    except OSError:
-        return False
-    if not resolved.is_dir():
-        return False
-    if resolved.name == "omoide":
-        return True
-    return any((resolved / marker).exists() for marker in markers)
-
-
 def cmd_uninstall(args) -> int:
+    # Before anything is disabled or deleted. Every other entry point reaches
+    # this through connect(), so uninstall was the one command that never ran
+    # it -- and the only one that deletes. Refusing a state directory inside
+    # the package tree matters more here than anywhere else.
+    guard_paths()
+
     # Nothing to undo in bindings.lua: the plugin never wrote there. A line the
     # user pasted is theirs, and removing it silently would be worse than leaving
     # a chord that reports the shell is not running the plugin any more.
@@ -2980,25 +2976,23 @@ def cmd_uninstall(args) -> int:
     # inside the shell, and both go with the plugin. Versions up to 0.2.1 used
     # transient systemd units, which are gone at the next reboot whether or not
     # anything stops them.
-    if ours_to_remove(STATE_DIR, ("index.json", "omoide.log", "agent-cwd")):
-        shutil.rmtree(STATE_DIR, ignore_errors=True)   # derived: always removed
-    elif STATE_DIR.exists():
-        print(f"omoide: {STATE_DIR} does not look like an omoide state "
-              f"directory; leaving it alone", file=sys.stderr)
+
+    # Both trees are ours by construction -- see the path block at the top of
+    # this file -- so there is nothing to recognise before deleting them.
+    # rmtree is also the right tool for a directory someone else may have
+    # planted links in: it refuses a symlinked root outright, and unlinks a
+    # symlinked entry rather than descending through it.
+    shutil.rmtree(STATE_DIR, ignore_errors=True)       # derived: always removed
 
     data_removed = False
     if args.purge:
-        if ours_to_remove(DATA_DIR, ("memories.db", "blobs")):
-            shutil.rmtree(DATA_DIR, ignore_errors=True)
-            data_removed = True
-        elif DATA_DIR.exists():
-            print(f"omoide: {DATA_DIR} does not look like an omoide data "
-                  f"directory; leaving it alone", file=sys.stderr)
+        shutil.rmtree(DATA_DIR, ignore_errors=True)
+        # Reported, not assumed: ignore_errors hides a permission problem, and
+        # rmtree declines a symlinked root rather than following it.
+        data_removed = not DATA_DIR.exists()
         # Our own settings. Kept by a plain uninstall, like the captures: the
-        # agent you chose is yours, not installation state. Same recognition
-        # rule as the directories: OMOIDE_CONFIG is an override too.
-        if CONFIG_PATH.name == "config.json" and CONFIG_PATH.parent.name == "omoide":
-            CONFIG_PATH.unlink(missing_ok=True)
+        # agent you chose is yours, not installation state.
+        CONFIG_PATH.unlink(missing_ok=True)
 
     shell_ipc("shell", "rescanPlugins")
     emit({"uninstalled": True, "dataRemoved": data_removed,
