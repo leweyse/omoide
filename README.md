@@ -132,10 +132,9 @@ a reminder from an explicit "remind me to call the vet tomorrow at 3pm".
 ~/.local/state/omoide/           derived cache, rebuildable
 ```
 
-Nothing else is written, and none of it is configurable: `XDG_*_HOME` moves the
-base directory, but the `omoide/` leaf always comes from the plugin. That is
-what makes `uninstall` safe to run — it can only delete a directory of its own
-making, never a path it was handed.
+The plugin writes nothing else. `XDG_*_HOME` moves the base directory, but the
+`omoide/` leaf is always hardcoded, so `uninstall` can only delete a directory
+the plugin made itself. No environment variable hands it a path to remove.
 
 ## TODO list
 
