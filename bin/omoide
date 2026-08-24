@@ -2949,6 +2949,27 @@ def cmd_install(args) -> int:
     return 0
 
 
+def ours_to_remove(path: Path, markers: tuple[str, ...]) -> bool:
+    """True when `path` is recognisably an Omoide directory.
+
+    DATA_DIR and STATE_DIR follow the OMOIDE_* environment overrides, which is
+    how tests point them at scratch space -- and how a mistyped override would
+    hand rmtree something like $HOME. Deleting is the one operation where
+    obeying the override blindly is worse than doing nothing, so a directory
+    must look like ours before it goes: named omoide, or holding a file only
+    our layout produces.
+    """
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    if not resolved.is_dir():
+        return False
+    if resolved.name == "omoide":
+        return True
+    return any((resolved / marker).exists() for marker in markers)
+
+
 def cmd_uninstall(args) -> int:
     # Nothing to undo in bindings.lua: the plugin never wrote there. A line the
     # user pasted is theirs, and removing it silently would be worse than leaving
@@ -2959,17 +2980,29 @@ def cmd_uninstall(args) -> int:
     # inside the shell, and both go with the plugin. Versions up to 0.2.1 used
     # transient systemd units, which are gone at the next reboot whether or not
     # anything stops them.
-    shutil.rmtree(STATE_DIR, ignore_errors=True)   # derived: always removed
+    if ours_to_remove(STATE_DIR, ("index.json", "omoide.log", "agent-cwd")):
+        shutil.rmtree(STATE_DIR, ignore_errors=True)   # derived: always removed
+    elif STATE_DIR.exists():
+        print(f"omoide: {STATE_DIR} does not look like an omoide state "
+              f"directory; leaving it alone", file=sys.stderr)
 
+    data_removed = False
     if args.purge:
-        shutil.rmtree(DATA_DIR, ignore_errors=True)
+        if ours_to_remove(DATA_DIR, ("memories.db", "blobs")):
+            shutil.rmtree(DATA_DIR, ignore_errors=True)
+            data_removed = True
+        elif DATA_DIR.exists():
+            print(f"omoide: {DATA_DIR} does not look like an omoide data "
+                  f"directory; leaving it alone", file=sys.stderr)
         # Our own settings. Kept by a plain uninstall, like the captures: the
-        # agent you chose is yours, not installation state.
-        CONFIG_PATH.unlink(missing_ok=True)
+        # agent you chose is yours, not installation state. Same recognition
+        # rule as the directories: OMOIDE_CONFIG is an override too.
+        if CONFIG_PATH.name == "config.json" and CONFIG_PATH.parent.name == "omoide":
+            CONFIG_PATH.unlink(missing_ok=True)
 
     shell_ipc("shell", "rescanPlugins")
-    emit({"uninstalled": True, "dataRemoved": bool(args.purge),
-          "dataDir": None if args.purge else str(DATA_DIR),
+    emit({"uninstalled": True, "dataRemoved": data_removed,
+          "dataDir": None if data_removed else str(DATA_DIR),
           "configFile": None if args.purge else str(CONFIG_PATH)})
     return 0
 
