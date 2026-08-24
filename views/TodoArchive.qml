@@ -91,11 +91,27 @@ Flickable {
       return true
     }
 
+    // Space ticks the box without opening anything -- the point of a task list
+    // is clearing it, and that should not cost a dialog each time.
+    if (event.key === Qt.Key_Space) {
+      root.toggleCursor()
+      return true
+    }
+
     return false
   }
 
   // Scroll the cursor back into view, in content coordinates: a row sits inside
   // a card inside the page, so its own y says nothing about where it is.
+  function toggleCursor() {
+    var args = Model.todoAction(root.regionRows[root.cursor])
+    if (!args || !root.service) return
+    root.service.call(args, function () {
+      root.reload()
+      root.service.refresh()
+    })
+  }
+
   function ensureVisible() {
     var group = root.region === 1 ? suggestedGroup : tasksGroup
     var it = group.itemAt(root.cursor)

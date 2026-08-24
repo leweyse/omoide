@@ -179,6 +179,22 @@ function columnAt(x, columnCount, columnWidth, gap) {
   return Math.max(0, Math.min(columnCount - 1, i))
 }
 
+// The CLI verb for acting on a to-do row from the keyboard, or null when the row
+// cannot be acted on.
+//
+// Three pages show these rows -- Tasks, For you, and a memory's to-dos card --
+// and each has the row as plain data rather than as a delegate it can call a
+// method on. Deciding here keeps one answer to "what does Space do to this row"
+// instead of three that can drift.
+//
+// A suggestion has nothing to complete: it is the agent's proposal, so acting on
+// it accepts it. Anything else toggles.
+function todoAction(row) {
+  if (!row || !row.id) return null
+  if (row.status === "suggested") return ["item", "promote", "--id", row.id]
+  return ["item", row.completedAt ? "reopen" : "complete", "--id", row.id]
+}
+
 function balanceColumns(items, columnCount, heightOf) {
   var columns = []
   var heights = []
@@ -345,6 +361,7 @@ if (typeof module !== "undefined") {
     digestLine: digestLine,
     balanceColumns: balanceColumns,
     stepList: stepList,
+    todoAction: todoAction,
     stepGrid: stepGrid,
     columnAt: columnAt,
     isRenderable: isRenderable,

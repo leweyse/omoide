@@ -84,6 +84,15 @@ Flickable {
       return true
     }
 
+    // Tasks only. An event has no completion state, so Space there means
+    // nothing and must not silently do something else.
+    if (event.key === Qt.Key_Space && root.region === 1) {
+      var args = Model.todoAction(root.tasks[root.cursor])
+      if (args && root.service)
+        root.service.call(args, function () { root.service.refresh() })
+      return true
+    }
+
     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
       var row = root.regionRows[root.cursor]
       if (!row) return true

@@ -80,7 +80,8 @@ FocusScope {
       rows: [
         { keys: "Tab",     what: "Next section on this page" },
         { keys: "↑ ↓ ← →", what: "Move within the section" },
-        { keys: "Enter",   what: "Open what the cursor is on" }
+        { keys: "Enter",   what: "Open what the cursor is on" },
+        { keys: "Space",   what: "Toggle a to-do, or accept a suggestion" }
       ]
     },
     {
@@ -102,8 +103,10 @@ FocusScope {
     {
       title: "Tasks",
       rows: [
-        { keys: "←  →",  what: "Switch tab" },
+        { keys: "←  →",  what: "Switch tab: Upcoming, Past, Completed" },
+        { keys: "Tab",   what: "Rows ⇄ Suggested, on Upcoming" },
         { keys: "↑  ↓",  what: "Move through the rows" },
+        { keys: "Space", what: "Toggle done, without opening it" },
         { keys: "Enter", what: "Open the task" }
       ]
     },
@@ -112,6 +115,7 @@ FocusScope {
       rows: [
         { keys: "↑  ↓",  what: "Walk the cards; the page follows" },
         { keys: "Enter", what: "Edit, preview, open a link, or step into a to-do list" },
+        { keys: "Space", what: "Toggle a to-do, once you are in the list" },
         { keys: "Esc",   what: "Leave the to-do list, back to the card" }
       ]
     },
@@ -127,7 +131,9 @@ FocusScope {
   ]
 
   // Split for balance, not down the middle of the array: the first four groups
-  // carry 13 rows, the last four carry 14, so the columns end level.
+  // carry 14 rows, the last four 17. No boundary gives an even split, and moving
+  // Library across makes it 18/13 -- worse, and it would break the reading order
+  // of general-then-per-page. A short right column is the lesser cost.
   readonly property int splitAt: 4
   readonly property var leftGroups: root.groups.slice(0, root.splitAt)
   readonly property var rightGroups: root.groups.slice(root.splitAt)

@@ -265,6 +265,16 @@ Flickable {
       if (one) root.openItem(one.id)
       return true
     }
+
+    if (event.key === Qt.Key_Space) {
+      var args = Model.todoAction(rows[root.todoCursor])
+      if (args && root.service)
+        root.service.call(args, function () {
+          root.reload()
+          root.service.refresh()
+        })
+      return true
+    }
     // Back out to the card, one rung, exactly as the Esc stack says.
     if (event.key === Qt.Key_Escape) {
       if (!event.isAutoRepeat) root.todoCursor = -1
