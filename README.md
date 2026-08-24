@@ -2,7 +2,7 @@
 
 思い出 (*omoide*) is Japanese for a memory you keep.
 
-https://github.com/user-attachments/assets/f6019266-45bc-47b5-b1b4-4b8119e7e821
+![The For you view, listing today's events and the open tasks](preview.png)
 
 More in [assets/](assets): the library, the capture menu, agent settings.
 
@@ -17,6 +17,10 @@ Everything runs on your machine. No account, no server, nothing syncing. Your
 memories are a SQLite file and a folder of images in your home directory. The
 only thing that ever leaves is what you hand to a cloud agent, and nothing at
 all if you run a local one.
+
+## Demo
+
+https://github.com/user-attachments/assets/f6019266-45bc-47b5-b1b4-4b8119e7e821
 
 ## Capturing
 
@@ -78,9 +82,9 @@ bullet with a `+` and no timer until you accept it.
 omarchy plugin add https://github.com/leweyse/omoide.git --enable
 ```
 
-It asks which bar section to put the icon in. Screenshots need `grim` and
-`slurp`, OCR needs `tesseract`, dictation needs `voxtype`
-(`omarchy-voxtype-install`).
+It asks which bar section to put the icon in. The CLI runs on `python3`.
+Screenshots need `grim` and `slurp`, OCR needs `tesseract`, dictation needs
+`voxtype` (`omarchy-voxtype-install`).
 
 To remove it, `omarchy plugin remove leweyse.omoide`. Your memories stay on
 disk. Run `bin/omoide uninstall --purge` first if you want them gone with it.
@@ -127,3 +131,7 @@ I have not solved.
 list.
 
 **Clipboard capture.** It already shows in the menu, disabled.
+
+## License
+
+MIT, in [LICENSE](LICENSE).
