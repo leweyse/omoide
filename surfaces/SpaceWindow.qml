@@ -8,6 +8,7 @@ import "../components"
 import "../dialogs"
 import "../views"
 import "../MemoryModel.js" as Model
+import "../common/Radii.js" as Radii
 
 // The Space dialog.
 //
@@ -452,8 +453,8 @@ Item {
           color: Style.normalFill
           // Inside the border, so the inner curve is the card's radius less
           // the border it sits behind.
-          topLeftRadius: Math.max(0, Style.cornerRadius - card.borderLeft)
-          bottomLeftRadius: Math.max(0, Style.cornerRadius - card.borderLeft)
+          topLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
+          bottomLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
 
           // One padding token so the caption, the rows and the footer all line
           // up on the same inset.

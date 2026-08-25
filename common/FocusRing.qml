@@ -189,7 +189,16 @@ Rectangle {
       anchors.fill: parent
       anchors.margins: root.inset
 
-      readonly property real ringRadius: Math.max(0, root.radius - 2)
+      // The host's radius less three, sitting `inset` (4) in from its edge.
+      //
+      // True concentric maths would be the full inset, and the closed ring
+      // below explains why that is not used: at a 6px radius it turns the inner
+      // corners visibly squarer than the outer ones. But two was a pixel too
+      // generous for the corner marks -- against a capture card's rounded frame
+      // they read as rounder than the curve they sit inside. Three splits it:
+      // the arc still reads as the same shape as the host's corner without
+      // bulging out of it.
+      readonly property real ringRadius: Math.max(0, root.radius - 3)
       // Past the curve and onto the straight edge, so the mark reads as a
       // corner of the ring rather than a dot. Capped so opposite corners can
       // never meet on a small host.

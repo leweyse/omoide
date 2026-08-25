@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Ui
 import "../common"
 import "../MemoryModel.js" as Model
+import "../common/Radii.js" as Radii
 
 // One memory in a grid: thumbnail, title, lede, then tags and open to-dos.
 //
@@ -17,9 +18,16 @@ BorderSurface {
   property bool hasCursor: false
   signal activated()
 
-  // One inset for the whole card. The thumbnail deliberately bleeds to the
-  // edges; everything else sits inside this.
-  readonly property real pad: Style.spacing.lg
+  // Insets for everything but the thumbnail, which deliberately bleeds to the
+  // edges.
+  //
+  // Wider than it is tall. Across, lg left the title starting ten physical
+  // pixels off a border that is itself two and a half, which read as text
+  // pressed against the frame. Down, the same increase just stretched the card:
+  // the rows already carry their own spacing, so the extra only showed up as
+  // slack above the title and under the last tag.
+  readonly property real padX: Style.spacing.xxl
+  readonly property real padY: Style.spacing.lg
 
   width: parent ? parent.width : 0
   height: cardLayout.implicitHeight + card.borderTop + card.borderBottom
@@ -92,8 +100,8 @@ BorderSurface {
       source: card.memory.thumb ? "file://" + card.memory.thumb : ""
       fillMode: Image.PreserveAspectCrop
       borderWidth: 0
-      topLeftRadius: Math.max(0, Style.cornerRadius - card.borderLeft)
-      topRightRadius: Math.max(0, Style.cornerRadius - card.borderRight)
+      topLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
+      topRightRadius: Radii.nested(Style.cornerRadius, card.borderRight)
       bottomLeftRadius: 0
       bottomRightRadius: 0
     }
@@ -101,17 +109,40 @@ BorderSurface {
     // A padded region rather than a bare Column: this is what gives the
     // text equal breathing room on all four sides, including under the
     // last row, which a Column with only an x offset cannot do.
-    Item {
+    //
+    // Painted rather than transparent, in the card's own colour, so it covers
+    // the border's inner edge exactly as the thumbnail above it does.
+    //
+    // Left bare, it did not: a stroked Rectangle antialiases its inner edge a
+    // fraction of a pixel into the content area, and the thumbnail -- opaque,
+    // and inset to precisely that edge -- paints over the part that falls under
+    // it. The text region covered nothing, so the same border kept more of its
+    // inner bleed there. Solving the coverage against the two backdrops put the
+    // border's apparent edge a third of a pixel further in beside the text than
+    // beside the image, which is what read as the text half of the card having
+    // a second, heavier frame of its own.
+    //
+    // Bottom corners only. This is the last thing in the column, so it meets
+    // the card's rounded bottom; square corners here would paint over that
+    // curve, the card's `clip` being rectangular and unable to trim them.
+    Rectangle {
       width: parent.width
-      implicitHeight: textColumn.implicitHeight + card.pad * 2
+      implicitHeight: textColumn.implicitHeight + card.padY * 2
       height: implicitHeight
+      color: Color.popups.background
+      topLeftRadius: 0
+      topRightRadius: 0
+      bottomLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
+      bottomRightRadius: Radii.nested(Style.cornerRadius, card.borderRight)
 
       Column {
         id: textColumn
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: card.pad
+        anchors.leftMargin: card.padX
+        anchors.rightMargin: card.padX
+        anchors.topMargin: card.padY
         spacing: Style.spacing.sm
 
         Text {
@@ -144,14 +175,21 @@ BorderSurface {
           width: parent.width
           height: metaRow.visible ? metaRow.implicitHeight + Style.spacing.sm : 0
 
+          // Anchored to both sides, not just the bottom. Left to its natural
+          // width the row was as wide as its text, so a long tag ran under the
+          // card's border and out the far side -- clipped mid-word by the
+          // card's own `clip`, with the padding on that edge swallowed.
           Row {
             id: metaRow
+            anchors.left: parent.left
+            anchors.right: parent.right
             anchors.bottom: parent.bottom
             spacing: Style.spacing.md
             visible: (card.memory.tags || []).length > 0
                      || card.memory.openTodos > 0
 
             Text {
+              id: todoCount
               visible: card.memory.openTodos > 0
               text: "○ " + card.memory.openTodos
               color: Color.accent
@@ -160,8 +198,18 @@ BorderSurface {
             }
 
             Text {
+              // Whatever the count leaves. A Row hands each child its implicit
+              // width, so the elide below only bites once this is told how much
+              // room it actually has -- and the count is the only thing ahead
+              // of it, so the arithmetic stays honest without a Layout.
+              width: metaRow.width
+                     - (todoCount.visible ? todoCount.width + metaRow.spacing : 0)
               textFormat: Text.PlainText
+              // Three tags was already a cap; it is not a width. Two long ones
+              // overflow where four short ones fit, so the count still has to
+              // give way to the measurement.
               text: (card.memory.tags || []).slice(0, 3).join(" · ")
+              elide: Text.ElideRight
               color: Color.muted
               font.family: Style.font.resolvedFamily
               font.pixelSize: Style.font.body
