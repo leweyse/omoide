@@ -77,7 +77,7 @@ FocusScope {
     if (!root.service || !root.itemId) {
       Qt.callLater(function () {
         root.seeded = true
-        titleField.forceActiveFocus()
+        titleField.focusField()
       })
     }
   }
@@ -114,7 +114,7 @@ FocusScope {
       if (!root.seeded) {
         root.seeded = true
         if (root.hasMemoryLink) memoryLink.forceActiveFocus()
-        else titleField.forceActiveFocus()
+        else titleField.focusField()
       }
     })
   }
@@ -401,12 +401,19 @@ FocusScope {
           fontFamily: Style.font.menuFamily
         }
 
-        AccentField {
+        // Multi-line, growing to three. A to-do's title is a sentence -- "Check
+        // Essential Space's MCP support again in mid-October and implement it
+        // for Omoide" -- and on one line the field scrolled sideways as it was
+        // typed, so the start of what you had written was never on screen while
+        // you edited the end of it.
+        AccentTextArea {
           id: titleField
           escapeTo: editorKeys
           width: parent.width
+          maxLines: 3
           foreground: Color.menu.text
           accent: Color.accent
+          ringBackdrop: Color.menu.background
           font.family: Style.font.menuFamily
           font.pixelSize: Style.font.subtitle
           placeholderText: "Title"
