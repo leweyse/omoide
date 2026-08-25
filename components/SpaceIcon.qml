@@ -29,44 +29,57 @@ Item {
   readonly property color activeColor: failed ? urgentColor
                                      : (working || capturing ? accentColor : color)
 
+  // Every length below is quantised to whole physical pixels.
+  //
+  // The mark is drawn from rectangles, and at a fractional display scale a
+  // length that is round in logical pixels is not: a 1px stroke becomes 1.25
+  // physical, so the frame's left wall starts at x and its right at x + 13.75.
+  // Those are different sub-pixel phases, so the two walls rasterise
+  // differently -- the right came out 22% heavier than the left, which reads
+  // as the whole square sitting off-centre even though it is centred to within
+  // a third of a pixel. Quantised, opposite edges are a whole number of
+  // physical pixels apart, share a phase, and paint identically.
+  //
+  // This is what the shell's glyph icons get for free from Text.NativeRendering,
+  // which snaps glyph rasterisation to the same grid. At an integer scale dpr
+  // is 1 and every value below collapses to the plain Math.round it used to be.
+  readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+  function dp(v) { return Math.max(1 / dpr, Math.round(v * dpr) / dpr) }
+
+  // The frame's outer size, and the whole mark's painted extent: everything
+  // else is drawn inside it, badge included.
+  readonly property real frameSize: dp(iconSize * 0.78)
+
   // floor, not round, for every stroke weight: round makes the stroke jump to
   // 2px at 18px (the Space footer) while the 16px bar copy stays at 1px -- the
   // same mark, visibly heavier two points larger. A stroke thickens only when
   // a whole extra pixel fits.
-  readonly property int frameBorder: Math.max(1, Math.floor(iconSize / 12))
+  readonly property real frameBorder: dp(Math.max(1, Math.floor(iconSize / 12)))
   // The area inside the frame's stroke, with a little air so the marks read as
   // separate from it rather than thickening it.
-  readonly property int innerSize: Math.max(4, Math.round(iconSize * 0.78)
-                                    - (frameBorder + Math.max(1, Math.round(iconSize / 16))) * 2)
-  readonly property int markArm: Math.max(2, Math.round(innerSize * 0.42))
-  readonly property int markRadius: Math.max(1, Math.round(innerSize * 0.24))
-  readonly property int markStroke: Math.max(1, Math.floor(iconSize / 14))
-  readonly property int pointSize: Math.max(2, Math.floor(iconSize * 0.14))
+  readonly property real innerSize: Math.max(dp(4), dp(frameSize
+                                    - (frameBorder + Math.max(1, Math.round(iconSize / 16))) * 2))
+  readonly property real markArm: Math.max(dp(2), dp(innerSize * 0.42))
+  readonly property real markRadius: Math.max(dp(1), dp(innerSize * 0.24))
+  readonly property real markStroke: dp(Math.max(1, Math.floor(iconSize / 14)))
+  readonly property real pointSize: Math.max(dp(2), dp(Math.floor(iconSize * 0.14)))
   // How far each point sits in from its corner of the inner box.
   // Proportional to the inner box, not the icon: a fixed pixel left the dots
   // hugging the corners at the Space footer's size while looking right in the
   // bar. Scaled, the group pulls toward the centre as the icon grows.
-  readonly property int pointInset: Math.max(1, Math.round(innerSize * 0.15))
-  // Pushes the badge outward so its centre lands on the frame's corner rather
-  // than half a pixel inside it. Anchored flush to the canvas the badge leans
-  // in, and at this size half a pixel is visible. It overflows the optical
-  // canvas by this much, which is fine: the button slot is wider and nothing
-  // clips.
-  readonly property int badgeNudge: Math.max(1, Math.round(iconSize / 16))
-
+  readonly property real pointInset: Math.max(dp(1), dp(innerSize * 0.15))
   implicitWidth: iconSize
   implicitHeight: iconSize
   width: iconSize
   height: iconSize
 
-  // The capture frame. Inset from the icon's optical box so the corner badge
-  // has somewhere to sit.
+  // The capture frame, and the mark's silhouette.
   Rectangle {
     id: frame
     anchors.centerIn: parent
-    width: Math.round(root.iconSize * 0.78)
+    width: root.frameSize
     height: width
-    radius: Math.max(2, Math.round(width * 0.28))
+    radius: Math.max(root.dp(2), root.dp(width * 0.28))
     color: "transparent"
     antialiasing: true
     border.width: root.frameBorder
@@ -220,14 +233,27 @@ Item {
     }
   }
 
-  // Open to-dos. Haloed in the bar's own background so it stays legible where
-  // it overlaps the frame.
+  // Open to-dos: a pip in the frame's top-right corner.
+  //
+  // Tucked inside the corner rather than straddling it. Hung outside, the pip
+  // extended the mark's silhouette on one side only -- the square's ink then
+  // stopped 3px short of the underline's left edge and 1px short of its right,
+  // which reads as the whole mark sitting off-centre even when the square
+  // itself is placed dead on the slot's centre line. Inside, the mark's
+  // outline is exactly its frame, so the square's overhang stays even on both
+  // sides and the pip reads as what it is: something laid on top of the mark
+  // rather than part of its shape.
+  //
+  // Anchored to the frame rather than the icon's optical box, so it holds the
+  // corner at every size the mark is drawn at.
+  //
+  // Haloed in the bar's own background so it stays legible over the stroke it
+  // sits on.
   Rectangle {
     visible: root.marked
-    anchors.right: parent.right
-    anchors.rightMargin: -root.badgeNudge
-    anchors.top: parent.top
-    width: Math.max(4, Math.round(root.iconSize * 0.34))
+    anchors.horizontalCenter: frame.right
+    anchors.verticalCenter: frame.top
+    width: Math.max(root.dp(4), root.dp(root.iconSize * 0.34))
     height: width
     radius: width / 2
     color: Color.bar.background
