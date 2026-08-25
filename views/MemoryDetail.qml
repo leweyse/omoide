@@ -13,6 +13,13 @@ import "../MemoryModel.js" as Model
 Flickable {
   id: root
 
+  // Whether this page is the one holding the keyboard. The window hands the
+  // rail and the page the keyboard one at a time, and the rail already hides
+  // its cursor when it is not the holder -- a page that kept drawing its own
+  // put two cursors on screen at once, so a highlighted row looked ready for
+  // Enter while the keys were still going to the sidebar.
+  property bool hasKeyboard: true
+
   property var service: null
   property string memoryId: ""
   property var memory: ({ blocks: [], items: [], collections: [] })
@@ -613,7 +620,7 @@ Flickable {
             required property var modelData
             required property int index
             label: modelData.name
-            hasCursor: root.badgeFocused && root.badgeCursor === index
+            hasCursor: root.hasKeyboard && root.badgeFocused && root.badgeCursor === index
           }
         }
 
@@ -626,7 +633,7 @@ Flickable {
           delegate: Chip {
             required property var modelData
             required property int index
-            hasCursor: root.badgeFocused
+            hasCursor: root.hasKeyboard && root.badgeFocused
                        && root.badgeCursor === root.mineCount + index
             label: "+  " + modelData
             tint: Color.accent
@@ -637,7 +644,7 @@ Flickable {
         }
 
         Chip {
-          hasCursor: root.badgeFocused
+          hasCursor: root.hasKeyboard && root.badgeFocused
                      && root.badgeCursor === root.badges.length - 1
           label: "+  Add to collection"
           tint: Color.muted

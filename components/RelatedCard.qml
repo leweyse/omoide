@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Ui
 import "../common"
 import "../MemoryModel.js" as Model
+import "../common/Radii.js" as Radii
 
 // One linked capture. Click to open it, or remove the link.
 BorderSurface {
@@ -38,7 +39,7 @@ BorderSurface {
     opacity: 0.65
     visible: root.hasArt
     borderWidth: 0
-    radius: Math.max(0, Style.cornerRadius - root.borderLeft)
+    radius: Radii.nested(Style.cornerRadius, root.borderLeft)
   }
 
   FocusRing {

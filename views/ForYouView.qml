@@ -8,6 +8,13 @@ import "../components"
 Flickable {
   id: root
 
+  // Whether this page is the one holding the keyboard. The window hands the
+  // rail and the page the keyboard one at a time, and the rail already hides
+  // its cursor when it is not the holder -- a page that kept drawing its own
+  // put two cursors on screen at once, so a highlighted row looked ready for
+  // Enter while the keys were still going to the sidebar.
+  property bool hasKeyboard: true
+
   property var service: null
   signal openMemory(string id)
   signal openItem(string id)
@@ -169,7 +176,7 @@ Flickable {
           required property var modelData
           required property int index
           event: modelData
-          hasCursor: root.region === 0 && root.cursor === index
+          hasCursor: root.hasKeyboard && root.region === 0 && root.cursor === index
           // Straight to the capture, not to the item editor. An event's own
           // fields are on its memory page anyway, and the reason you tap one
           // here is to see what you saved -- the ticket, the poster, the page.
@@ -220,7 +227,7 @@ Flickable {
           required property int index
           width: parent.width
           item: modelData
-          hasCursor: root.region === 1 && root.cursor === index
+          hasCursor: root.hasKeyboard && root.region === 1 && root.cursor === index
           service: root.service
           onChanged: if (root.service) root.service.refresh()
           onActivated: root.openItem(modelData.id)

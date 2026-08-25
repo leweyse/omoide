@@ -47,7 +47,7 @@ FocusScope {
     // is the first item in reading order.
     Qt.callLater(function () {
       if (root.hasHeading) headingField.forceActiveFocus()
-      else bodyEdit.forceActiveFocus()
+      else bodyEdit.focusField()
     })
   }
 
@@ -177,64 +177,26 @@ FocusScope {
           font.pixelSize: Style.font.body
         }
 
-        // A TextEdit inside a BorderSurface rather than a Controls TextArea:
-        // the kit has no multi-line input, and this way the frame and the focus
-        // state come from the same tokens every other field here uses.
-        BorderSurface {
+        // The plugin's one multi-line input, shared with the to-do title. It used to
+        // be a TextEdit hand-dressed in a BorderSurface here, because the kit has no
+        // multi-line field -- which meant this dialog carried its own copy of the
+        // accent border, the corner marks and the Escape handoff, and drifted from
+        // the fields around it whenever one of those changed.
+        AccentTextArea {
+          id: bodyEdit
+          escapeTo: editorKeys
           width: parent.width
-          height: Math.max(Style.space(120),
-                           bodyEdit.implicitHeight + Style.spacing.inputPaddingY * 2)
-          radius: Style.cornerRadius
-          // Constant. The accent border and the inner ring mark focus; a fill
-          // change behind a block of text you are editing only costs contrast.
-          color: Style.controlFill(false, false,
-                                   Color.menu.text, Color.accent)
-          // Border.flat on focus, NOT controlSpec("focus"): that applies
-          // focusBorderAlpha (0.25), so the accent came out at quarter strength
-          // and the textarea looked unfocused while it had the cursor. Same
-          // treatment as AccentField, so the two inputs in this dialog match.
-          borderSpec: bodyEdit.activeFocus
-                      ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
-                      : Border.controlSpec("normal", Color.menu.text, Color.accent)
-
-          FocusRing {
-            sideBars: true
-            anchors.fill: parent
-            radius: Style.cornerRadius
-            gap: 1
-            hasCursor: bodyEdit.activeFocus
-            hot: false
-            backdrop: Color.menu.background
-          }
-
-          TextEdit {
-            id: bodyEdit
-            // TextEdit stays out of the tab order by default, so Tab from the
-            // heading skipped the body entirely and landed on Cancel. Turning it
-            // on also means Tab LEAVES the field rather than inserting a tab
-            // character, which is right here: the body is a list of lines, not
-            // code, so nothing in it wants a literal tab.
-            activeFocusOnTab: true
-            anchors.fill: parent
-            anchors.margins: Style.spacing.controlPaddingX
-            wrapMode: TextEdit.Wrap
-            selectByMouse: true
-            color: Color.menu.text
-            selectionColor: Style.selectionFillFor(Color.menu.text, Color.accent)
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.subtitle
-
-            // Blur, not close. Esc in a text field closing the dialog threw
-            // away whatever had been typed; a second press, once the field
-            // has let go, still closes it.
-            Keys.onEscapePressed: function (event) {
-              // Only on a real press. Holding Escape auto-repeats, and each repeat
-              // would dismiss another layer -- a held key unwound the whole stack.
-              if (event.isAutoRepeat) { event.accepted = true; return }
-              editorKeys.forceActiveFocus()
-              event.accepted = true
-            }
-          }
+          // Opens at the height the hand-built box had, and stops at twelve lines,
+          // which is a full paragraph. Past that it scrolls rather than growing, so
+          // a long summary cannot push the dialog's buttons off the bottom.
+          minLines: 6
+          maxLines: 12
+          selectByMouse: true
+          foreground: Color.menu.text
+          accent: Color.accent
+          ringBackdrop: Color.menu.background
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.subtitle
         }
       }
 
@@ -250,7 +212,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1
@@ -275,7 +237,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1

@@ -34,6 +34,7 @@ BUILTIN = {
     "PinchHandler", "MultiPointTouchArea", "Drag", "SystemPalette", "FontLoader",
     "Instantiator", "ListModel", "ListElement", "QtObject", "Qt", "Screen",
     "LayoutMirroring", "Accessible", "Keys", "EventPoint", "TextMetrics",
+    "FontMetrics",
     "Binding", "StateGroup", "Action", "Shortcut", "EnterKey", "TextDocument",
     "IntValidator", "DoubleValidator", "RegularExpressionValidator",
     "SmoothedAnimation", "SpringAnimation", "PauseAnimation", "ScriptAction",

@@ -8,6 +8,7 @@ import "../components"
 import "../dialogs"
 import "../views"
 import "../MemoryModel.js" as Model
+import "../common/Radii.js" as Radii
 
 // The Space dialog.
 //
@@ -452,8 +453,8 @@ Item {
           color: Style.normalFill
           // Inside the border, so the inner curve is the card's radius less
           // the border it sits behind.
-          topLeftRadius: Math.max(0, Style.cornerRadius - card.borderLeft)
-          bottomLeftRadius: Math.max(0, Style.cornerRadius - card.borderLeft)
+          topLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
+          bottomLeftRadius: Radii.nested(Style.cornerRadius, card.borderLeft)
 
           // One padding token so the caption, the rows and the footer all line
           // up on the same inset.
@@ -993,6 +994,7 @@ Item {
     id: forYouView
     ForYouView {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
       onOpenArchive: root.goTo("todos")
@@ -1003,6 +1005,7 @@ Item {
     id: libraryView
     LibraryView {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenCollection: function (name) { root.openCollection(name) }
     }
@@ -1012,6 +1015,7 @@ Item {
     id: archiveView
     TodoArchive {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
     }
@@ -1036,6 +1040,7 @@ Item {
     id: detailView
     MemoryDetail {
       service: root.service
+      hasKeyboard: root.inContent
       memoryId: root.memoryId
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }

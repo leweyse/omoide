@@ -269,7 +269,7 @@ FocusScope {
               }
 
               FocusRing {
-                sideBars: true
+                diagonalCorners: true
                 anchors.fill: parent
                 radius: parent.radius
                 gap: 1
@@ -312,7 +312,7 @@ FocusScope {
           onClicked: root.addRow()
 
           FocusRing {
-            sideBars: true
+            diagonalCorners: true
             anchors.fill: parent
             radius: parent.radius
             gap: 1
@@ -350,7 +350,7 @@ FocusScope {
             onClicked: root.close()
 
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1
@@ -375,7 +375,7 @@ FocusScope {
             onClicked: root.save()
 
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1

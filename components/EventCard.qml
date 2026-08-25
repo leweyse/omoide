@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Ui
 import "../common"
 import "../MemoryModel.js" as Model
+import "../common/Radii.js" as Radii
 
 // One card in the For you carousel: the calendar tile, the event, and its art.
 //
@@ -82,8 +83,8 @@ BorderSurface {
       // Only the corners it actually touches.
       topLeftRadius: 0
       bottomLeftRadius: 0
-      topRightRadius: Math.max(0, Style.cornerRadius - root.borderRight)
-      bottomRightRadius: Math.max(0, Style.cornerRadius - root.borderBottom)
+      topRightRadius: Radii.nested(Style.cornerRadius, root.borderRight)
+      bottomRightRadius: Radii.nested(Style.cornerRadius, root.borderBottom)
     }
   }
 
