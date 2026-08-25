@@ -994,6 +994,7 @@ Item {
     id: forYouView
     ForYouView {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
       onOpenArchive: root.goTo("todos")
@@ -1004,6 +1005,7 @@ Item {
     id: libraryView
     LibraryView {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenCollection: function (name) { root.openCollection(name) }
     }
@@ -1013,6 +1015,7 @@ Item {
     id: archiveView
     TodoArchive {
       service: root.service
+      hasKeyboard: root.inContent
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }
     }
@@ -1037,6 +1040,7 @@ Item {
     id: detailView
     MemoryDetail {
       service: root.service
+      hasKeyboard: root.inContent
       memoryId: root.memoryId
       onOpenMemory: function (id) { root.openMemory(id) }
       onOpenItem: function (id) { root.openItem(id) }

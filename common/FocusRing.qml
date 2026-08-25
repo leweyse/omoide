@@ -30,7 +30,16 @@ Rectangle {
   // tall the two lines nearly touch. A pair of side bars brackets the control
   // without closing a second outline around it. Cards keep the ring: they are
   // big enough for it to read as depth rather than as a mistake.
-  property bool sideBars: false
+  // Two corner marks -- top-left and bottom-right -- instead of a closed ring.
+  //
+  // The control-sized counterpart to `cornersOnly`. Buttons and fields used to
+  // show a bar down each side, which never sat right: two vertical strokes
+  // parallel to a border already there read as a second frame rather than as a
+  // cursor, and on a short control they had almost no straight run to occupy.
+  // Diagonal corners borrow the language the capture and collection cards
+  // already speak, at a size a control can carry -- and two rather than four,
+  // because four around a 26px button is a box, not a hint.
+  property bool diagonalCorners: false
 
   // Corner marks instead of a closed ring: the rounded corners of the inner
   // ring, and nothing along the runs. Crop marks -- the same idiom as the bar
@@ -40,15 +49,6 @@ Rectangle {
   // arcs carry less ink than a closed outline.
   property bool cornersOnly: false
 
-  // How far the bar is held off the top and bottom, so it runs alongside the
-  // straight part of the edge rather than the curve.
-  //
-  // Capped, because a pill's radius is half its height: FilterChip sets
-  // `radius: height / 2`, which leaves no straight run at all and made the bar
-  // vanish. The cap keeps at least 10px of bar, so the shape degrades to a short
-  // tick rather than to nothing.
-  readonly property real barInset:
-    Math.min(root.radius, Math.max(0, (root.height - Style.space(10)) / 2))
 
   // Distance from the host's edge to the ring: the host's own border plus the
   // transparent gap. `hostBorder` is stated rather than assumed because the
@@ -56,7 +56,13 @@ Rectangle {
   // the gap is the only thing distinguishing focused from unfocused there.
   property real gap: Style.space(2)
   property real hostBorder: 1
+  //
+  // A control's marks sit one pixel further in again. They are short enough now
+  // that at the shared inset they read as growing out of the border rather than
+  // floating inside it -- the gap that separates a cursor from the frame it
+  // marks has to scale with how little of it there is.
   readonly property real inset: root.hostBorder + root.gap
+                                + (root.diagonalCorners ? Style.space(1) : 0)
 
   // The surface the ring is drawn over. Stated by the caller, because the ring's
   // colour is computed from it -- see below.
@@ -94,7 +100,7 @@ Rectangle {
   property bool twoTone: false
 
   Rectangle {
-    visible: root.twoTone && !root.sideBars && !root.cornersOnly
+    visible: root.twoTone && !root.cornersOnly && !root.diagonalCorners
     anchors.fill: parent
     anchors.margins: root.inset + 1
     color: "transparent"
@@ -107,40 +113,8 @@ Rectangle {
                           root.backdrop.b, 0.55)
   }
 
-  // The two bars, one per side.
-  //
-  // A pixel further in than the ring would be, because a bar sitting at the
-  // ring's inset read as crowding the border it runs beside.
-  //
-  // Vertically each spans only the STRAIGHT run of its edge -- from the corner
-  // radius to the same distance off the bottom. Running the full height put the
-  // ends alongside the curve, where the border is already sweeping away and the
-  // two stop looking parallel. Rounded caps for the same reason.
-  //
-  // A Repeater over the two sides rather than the same block written twice: the
-  // pair has to stay identical, and mirroring by index is the cheapest way to
-  // guarantee it.
-  Repeater {
-    model: root.sideBars ? 2 : 0
-
-    delegate: Rectangle {
-      required property int index
-
-      // index 0 anchors from the left, index 1 the same distance from the right.
-      x: index === 0 ? root.inset + 1
-                     : root.width - root.inset - 1 - width
-      y: root.barInset
-      width: Math.max(1, Style.space(1))
-      height: Math.max(0, root.height - root.barInset * 2)
-      radius: width / 2
-      color: Qt.rgba(root.tint.r, root.tint.g, root.tint.b, root.tintAlpha)
-
-      Behavior on color { ColorAnimation { duration: 60 } }
-    }
-  }
-
   Rectangle {
-    visible: !root.sideBars && !root.cornersOnly
+    visible: !root.cornersOnly && !root.diagonalCorners
     anchors.fill: parent
     anchors.margins: root.inset
     color: "transparent"
@@ -181,7 +155,7 @@ Rectangle {
   // exactly the content they were meant to survive.
   Item {
     id: corners
-    visible: root.cornersOnly
+    visible: root.cornersOnly || root.diagonalCorners
     anchors.fill: parent
 
     Item {
@@ -202,16 +176,33 @@ Rectangle {
       // Past the curve and onto the straight edge, so the mark reads as a
       // corner of the ring rather than a dot. Capped so opposite corners can
       // never meet on a small host.
+      //
+      // Shorter on a control than on a card, and by length rather than weight:
+      // the stroke stays the same so the two read as one language, but a card's
+      // run is sized against a 380px edge and the same run on a 26px button
+      // reaches nearly halfway along it, which stops being a corner and starts
+      // being a bracket around the label. Enough to clear the curve and show a
+      // little straight edge is all a control needs.
+      readonly property real armRun:
+        root.diagonalCorners ? Style.space(4) : Style.space(6)
       readonly property real arm:
-        Math.min(ringRadius + Style.space(8), Math.min(width, height) / 2)
+        Math.min(ringRadius + armRun, Math.min(width, height) / 2)
 
       Repeater {
-        model: [
-          { ax: 0, ay: 0 },   // top-left
-          { ax: 1, ay: 0 },   // top-right
-          { ax: 0, ay: 1 },   // bottom-left
-          { ax: 1, ay: 1 }    // bottom-right
-        ]
+        // Four corners frame a card; the diagonal pair marks a control without
+        // enclosing it. Opposite corners rather than adjacent ones, so the two
+        // marks describe the whole shape between them.
+        model: root.diagonalCorners
+               ? [
+                 { ax: 0, ay: 0 },   // top-left
+                 { ax: 1, ay: 1 }    // bottom-right
+               ]
+               : [
+                 { ax: 0, ay: 0 },   // top-left
+                 { ax: 1, ay: 0 },   // top-right
+                 { ax: 0, ay: 1 },   // bottom-left
+                 { ax: 1, ay: 1 }    // bottom-right
+               ]
 
         delegate: Item {
           required property var modelData

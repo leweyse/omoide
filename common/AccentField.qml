@@ -65,7 +65,7 @@ TextField {
     // Inside the background rather than as a child of the field: a TextField's
     // children draw over its text, and this has to sit behind it.
     FocusRing {
-      sideBars: true
+      diagonalCorners: true
       anchors.fill: parent
       radius: Style.cornerRadius
       gap: 1

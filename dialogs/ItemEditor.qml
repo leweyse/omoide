@@ -349,7 +349,7 @@ FocusScope {
         PanelActionButton {
           focusable: true
           FocusRing {
-            sideBars: true
+            diagonalCorners: true
             anchors.fill: parent
             radius: parent.radius
             gap: 1
@@ -476,7 +476,7 @@ FocusScope {
             PanelActionButton {
               focusable: true
               FocusRing {
-                sideBars: true
+                diagonalCorners: true
                 anchors.fill: parent
                 radius: parent.radius
                 gap: 1
@@ -525,19 +525,11 @@ FocusScope {
           width: parent.width
           height: addReminderButton.height + Style.spacing.xxl
         
-          Button {
+          DialogButton {
             id: addReminderButton
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             focusable: true
-            // Full-strength accent on focus. controlSpec("focus") applies
-            // focusBorderAlpha (0.25), which reads as grey.
-            borderSpec: activeFocus
-                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
-                        : Border.controlSpec(
-                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
-                            foreground, accent)
-            bordered: true
             text: "+  Add a reminder"
             foreground: Color.menu.text
             background: Color.menu.background
@@ -546,7 +538,7 @@ FocusScope {
             onClicked: root.addReminderRow()
         
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1
@@ -570,10 +562,10 @@ FocusScope {
         // Outlined, so a destructive action does not sit on the sheet looking
         // like the plain text of a link. Urgent accent, so its border and hover
         // read as destructive without the resting state shouting.
-        Button {
+        DialogButton {
           focusable: true
           FocusRing {
-            sideBars: true
+            diagonalCorners: true
             anchors.fill: parent
             radius: parent.radius
             gap: 1
@@ -581,17 +573,9 @@ FocusScope {
   backdrop: Color.menu.background
             hot: false
           }
-          // Full-strength accent on focus. controlSpec("focus")
-          // applies focusBorderAlpha (0.25), which read as grey.
-          borderSpec: activeFocus
-                      ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
-                      : Border.controlSpec(
-                          selected ? "selected" : (hot ? "hover-cursor" : "normal"),
-                          foreground, accent)
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
           text: "Delete"
-          bordered: true
           foreground: Color.menu.text
           background: Color.menu.background
           accent: Color.urgent
@@ -609,13 +593,13 @@ FocusScope {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.spacing.controlGap
 
-          Button {
+          DialogButton {
 
             focusable: true
 
             FocusRing {
 
-              sideBars: true
+              diagonalCorners: true
 
               anchors.fill: parent
 
@@ -630,19 +614,8 @@ FocusScope {
 
             }
 
-            // Full-strength accent on focus. controlSpec("focus")
 
-            // applies focusBorderAlpha (0.25), which read as grey.
 
-            borderSpec: activeFocus
-
-                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
-
-                        : Border.controlSpec(
-
-                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
-
-                            foreground, accent)
             text: "Cancel"
             foreground: Color.menu.text
             background: Color.menu.background
@@ -650,13 +623,13 @@ FocusScope {
             onClicked: root.close()
           }
 
-          Button {
+          DialogButton {
 
             focusable: true
 
             FocusRing {
 
-              sideBars: true
+              diagonalCorners: true
 
               anchors.fill: parent
 
@@ -671,19 +644,8 @@ FocusScope {
 
             }
 
-            // Full-strength accent on focus. controlSpec("focus")
 
-            // applies focusBorderAlpha (0.25), which read as grey.
 
-            borderSpec: activeFocus
-
-                        ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
-
-                        : Border.controlSpec(
-
-                            selected ? "selected" : (hot ? "hover-cursor" : "normal"),
-
-                            foreground, accent)
             text: "Save"
             // Primary on a suggestion too, now that accepting has moved up to
             // the header and stopped competing with it down here.

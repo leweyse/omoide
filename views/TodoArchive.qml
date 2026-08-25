@@ -12,6 +12,13 @@ import "../common"
 Flickable {
   id: root
 
+  // Whether this page is the one holding the keyboard. The window hands the
+  // rail and the page the keyboard one at a time, and the rail already hides
+  // its cursor when it is not the holder -- a page that kept drawing its own
+  // put two cursors on screen at once, so a highlighted row looked ready for
+  // Enter while the keys were still going to the sidebar.
+  property bool hasKeyboard: true
+
   property var service: null
   signal openMemory(string id)
   signal openItem(string id)
@@ -222,7 +229,7 @@ Flickable {
       id: tasksGroup
       width: parent.width
       rows: root.groups[root.tab] || []
-      cursor: root.region === 0 ? root.cursor : -1
+      cursor: root.hasKeyboard && root.region === 0 ? root.cursor : -1
       service: root.service
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (id) { root.openItem(id) }
@@ -241,7 +248,7 @@ Flickable {
       visible: root.hasSuggestions
       label: "SUGGESTED"
       rows: root.suggestions
-      cursor: root.region === 1 ? root.cursor : -1
+      cursor: root.hasKeyboard && root.region === 1 ? root.cursor : -1
       service: root.service
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (id) { root.openItem(id) }

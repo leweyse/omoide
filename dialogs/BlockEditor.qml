@@ -198,7 +198,7 @@ FocusScope {
                       : Border.controlSpec("normal", Color.menu.text, Color.accent)
 
           FocusRing {
-            sideBars: true
+            diagonalCorners: true
             anchors.fill: parent
             radius: Style.cornerRadius
             gap: 1
@@ -250,7 +250,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1
@@ -275,7 +275,7 @@ FocusScope {
           Button {
             focusable: true
             FocusRing {
-              sideBars: true
+              diagonalCorners: true
               anchors.fill: parent
               radius: parent.radius
               gap: 1

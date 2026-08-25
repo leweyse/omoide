@@ -8,6 +8,13 @@ import "../MemoryModel.js" as Model
 Flickable {
   id: root
 
+  // Whether this page is the one holding the keyboard. The window hands the
+  // rail and the page the keyboard one at a time, and the rail already hides
+  // its cursor when it is not the holder -- a page that kept drawing its own
+  // put two cursors on screen at once, so a highlighted row looked ready for
+  // Enter while the keys were still going to the sidebar.
+  property bool hasKeyboard: true
+
   property var service: null
   signal openMemory(string id)
   signal openCollection(string name)
@@ -453,7 +460,7 @@ Flickable {
           required property var modelData
           required property int index
           collection: modelData
-          hasCursor: root.regionName === "collections"
+          hasCursor: root.hasKeyboard && root.regionName === "collections"
                      && root.filterCursor < 0
                      && root.collectionCursor === index
           // Opens the collection as its own page. It used to toggle a facet on
@@ -526,7 +533,7 @@ Flickable {
             spacing: Style.spacing.md
 
             FilterChip {
-              hasCursor: root.filterCursor === 0
+              hasCursor: root.hasKeyboard && root.filterCursor === 0
               label: "All"
               count: root.searching ? root.results.length
                                     : ((root.index.memories || []).length)
@@ -541,7 +548,7 @@ Flickable {
                 required property var modelData
                 required property int index
                 // +1 for the "All" chip ahead of this Repeater.
-                hasCursor: root.filterCursor === index + 1
+                hasCursor: root.hasKeyboard && root.filterCursor === index + 1
                 label: modelData.label
                 count: modelData.count
                 selected: root.facet === modelData.id

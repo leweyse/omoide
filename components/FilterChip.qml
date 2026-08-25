@@ -39,7 +39,7 @@ BorderSurface {
   // Concentric with the pill: radius is height/2, so a ring inset by 2 lands on
   // (height - 4) / 2 -- the same curve one step in.
   FocusRing {
-    sideBars: true
+    diagonalCorners: true
     anchors.fill: parent
     radius: root.radius
     gap: 1
