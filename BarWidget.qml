@@ -5,7 +5,7 @@ import qs.Ui
 import "components"
 import "dialogs"
 
-// One icon. Left-click opens the action menu, right-click opens the library.
+// One icon. Left-click toggles the action menu, right-click opens the library.
 //
 // No click captures directly. A capture is a destructive-ish, interactive thing
 // -- it grabs the pointer for a region pick -- and having that on the primary
@@ -24,6 +24,7 @@ BarWidget {
   readonly property int enriching: service ? service.enrichingCount : 0
   readonly property int failed: service ? service.failedCount : 0
   readonly property int todos: service ? service.openTodoCount : 0
+  readonly property int dueToday: service ? service.dueTodayCount : 0
 
   readonly property bool capturing: service ? service.capturing : false
   readonly property bool working: enriching > 0
@@ -46,10 +47,6 @@ BarWidget {
   onDefaultActionChanged: pushDefaultAction()
   onServiceChanged: pushDefaultAction()
   Component.onCompleted: pushDefaultAction()
-
-  function openMenu() {
-    menu.open()
-  }
 
   function openSpace() {
     if (service) service.showSpace({})
@@ -80,11 +77,38 @@ BarWidget {
       bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  // Panel plumbing: the shell routes `summon` to a bar widget only when it
-  // exposes these three.
+  // Panel plumbing. The shell routes `summon` through open/close/opened, and
+  // the bar coordinates popouts by object identity -- it compares its
+  // activePopout against the item it loaded from the manifest, which is this
+  // one. The menu used to register itself, so no comparison the bar makes ever
+  // matched it: no open-panel underline, no Tab hand-off to the next panel,
+  // and no clean swap when another panel took over. Everything the bar looks
+  // for therefore lives here, and the menu delegates upward.
+  //
+  // Mirrors the surface of the shell's own Ui/Panel.qml, which is what the
+  // first-party panels extend.
   function open() { menu.open() }
   function close() { menu.close() }
+  function toggle() { opened ? close() : open() }
   readonly property bool opened: menu.opened
+
+  // Set while this panel is closing to make room for another one. The panel
+  // window reads it back off us to skip its fade, so the two cards swap
+  // instead of cross-dissolving.
+  property bool popoutSwitchClosing: false
+
+  function closeForPopoutSwitch() {
+    popoutSwitchClosing = true
+    close()
+    Qt.callLater(function () { popoutSwitchClosing = false })
+  }
+
+  // Tab from inside the menu moves to the neighbouring panel on the bar.
+  function switchPanel(direction) {
+    if (bar && typeof bar.switchPanelFrom === "function")
+      return bar.switchPanelFrom(root, direction)
+    return false
+  }
 
   function tooltip() {
     if (root.capturing)
@@ -98,6 +122,10 @@ BarWidget {
     var parts = []
     if (service && service.index)
       parts.push((service.index.memoryCount || 0) + " memories")
+    // Today's count leads the open count when there is one, because that is
+    // what the mark on the icon is reporting and the tooltip should explain it.
+    if (root.dueToday > 0)
+      parts.push(root.dueToday + " due today")
     if (root.todos > 0)
       parts.push(root.todos + " open to-do" + (root.todos === 1 ? "" : "s"))
     return "Omoide" + (parts.length ? " — " + parts.join(", ") : "")
@@ -112,12 +140,55 @@ BarWidget {
     iconComponent: Component {
       SpaceIcon {
         anchors.centerIn: parent
+
+        // Nudged left by most of a physical pixel, to sit on the centre.
+        //
+        // The mark is built from rectangles and its ancestors land on half
+        // pixels -- the icon canvas sits 5.5px into a 27px slot -- so at a
+        // fractional display scale the frame's two walls fall on different
+        // sub-pixel phases and paint at different weights. The heavier right
+        // wall is what reads as the square sitting off-centre, and measured
+        // against the open-panel underline, which shares this slot's centre,
+        // the mark's painted ink sat +0.88 physical px right of it.
+        //
+        // This is the move Ui/OpticalGlyph makes for every glyph icon in the
+        // bar: offset the mark so its painted ink, rather than its layout box,
+        // lands on the centre. A font exposes its ink bounds through
+        // TextMetrics and a drawn mark does not, so this figure was measured
+        // off a screenshot instead of derived -- in physical pixels, because
+        // that is the grid the error comes from.
+        //
+        // layer.enabled was tried here first and is deliberately not used: it
+        // evens the wall weighting out but Qt blits the layer on whole pixels,
+        // which rounds this correction away.
+        anchors.horizontalCenterOffset: -1.7 / dpr
+
+        // Lifted a pixel off the canvas centre. Every icon either side of this
+        // one is a font glyph, and the shell centres those on their ink rather
+        // than on the canvas they sit in -- which puts them slightly above it.
+        // A mark centred on the box itself therefore lands a row lower than its
+        // neighbours, and the open-panel underline, pinned to the bottom of the
+        // slot, turns that into visible crowding: three pixels of air under
+        // this mark where every other icon has five. One pixel up puts the
+        // frame in the same band the glyphs occupy.
+        //
+        // A nudge rather than a smaller mark: the frame's own marks are sized
+        // off it, and shrinking it collapses the four corner points into each
+        // other well before the frame itself looks wrong.
+        // Quantising the mark's lengths rounded the frame up from 15 to 16
+        // physical px, which put its bottom edge a pixel closer to the
+        // underline than every neighbour. The extra fifth of a logical pixel
+        // here puts the bottom back on row 22 with the rest of the row.
+        anchors.verticalCenterOffset: -0.6
         iconSize: Style.bar.iconCanvas
         color: root.bar ? root.bar.foreground : Color.bar.text
         accentColor: Color.accent
         urgentColor: Color.urgent
         mode: root.iconMode
-        marked: root.todos > 0
+        // Lit for what today owes, not for what is on the list. A mark this
+        // small carries one bit, so it goes to the question worth asking at a
+        // glance: is anything due today still open.
+        marked: root.dueToday > 0
       }
     }
     active: root.working || root.capturing
@@ -130,13 +201,14 @@ BarWidget {
       if (whichButton === Qt.RightButton)
         root.openSpace()
       else if (whichButton === Qt.LeftButton)
-        root.openMenu()
+        root.toggle()
     }
   }
 
   ActionMenu {
     id: menu
     bar: root.bar
+    owner: root
     anchorItem: button
     service: root.service
     defaultAction: root.defaultAction

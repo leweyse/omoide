@@ -4,7 +4,7 @@ import qs.Commons
 import qs.Ui
 import "../components"
 
-// The right-click menu: the capture modes, plus the two destinations.
+// The bar icon's menu: the capture modes, plus the two destinations.
 //
 // An unavailable action is shown disabled with the reason rather than hidden,
 // so "why can't I record a voice note" has an answer on screen.
@@ -12,6 +12,11 @@ Item {
   id: root
 
   property QtObject bar: null
+  // The bar widget this menu belongs to. The bar coordinates popouts by object
+  // identity against the item it loaded from the manifest, so that item -- not
+  // this one -- has to be what the panel registers. Falls back to `root` so the
+  // menu still works standalone.
+  property Item owner: null
   property Item anchorItem: null
   property var service: null
   property string defaultAction: "screenshot"
@@ -55,18 +60,18 @@ Item {
     return line
   }
 
+  // No requestPopout/releasePopout here: KeyboardPanel already does that
+  // bookkeeping from its own `open` change, with the coordinator key taken from
+  // `owner`. Doing it a second time from here is what registered this item
+  // instead of the widget. Closing for a panel switch belongs to the owner too.
   function open() {
     root.cursor = 0
     panel.open = true
-    if (bar && typeof bar.requestPopout === "function") bar.requestPopout(root)
   }
 
   function close() {
     panel.open = false
-    if (bar && typeof bar.releasePopout === "function") bar.releasePopout(root)
   }
-
-  function closeForPopoutSwitch() { panel.open = false }
 
   readonly property var entries: [
     { id: "screenshot", glyph: "", label: "Screenshot", kind: "capture" },
@@ -100,12 +105,14 @@ Item {
   KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
-    owner: root
+    owner: root.owner || root
     bar: root.bar
     open: false
     focusTarget: keys
-    contentWidth: panel.fittedContentWidth(Style.space(270))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(420))
+    // The width every first-party panel uses. 270 was narrow enough to read as
+    // a different kind of surface sitting in a row of matching ones.
+    contentWidth: panel.fittedContentWidth(Style.space(380))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keys
@@ -123,6 +130,10 @@ Item {
       // was fatal: omarchy-capture-screenshot starts with `pkill slurp &&
       // exit 0`, so the second invocation cancelled the first one's picker.
       onActivateRequested: root.activate(root.entries[root.cursor])
+      onTabRequested: function (direction) {
+        if (root.owner && typeof root.owner.switchPanel === "function")
+          root.owner.switchPanel(direction)
+      }
 
       Column {
         id: column

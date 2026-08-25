@@ -45,6 +45,45 @@ Item {
   readonly property int failedCount: (index && index.failedCount) || 0
   readonly property int openTodoCount: (index && index.todos ? index.todos.length : 0)
 
+  // Today's business: to-dos due at any point in the current day, plus anything
+  // overdue and still open.
+  //
+  // The bar mark used to light on openTodoCount > 0, which counts what exists
+  // rather than what is owed -- a single to-do due in October kept it lit
+  // through August and September, so it never changed and never told anyone
+  // anything.
+  //
+  // The whole day rather than a rolling window from now: "is there anything to
+  // do today" has one answer from midnight to midnight, so the mark is lit when
+  // the day starts instead of switching on partway through the afternoon as a
+  // deadline drifts inside some window of the current moment.
+  //
+  // Overdue counts too. A to-do that slipped past its day is still pending, and
+  // a cutoff that only looked forward would quietly drop it at midnight -- the
+  // mark going out for the one item most likely to need attention.
+  property int dueTodayCount: 0
+
+  function refreshDueToday() {
+    var todos = (root.index && root.index.todos) || []
+    // The end of the local day: whoever is looking at the bar means their
+    // midnight, not UTC's.
+    var endOfDay = new Date()
+    endOfDay.setHours(23, 59, 59, 999)
+    var cutoff = endOfDay.getTime()
+    var owed = 0
+
+    for (var i = 0; i < todos.length; i++) {
+      var todo = todos[i]
+      if (todo.completedAt || todo.status !== "active") continue
+      var due = Date.parse(todo.dueAt)
+      // No due date is never today's business: that is a task, not a deadline.
+      if (isNaN(due) || due > cutoff) continue
+      owed++
+    }
+
+    root.dueTodayCount = owed
+  }
+
   // No `signal indexChanged()` here: `property var index` already generates
   // one, and declaring it again is a duplicate-signal error at load time.
   signal composeRequested(var payload)
@@ -351,6 +390,11 @@ Item {
       root.detach(["reminder", "fire", "--id", alarms[i].id])
     }
 
+    // Rides the alarm tick, which re-runs on every index change and at least
+    // once a minute, so the roll-over into a new day lands within a minute of
+    // midnight without a timer of its own.
+    root.refreshDueToday()
+
     alarmTimer.interval = soonest < 0 ? root.alarmTickMs
                                       : Math.min(soonest, root.alarmTickMs)
     alarmTimer.restart()
@@ -434,7 +478,8 @@ Item {
         memories: root.index.memoryCount || 0,
         enriching: root.enrichingCount,
         failed: root.failedCount,
-        todos: root.openTodoCount
+        todos: root.openTodoCount,
+        dueToday: root.dueTodayCount
       })
     }
 
