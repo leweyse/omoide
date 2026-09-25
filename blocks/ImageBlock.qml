@@ -29,10 +29,26 @@ Item {
   readonly property real aspect: root.payload.aspect > 0 ? root.payload.aspect
                                                          : shot.sourceAspect
   readonly property real maxHeight: Style.space(340)
+
+  // A gutter the picture never crosses, taken off BOTH sides so it stays
+  // centred on the page. The memory page floats its action buttons over the top
+  // right of whatever comes first -- this block -- and a capture wide enough to
+  // reach the page edge drew artwork under the "More" button, so finding it was
+  // a coin toss against whatever had been screenshotted behind it.
+  //
+  // The page sets this, because the page is what knows the buttons are there.
+  property real sideGutter: 0
+
+  // The widest the picture may draw. Floored, so a narrow dialog does not let
+  // the gutter eat the capture it is there to keep clear of.
+  readonly property real maxWidth:
+    Math.max(Style.space(200), root.width - root.sideGutter * 2)
+
   readonly property real drawHeight: Math.min(
-    root.maxHeight, root.aspect > 0 ? width / root.aspect : width * 0.56)
+    root.maxHeight,
+    root.aspect > 0 ? root.maxWidth / root.aspect : root.maxWidth * 0.56)
   readonly property real drawWidth: root.aspect > 0
-    ? Math.min(width, root.drawHeight * root.aspect) : width
+    ? Math.min(root.maxWidth, root.drawHeight * root.aspect) : root.maxWidth
 
   width: parent ? parent.width : 0
   height: shot.height

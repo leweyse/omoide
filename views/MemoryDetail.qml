@@ -385,7 +385,10 @@ Flickable {
     if (!it) return
     var top = it.mapToItem(layout, 0, 0).y
     var bottom = top + it.height
-    var pad = Style.spacing.xxxl
+    // The page's own edge inset, the same one contentHeight adds below the
+    // last row: scrolling something into view should leave the gap the page
+    // already keeps at its edges, not a second, smaller one of its own.
+    var pad = Style.spacing.panelPadding
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -485,6 +488,10 @@ Flickable {
       cursorActive: root.region === 0 && root.todoCursor < 0
       rowCursor: root.todoCursor
       only: ["image"]
+      // The action buttons float over this block's top-right corner, so the
+      // capture keeps clear of them. Both sides, so the picture stays centred
+      // on the page rather than sliding left by half a gutter.
+      imageGutter: pageActions.width + Style.spacing.lg
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
       onManageTodos: function (blockId, items) {

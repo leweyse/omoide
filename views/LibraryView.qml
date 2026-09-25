@@ -263,7 +263,7 @@ Flickable {
       // which was already wrong and became wrong by 100px when the tile was
       // reshaped. Asking the row cannot drift.
       var first = collectionsRow.itemAtIndex(0)
-      var tileW = first ? first.width : Style.space(216)
+      var tileW = first ? first.width : collectionsRow.tileWidth
       var stride = tileW + collectionsRow.spacing
       var centre = root.collectionCursor * stride + stride / 2
       var col = Model.columnAt(centre, grid.columns, grid.columnWidth, grid.spacing)
@@ -311,7 +311,10 @@ Flickable {
     if (!cell) return
     var top = cell.mapToItem(layout, 0, 0).y
     var bottom = top + cell.height
-    var pad = Style.spacing.xxxl
+    // The page's own edge inset, the same one contentHeight adds below the
+    // last row: scrolling something into view should leave the gap the page
+    // already keeps at its edges, not a second, smaller one of its own.
+    var pad = Style.spacing.panelPadding
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)
@@ -397,6 +400,9 @@ Flickable {
       if (event.angleDelta.y === 0) return
       // The filter strip owns the wheel while the pointer is over it.
       if (stripHover.hovered) return
+      // So does the collections row, but only while it has somewhere to go --
+      // otherwise a pointer resting on it would deaden the page's own scroll.
+      if (collectionsHover.hovered && collectionsRow.overflowing) return
       var notches = event.angleDelta.y / 120
       var limit = Math.max(0, root.contentHeight - root.height)
       root.contentY = Math.max(0, Math.min(limit,
@@ -443,30 +449,153 @@ Flickable {
         fontFamily: Style.font.resolvedFamily
       }
 
-      ListView {
-        id: collectionsRow
-        width: parent.width
-        // Matches CollectionTile's own height. A horizontal ListView forces its
-        // delegates' height, so this IS the tile height.
+      // The clip that lets the row scroll, held a pixel OUTSIDE the tiles.
+      //
+      // A focused tile draws its accent border on the device pixel that rounds
+      // just outside its own bounds, so a row clipping on that same line ate
+      // the border of the tile at x 0 whole -- corner marks with no line
+      // between them, on the first tile only. Clipping a pixel wider keeps the
+      // border and still cuts a scrolled tile a pixel before anyone could see
+      // it. The row itself stays where it was, so the tiles line up with the
+      // captures below.
+      Item {
+        id: collectionsClip
+        readonly property real bleed: Math.max(1, Style.space(1))
+        x: -bleed
+        width: parent.width + bleed * 2
         height: Style.space(112)
-        orientation: ListView.Horizontal
-        spacing: Style.spacing.lg
         clip: true
-        model: root.index.collections || []
 
-        // Wrapped so the exclusion ring is a SIBLING of the tile: a
-        // ShaderEffectSource pointing at an ancestor recurses.
-        delegate: CollectionTile {
-          required property var modelData
-          required property int index
-          collection: modelData
-          hasCursor: root.hasKeyboard && root.regionName === "collections"
-                     && root.filterCursor < 0
-                     && root.collectionCursor === index
-          // Opens the collection as its own page. It used to toggle a facet on
-          // this grid, which meant a collection had no place of its own and no
-          // way to be renamed or removed.
-          onActivated: root.openCollection(modelData.name)
+        // Tiles are sized from the row, the same way the captures grid derives its
+        // columns: a whole number fits exactly and the remainder scrolls.
+        //
+        // Fixed-width tiles ended the row mid-card at every width that was not a
+        // multiple of the tile pitch -- which is most of them, since the dialog
+        // is a fraction of whatever screen it opens on. A sliced card reads as a
+        // rendering fault, not as "there is more this way".
+        ListView {
+          id: collectionsRow
+          x: collectionsClip.bleed
+          width: collectionsClip.width - collectionsClip.bleed * 2
+          // A horizontal ListView forces its delegates' height, so this IS the
+          // tile height -- CollectionTile's own is only a fallback.
+          height: parent.height
+          orientation: ListView.Horizontal
+          spacing: Style.spacing.lg
+          model: root.index.collections || []
+
+          // The narrowest a tile may be. Above it tiles stretch to close the
+          // remainder; below it one fewer fits.
+          readonly property real tileMin: Style.space(216)
+          readonly property int tileColumns:
+            Math.max(1, Math.floor((width + spacing) / (tileMin + spacing)))
+          // Floored, not rounded: rounding up overshoots the row by a pixel per
+          // tile and slices the last one again, which is the whole bug.
+          //
+          // Fewer collections than columns just leaves the remainder empty. Two
+          // tiles do not stretch to half the dialog each -- a column width is a
+          // rule about the row, not about how many things happen to be in it.
+          readonly property real tileWidth:
+            Math.floor((width - spacing * (tileColumns - 1)) / tileColumns)
+
+          // The scroll, in the view's own coordinates. originX is NOT 0 here --
+          // followCursor explains why -- so every bound is measured from it, and
+          // the span is computed from the tiles rather than read off contentWidth,
+          // which is stale in the frame right after a resize.
+          readonly property real stride: tileWidth + spacing
+          readonly property real span: count > 0 ? count * stride - spacing : 0
+          // Functions, not bindings: followCursor runs from onOriginXChanged, and
+          // whether a binding ON originX has re-evaluated by the time that
+          // property's own change handler runs is undefined. Read as bindings
+          // there, both bounds came from the PREVIOUS origin and clamped the row
+          // straight back onto the second tile.
+          function minX() { return originX }
+          function maxX() { return originX + Math.max(0, span - width) }
+          readonly property bool overflowing: span > width + 0.5
+
+          // Keep the keyboard cursor on screen, and keep the row anchored to its
+          // own start otherwise. Every tile is the same width, so where a given
+          // index sits is arithmetic -- which is worth doing by hand here, because
+          // neither of the mechanisms that would normally do it survives this
+          // row's startup:
+          //
+          // Delegates are created before the row has its width, at tileWidth 0,
+          // and grow when it arrives. A ListView answers that resize by shifting
+          // its content ORIGIN rather than its items -- originX ended up at -864 --
+          // and left contentX one whole tile past it, so the row opened on the
+          // second collection with the cursor on the first. positionViewAtIndex
+          // during construction lands somewhere equally arbitrary, and
+          // ApplyRange never re-applied once the origin had moved.
+          //
+          // So: everything is measured FROM originX, and clamped to it.
+          function followCursor() {
+            if (count === 0 || width <= 0 || tileWidth <= 0) return
+            var x = Math.max(minX(), Math.min(maxX(), contentX))
+            var left = originX + Math.max(0, root.collectionCursor) * stride
+            if (left < x) x = left
+            else if (left + tileWidth > x + width) x = left + tileWidth - width
+            contentX = Math.max(minX(), Math.min(maxX(), x))
+          }
+
+          onWidthChanged: collectionsRow.followCursor()
+          onCountChanged: collectionsRow.followCursor()
+          // The shift itself, caught directly: it is what leaves contentX
+          // pointing at the wrong tile, and it happens after both of the above.
+          onOriginXChanged: collectionsRow.followCursor()
+
+          Connections {
+            target: root
+            function onCollectionCursorChanged() { collectionsRow.followCursor() }
+            // Coming back to the row after the wheel left it somewhere else: the
+            // cursor has not moved, so nothing else here would fire.
+            function onRegionNameChanged() { collectionsRow.followCursor() }
+          }
+
+          // Wrapped so the exclusion ring is a SIBLING of the tile: a
+          // ShaderEffectSource pointing at an ancestor recurses.
+          delegate: CollectionTile {
+            required property var modelData
+            required property int index
+            width: collectionsRow.tileWidth
+            collection: modelData
+            hasCursor: root.hasKeyboard && root.regionName === "collections"
+                       && root.filterCursor < 0
+                       && root.collectionCursor === index
+            // Opens the collection as its own page. It used to toggle a facet on
+            // this grid, which meant a collection had no place of its own and no
+            // way to be renamed or removed.
+            onActivated: root.openCollection(modelData.name)
+          }
+
+          // A vertical wheel over the row scrolls it sideways, the same bargain
+          // the chip strip makes. Now that the tiles fit the width there is no
+          // half-card left hinting at an overflow, so reaching it must not depend
+          // on owning a horizontal wheel.
+          WheelHandler {
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            onWheel: function (event) {
+              // Nothing to scroll: leave the event alone so the page still moves
+              // under a pointer that happens to be resting here.
+              if (!collectionsRow.overflowing) return
+              var delta = event.angleDelta.y !== 0 ? event.angleDelta.y
+                                                   : event.angleDelta.x
+              if (delta === 0) return
+              // One whole tile per notch, so the row lands on tile boundaries
+              // rather than part-way across one. Clamped to the row's own bounds,
+              // which start at originX -- clamping to 0 would throw the row past
+              // its end, since the origin here is a long way negative.
+              collectionsRow.contentX =
+                Math.max(collectionsRow.minX(),
+                         Math.min(collectionsRow.maxX(),
+                                  collectionsRow.contentX
+                                  - delta / 120 * collectionsRow.stride))
+              event.accepted = true
+            }
+          }
+
+          // Which handler gets a wheel is decided by hover, not by hoping the
+          // accepted flag propagates between two independent handlers.
+          HoverHandler { id: collectionsHover }
         }
       }
     }

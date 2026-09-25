@@ -27,6 +27,11 @@ BorderSurface {
 
   // Wide, not square: the name needs room to wrap to two or three lines beside
   // the cover rather than being elided at every collection worth naming.
+  //
+  // A fallback, not the size it draws at in the library: the collections row
+  // fits a whole number of tiles to its own width and hands each one the
+  // result, so a tile there is this wide or wider. Everything inside is
+  // proportional, so it survives either.
   width: Style.space(216)
   height: Style.space(112)
   radius: Style.cornerRadius
@@ -63,7 +68,10 @@ BorderSurface {
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.margins: root.pad
-    width: Math.round(root.width * 0.34)
+    // Floored at a width where a cropped screenshot is still a picture: at one
+    // tile per row on a narrow dialog, a third of the tile is generous, but the
+    // floor keeps the art from vanishing if the tile ever gets narrower still.
+    width: Math.max(Style.space(60), Math.round(root.width * 0.34))
     radius: Style.space(5)
     borderWidth: 0
     source: "file://" + root.cover

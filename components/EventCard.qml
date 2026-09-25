@@ -29,6 +29,10 @@ BorderSurface {
     return parts.join("  ·  ")
   }
 
+  // A fallback, not the width it draws at in the carousel: the row fits a
+  // whole number of cards to its own width and hands each one the result. The
+  // artwork is a fixed strip and the body fills what is left, so the extra
+  // width goes to the title.
   width: Style.space(300)
   height: Math.max(Style.space(96), body.implicitHeight + root.pad * 2)
   radius: Style.cornerRadius

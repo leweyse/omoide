@@ -63,7 +63,10 @@ Flickable {
     if (!cell) return
     var top = cell.mapToItem(layout, 0, 0).y
     var bottom = top + cell.height
-    var pad = Style.spacing.xxxl
+    // The page's own edge inset, the same one contentHeight adds below the
+    // last row: scrolling something into view should leave the gap the page
+    // already keeps at its edges, not a second, smaller one of its own.
+    var pad = Style.spacing.panelPadding
     var limit = Math.max(0, root.contentHeight - root.height)
     if (top - pad < root.contentY)
       root.contentY = Math.max(0, top - pad)

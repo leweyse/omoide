@@ -90,17 +90,15 @@ Item {
 
   readonly property var buckets: Model.balanceColumns(items, columns, estimate)
 
-  implicitHeight: {
-    var tallest = 0
-    for (var i = 0; i < buckets.length; i++) {
-      var total = 0
-      for (var j = 0; j < buckets[i].length; j++) total += estimate(buckets[i][j])
-      if (total > tallest) tallest = total
-    }
-    return tallest
-  }
+  // What the columns actually came out at, not what estimate() guessed. The
+  // guess decides which column an item lands in, and it is allowed to be wrong
+  // about pixels -- but the page adds its bottom inset to THIS number, so an
+  // estimate that ran short took the inset with it and left the last card
+  // sitting on the bottom edge of the dialog.
+  implicitHeight: columnsRow.implicitHeight
 
   Row {
+    id: columnsRow
     anchors.left: parent.left
     anchors.right: parent.right
     spacing: root.spacing

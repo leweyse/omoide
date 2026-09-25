@@ -36,6 +36,11 @@ Column {
   // whichever card holds cursorId -- only the focused one can be drilled into.
   property int rowCursor: -1
 
+  // How much width an image block must leave free on each side. A page that
+  // floats controls over its first block sets this; the block itself has no way
+  // to know what is drawn on top of it.
+  property real imageGutter: 0
+
   readonly property var shownBlocks: {
     var all = (renderer.memory && renderer.memory.blocks) || []
     var out = []
@@ -138,6 +143,13 @@ Column {
         target: slot.item
         property: "service"
         value: renderer.service
+      }
+
+      Binding {
+        target: slot.item
+        property: "sideGutter"
+        when: slot.modelData.type === "image"
+        value: renderer.imageGutter
       }
 
       Binding {
