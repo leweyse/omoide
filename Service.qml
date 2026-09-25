@@ -17,11 +17,12 @@ Item {
   property var shell: null
   property var manifest: null
 
-  // Bar widgets never receive `manifest`, so they cannot find the plugin's own
-  // directory. Publishing it here is how they locate the CLI without a
-  // hardcoded path.
-  readonly property string sourceDir: (manifest && manifest.__sourceDir) || ""
-  readonly property string binPath: sourceDir ? sourceDir + "/bin/omoide" : "omoide"
+  // Resolved from this file's own location, not the manifest: since Omarchy
+  // 4.0.4 the shell strips `__sourceDir` from third-party manifests, and the
+  // fallback to a bare "omoide" on PATH failed silently -- every capture
+  // launched nothing. Bar widgets reach the CLI through this property too.
+  readonly property string binPath:
+    decodeURIComponent(String(Qt.resolvedUrl("bin/omoide")).replace(/^file:\/\//, ""))
 
   // Matches the CLI: plain XDG paths under our own name. Not .local/share/omarchy,
   // which is a symlink to the read-only package tree, and not .local/state/omarchy,
