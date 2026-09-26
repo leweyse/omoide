@@ -1,0 +1,62 @@
+# The CLI is built on each user's machine by Service.qml, so nothing here is
+# published. These are the checks a change has to pass first. Arch, because
+# that is what it is built against -- cli/build.rsp names Arch's paths.
+name: cli
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Toolchain and libraries
+        run: |
+          pacman -Syu --noconfirm --needed base-devel clang git python tzdata \
+            glib2 json-c sqlite ffmpeg
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # dev/parity exports the Python reference from history
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # -Werror here and only here: a user's build must never fail over a
+      # warning a newer compiler learned to give.
+      - name: Build with gcc and clang
+        working-directory: cli
+        run: |
+          gcc @build.rsp -Werror -o /tmp/omoide-gcc
+          clang @build.rsp -Werror -o /tmp/omoide-clang
+          ls -l /tmp/omoide-gcc /tmp/omoide-clang
+
+      - name: Static analysis
+        working-directory: cli
+        run: gcc @build.rsp -Werror -fanalyzer -o /dev/null
+
+      - name: Parity with the Python CLI
+        run: |
+          dev/parity
+          dev/parity --cc gcc
+
+      - name: Parity under ASan and UBSan
+        run: |
+          dev/parity --sanitize
+          dev/parity --sanitize --cc gcc
+
+      - name: Fuzz the untrusted-text paths
+        run: dev/fuzz 120
+
+      # What `omarchy plugin add` produces is a bare clone, and Service.qml
+      # builds it with exactly this argv. If this fails, a fresh install does.
+      - name: Fresh clone builds and runs
+        run: |
+          git clone --quiet "$GITHUB_WORKSPACE" /tmp/fresh
+          cd /tmp/fresh/cli
+          cc @build.rsp -o /tmp/fresh-omoide
+          HOME=$(mktemp -d) /tmp/fresh-omoide --version
+          HOME=$(mktemp -d) /tmp/fresh-omoide migrate

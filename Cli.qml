@@ -1,7 +1,7 @@
 import QtQuick
 import Quickshell.Io
 
-// One invocation of bin/omoide. Created on demand by Service.call()
+// One invocation of the CLI (cli/). Created on demand by Service.call()
 // and destroyed when it exits, so a slow capture never blocks the shell.
 Process {
   id: proc

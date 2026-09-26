@@ -76,7 +76,7 @@ FocusScope {
   }
   // Whether `image` is offerable at all. A custom command is its own case:
   // the CLI hands it the image path when visionMode is "image" (run_ai in
-  // bin/omoide), so it must be selectable -- but we cannot claim on
+  // cli/src/enrich.c), so it must be selectable -- but we cannot claim on
   // the user's behalf that their command reads images, so it carries no
   // "reads images" marker.
   readonly property bool visionCapable: root.isCustom

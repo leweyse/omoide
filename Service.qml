@@ -18,11 +18,20 @@ Item {
   property var manifest: null
 
   // Resolved from this file's own location, not the manifest: since Omarchy
-  // 4.0.4 the shell strips `__sourceDir` from third-party manifests, and the
-  // fallback to a bare "omoide" on PATH failed silently -- every capture
-  // launched nothing. Bar widgets reach the CLI through this property too.
-  readonly property string binPath:
-    decodeURIComponent(String(Qt.resolvedUrl("bin/omoide")).replace(/^file:\/\//, ""))
+  // 4.0.4 the shell strips `__sourceDir` from third-party manifests.
+  readonly property string pluginDir:
+    decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")).replace(/\/$/, "")
+
+  // The CLI is C, compiled on this machine by buildCli() below, and lives in
+  // the cache rather than the plugin directory: `omarchy plugin update` is a
+  // fast-forward pull, and anything written into the checkout would block it.
+  // binPath is a symlink to the build for the current source, so it stays put
+  // while builds come and go.
+  readonly property string cacheHome:
+    (/^\//.test(Quickshell.env("XDG_CACHE_HOME") || "") ? Quickshell.env("XDG_CACHE_HOME")
+                                                        : Quickshell.env("HOME") + "/.cache")
+  readonly property string binDir: cacheHome + "/omoide/bin"
+  readonly property string binPath: binDir + "/omoide"
 
   // Matches the CLI: plain XDG paths under our own name. Not .local/share/omarchy,
   // which is a symlink to the read-only package tree, and not .local/state/omarchy,
@@ -93,7 +102,11 @@ Item {
   property Component cliComponent: Cli {}
 
   function call(args, callback) {
-    return cliComponent.createObject(root, {
+    if (!root.cliReady) {
+      root.cliQueue.push({ args: args, callback: callback || null, detached: false })
+      return
+    }
+    cliComponent.createObject(root, {
       command: [root.binPath].concat(args),
       callback: callback || null,
       running: true
@@ -111,7 +124,125 @@ Item {
   // a tracked Process dies with its QML object, and a plugin reload destroys
   // those. call() is for short reads whose result the caller needs.
   function detach(args) {
+    if (!root.cliReady) {
+      root.cliQueue.push({ args: args, callback: null, detached: true })
+      return
+    }
     Quickshell.execDetached([root.binPath].concat(args))
+  }
+
+  // --- building the CLI ------------------------------------------------------
+  //
+  // `omarchy plugin add` only clones, and there is no install hook, so the
+  // first load after an add or an update is where the CLI gets built. Every
+  // step is an argv, never a shell string.
+  //
+  // The build is keyed by the source it came from: the git tree ids of
+  // everything the binary compiles or embeds. An update changes them, so the
+  // next shell load builds; an unchanged checkout finds its build and costs
+  // two git calls. A checkout with local edits to those paths, or one that is
+  // not a git checkout at all, has no id worth trusting, so it builds on every
+  // load -- that is the development loop.
+  //
+  // Calls made before the build finishes wait in cliQueue. After an update
+  // that has not restarted the shell yet, this old QML keeps its old id and so
+  // its old binary: the QML and the CLI it talks to always come from one
+  // checkout.
+  readonly property var cliSources: ["cli", "sql", "prompts", "manifest.json"]
+  property bool cliReady: false
+  property var cliQueue: []
+
+  function cliStep(command, callback, workingDirectory) {
+    var props = { command: command, callback: callback, running: true }
+    if (workingDirectory) props.workingDirectory = workingDirectory
+    cliComponent.createObject(root, props)
+  }
+
+  function buildCli() {
+    var revs = ["git", "-C", root.pluginDir, "rev-parse"]
+      .concat(root.cliSources.map(function (p) { return "HEAD:" + p }))
+    root.cliStep(revs, function (code, parsed, err, out) {
+      if (code !== 0) { root.compileCli("local"); return }
+      var id = Qt.md5(out).slice(0, 12)
+      var status = ["git", "-C", root.pluginDir, "status", "--porcelain", "--"]
+        .concat(root.cliSources)
+      root.cliStep(status, function (code2, parsed2, err2, out2) {
+        if (code2 !== 0 || String(out2 || "").trim() !== "") {
+          root.compileCli("local")
+          return
+        }
+        var target = root.binDir + "/omoide-" + id
+        root.cliStep(["test", "-x", target], function (code3) {
+          if (code3 === 0) root.linkCli(target)
+          else root.compileCli(id)
+        })
+      })
+    })
+  }
+
+  // clang is in Omarchy's base package list and pulls in gcc; cc covers a
+  // system that has neither under those names.
+  readonly property var compilers: ["/usr/bin/clang", "/usr/bin/gcc", "/usr/bin/cc"]
+
+  function compileCli(id, attempt) {
+    var i = attempt || 0
+    if (i >= root.compilers.length) {
+      root.cliBuildFailed("no C compiler found: install clang (omarchy pkg add clang)")
+      return
+    }
+    root.cliStep(["test", "-x", root.compilers[i]], function (found) {
+      if (found !== 0) { root.compileCli(id, i + 1); return }
+      var target = root.binDir + "/omoide-" + id
+      // Built beside the target and renamed into place, so a reload that kills
+      // the compiler part-way leaves a stray temp file, never a broken binary.
+      var temp = target + ".tmp" + Date.now()
+      root.cliStep(["mkdir", "-p", root.binDir], function () {
+        var cc = [root.compilers[i], "@build.rsp",
+                  "-DOMOIDE_SRC_ID=\"" + id + "\"", "-o", temp]
+        root.cliStep(cc, function (code, parsed, err) {
+          if (code !== 0) {
+            root.cliStep(["rm", "-f", temp], function () {})
+            root.cliBuildFailed(err)
+            return
+          }
+          root.cliStep(["mv", "-f", temp, target], function (moved) {
+            if (moved !== 0) root.cliBuildFailed("could not install " + target)
+            else root.linkCli(target)
+          })
+        }, root.pluginDir + "/cli")
+      })
+    })
+  }
+
+  function linkCli(target) {
+    root.cliStep(["ln", "-sfn", target, root.binPath], function (code, parsed, err) {
+      if (code !== 0) { root.cliBuildFailed(err); return }
+      // Builds for other sources, and temp files a killed build left behind.
+      var name = target.slice(target.lastIndexOf("/") + 1)
+      root.cliStep(["find", root.binDir, "-maxdepth", "1", "-name", "omoide-*",
+                    "!", "-name", name, "-delete"], function () {})
+      root.cliReady = true
+      var queued = root.cliQueue
+      root.cliQueue = []
+      for (var i = 0; i < queued.length; i++) {
+        if (queued[i].detached) root.detach(queued[i].args)
+        else root.call(queued[i].args, queued[i].callback)
+      }
+    })
+  }
+
+  function cliBuildFailed(message) {
+    var text = String(message || "").trim()
+    console.warn("omoide: could not build the CLI: " + text)
+    Quickshell.execDetached(["omarchy-notification-send", "-u", "critical",
+                             "Omoide could not build its helper",
+                             text.split("\n")[0].slice(0, 300)])
+    // Answer the waiting callers rather than leave them waiting for good.
+    var queued = root.cliQueue
+    root.cliQueue = []
+    for (var i = 0; i < queued.length; i++) {
+      if (queued[i].callback) queued[i].callback(127, null, text, "")
+    }
   }
 
   property bool voiceTicket: false
@@ -168,7 +299,7 @@ Item {
     indexFile.reload()
   }
 
-  // Must match INDEX_VERSION in bin/omoide.
+  // Must match INDEX_VERSION in cli/src/omoide.h.
   readonly property int indexVersion: 4
   property bool rebuildTried: false
 
@@ -401,7 +532,10 @@ Item {
     alarmTimer.restart()
   }
 
-  Component.onCompleted: root.armAlarms()
+  Component.onCompleted: {
+    root.buildCli()
+    root.armAlarms()
+  }
 
   IpcHandler {
     target: "omoide"
