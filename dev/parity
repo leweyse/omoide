@@ -856,11 +856,8 @@ CLI: list[str] = []            # set in main()
 WORK: Path | None = None       # set in main()
 
 
-def run_case(index: int):
-    """One case in its own home, returning (name, result). Everything it touches
-    is under WORK/<name>, so cases can run side by side."""
-    name, seeds, argv = CASES[index]
-    home = WORK / name
+def seeded(seeds, home: Path) -> None:
+    """A home as `seeds` leave it, with the seeds' own traces removed."""
     home.mkdir(parents=True)
     (home / ".fixture.png").write_bytes(png(20, 10))
     for step in seeds:
@@ -872,9 +869,35 @@ def run_case(index: int):
     for leftover in home.glob(".stub-*.log"):
         leftover.unlink()
     (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
+
+
+def template_of(index: int) -> Path:
+    """Where the seeded home for case `index`'s seed list is kept. Cases that
+    share a list share one template, built once and copied."""
+    return WORK / "seeded" / str(SEED_LISTS.index(CASES[index][1]))
+
+
+def build_template(key: int) -> None:
+    seeded(SEED_LISTS[key], WORK / "seeded" / str(key))
+
+
+def run_case(index: int):
+    """One case in its own home, returning (name, result). Everything it touches
+    is under WORK/<name>, so cases can run side by side. The home starts as a
+    copy of its seed list's template, which nothing in it can tell apart from a
+    fresh seeding: the seeds are deterministic, and the index pull already runs
+    in a copied home."""
+    name, _seeds, argv = CASES[index]
+    home = WORK / name
+    shutil.copytree(template_of(index), home, symlinks=True)
     code, stdout = run(CLI + argv, home)
     return name, scrub({"exit": code, "stdout": parse_stdout(stdout),
                         "db": dump_db(home), **side_effects(CLI, home)}, home)
+
+
+# Each distinct seed list: cases whose lists are equal share a template, since
+# equal lists run the same steps. Set in main() for the cases chosen.
+SEED_LISTS: list = []
 
 
 def run_cases(chosen: list[int], jobs: int):
@@ -885,12 +908,17 @@ def run_cases(chosen: list[int], jobs: int):
     child. A worker is its own subreaper, since fork does not carry the setting,
     and runs one case at a time. Forked rather than spawned, because the seeds
     are closures that cannot be sent to a fresh interpreter."""
+    keys = list(range(len(SEED_LISTS)))
     if jobs <= 1 or len(chosen) <= 1:
+        for key in keys:
+            build_template(key)
         for index in chosen:
             yield run_case(index)
         return
     context = multiprocessing.get_context("fork")
     with context.Pool(min(jobs, len(chosen)), initializer=become_subreaper) as pool:
+        # Every template first, then the cases that copy them.
+        pool.map(build_template, keys)
         yield from pool.imap(run_case, chosen)
 
 
@@ -947,6 +975,9 @@ def main() -> int:
         WORK = tmp
 
         chosen = [i for i, (name, _, _) in enumerate(CASES) if args.filter in name]
+        for i in chosen:
+            if CASES[i][1] not in SEED_LISTS:
+                SEED_LISTS.append(CASES[i][1])
         for name, result in run_cases(chosen, args.jobs):
             if args.dump:
                 print(json.dumps(result, ensure_ascii=False, indent=1))
