@@ -11,22 +11,22 @@ This skill owns the file: its name, its bump, its title and its body. `release` 
 
 ## When one is required
 
-Every change to a file under `ui/`, `cli/` or `sql/`, or to `manifest.json`, carries a changeset in the same change. The usage text of `dev/changeset` lists what does not count, and the gate in `check.yml` fails a pull request that changed a counted file without adding one. A change a user would not notice, such as a refactor or a test, carries `omoide: none`, which is how the gate knows it was considered.
+Every change to a file under `ui/`, `cli/` or `sql/`, or to `manifest.json`, carries a changeset in the same change. The usage text of `dev/changeset` lists what does not count, and the gate in `check.yml` fails a pull request that changed a counted file without adding one. A change a user would not notice, such as a refactor or a test, carries an empty changeset, `pnpm changeset --empty`, which is how the gate knows it was considered.
 
 ## Before writing
 
 1. Read one or two files in `.changeset/`, or the latest section of `CHANGELOG.md`, to match the current voice.
 2. Decide how many changesets the branch needs. See the last section.
 
-## Write it with the tool
+## Write it with the changesets CLI
 
 ```sh
-dev/changeset add --bump patch "fix(tasks): the open to-do count stops at 200"
-dev/changeset add --bump minor "feat(library): collections can be renamed from their page"
-dev/changeset status
+pnpm changeset            # asks for the bump and the summary, and names the file
+pnpm changeset --empty    # a change users will not notice
+dev/changeset status      # holds every pending changeset to the rules below
 ```
 
-`add` checks the title, checks that the bump suits its type, and names the file. The frontmatter names the package and its bump, `omoide: <bump>`, the way changesets names a package. Edit the file afterwards to add a body with bullets; `status` checks it again, and CI runs `status` on every pull request.
+The changesets CLI writes the frontmatter, `"omoide": <bump>`, and a random three-word name; the summary it asks for is the title below, and a body can follow it in the file. It knows nothing of this repository's rules, so `dev/changeset status` checks the title and that the bump suits its type, and CI runs it on every pull request. A file written by hand in the same shape is just as good.
 
 ## Name the file with three words
 
@@ -49,7 +49,7 @@ Most changesets are the title and nothing else:
 
 ```markdown
 ---
-omoide: patch
+"omoide": patch
 ---
 
 fix(space): a library saved by a newer Omoide opens as an empty page
@@ -63,7 +63,7 @@ The type decides it, and `dev/changeset` refuses a pair that does not match:
 | ---- | ---- |
 | `feat` | `minor`: something new a user can do or see |
 | `fix` | `patch`: a problem that was happening no longer does |
-| `refactor`, `docs`, `chore` | `patch` when a user sees the same thing working better, `none` when they notice nothing; a `none` title is optional and never reaches the changelog |
+| `refactor`, `docs`, `chore` | `patch` when a user sees the same thing working better; an empty changeset when they notice nothing, whose title is optional and never reaches the changelog |
 | any, with the user's decision | `major`: an existing install breaks or loses something, such as a renamed IPC function, a removed `barWidget.schema` key, a CLI flag or JSON key gone, or a migration that drops data. Each is a guardrail in the root `AGENTS.md` |
 
 A title that fits `feat` but reads like a fix is a sign the type is wrong, not the bump: pick the type from what changed for the user, and the bump follows.
@@ -74,7 +74,7 @@ Add one only when something is left to say. If the title carries it, stop at the
 
 ```markdown
 ---
-omoide: minor
+"omoide": minor
 ---
 
 feat(tasks): tasks and events load as you scroll, however many there are
@@ -86,7 +86,7 @@ A body is short but names the surface it affects, so a reader can tell whether i
 
 ```markdown
 ---
-omoide: patch
+"omoide": patch
 ---
 
 fix(space): polish after the paging change

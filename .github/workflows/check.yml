@@ -1,24 +1,22 @@
 # The half of dev/check that needs no Omarchy install and no C build: the agent
-# documentation, the comment policy, changesets, and C formatting, plus the
-# changeset gate on pull requests. cli.yml owns the builds
-# and parity. The QML checks need /usr/share/omarchy/shell, which this container
+# documentation, the comment policy, changesets and C formatting, plus the
+# changeset gate. cli.yml owns the builds and parity. The QML checks need /usr/share/omarchy/shell, which this container
 # does not have, so they run locally through dev/check.
 name: check
 
 on:
-  push:
-    branches: [main]
+  # Every change reaches main through a pull request, so the pull request is
+  # where it is checked; main runs only the release workflow.
   pull_request:
 
 # Read-only: nothing here writes to the repository.
 permissions:
   contents: read
 
-# A newer push to the same pull request replaces the run in progress. Runs on
-# main always finish, so every merge is checked.
+# A newer push to the same pull request replaces the run in progress.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   docs:
@@ -64,7 +62,6 @@ jobs:
   # that count are in dev/changeset's usage text.
   changeset:
     name: Require a changeset
-    if: github.event_name == 'pull_request'
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:

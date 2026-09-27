@@ -1,5 +1,5 @@
 ---
-omoide: patch
+"omoide": patch
 ---
 
 fix(space,library): the keyboard highlight is left behind or off screen

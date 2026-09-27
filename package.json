@@ -1,0 +1,25 @@
+{
+  "type": "module",
+  "name": "omoide",
+  "version": "0.4.0",
+  "author": "leweyse",
+  "license": "MIT",
+  "keywords": [
+    "omarchy",
+    "omoide",
+    "essential-space"
+  ],
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "changeset version && pnpm release",
+    "release": "python3 dev/sync-version",
+    "beta:enter": "changeset pre enter beta",
+    "beta:exit": "changeset pre exit"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.2"
+  },
+  "packageManager": "pnpm@12.6.0",
+  "private": true
+}

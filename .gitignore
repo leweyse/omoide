@@ -8,6 +8,10 @@
 *~
 .*.sw[a-p]
 
+# The changesets CLI, installed by pnpm. package.json and pnpm-lock.yaml are
+# tracked; the packages themselves are not.
+node_modules/
+
 # Python bytecode. The dev/ scripts write none, and none belongs here.
 __pycache__/
 

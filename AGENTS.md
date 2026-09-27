@@ -25,11 +25,11 @@ These are user-facing contracts. Changing one needs explicit human approval, and
 - the reply shape `cli/prompts/enrich.txt` asks for;
 - a library, flag, or source layout in `cli/build.rsp`, and any new program the plugin runs.
 
-`.claude/settings.json` makes Claude Code ask before it edits the CLI, the schema, the manifest, `ui/Service.qml`, CI, the checks that guard them, or itself, and before `git commit` or `git push`. Another harness does not read that file, so for it the locks and the owner's review are the gate.
+`.claude/settings.json` makes Claude Code ask before it edits the CLI, the schema, the manifest, `ui/Service.qml`, CI, the checks that guard them, or itself. Committing and pushing are held by the rule above, not by a prompt. Another harness does not read that file, so for it the locks and the owner's review are the gate.
 
 Never add a dependency, runtime or development, without asking. If a change turns out to be breaking partway through, stop, summarize the impact, and wait.
 
-Never create, amend, or push a commit unless asked for that exact action. Asking for a commit message is asking for text. A commit is one Conventional Commit per coherent change, `type(scope): summary` in lowercase, with the scopes `git log` already uses. A change to what users run also carries a changeset in `.changeset/`, titled `type(scope): what changed` and written by the `changesets` skill; the version is bumped only by the release pull request, which `release` owns.
+Never create, amend, or push a commit unless asked for that exact action, in the current request. Finishing a task, a passing `dev/check`, a pending changeset, or permission to commit or push given earlier is not that request: wait for it. Asking for a commit message is asking for text. A commit is one Conventional Commit per coherent change, `type(scope): summary` in lowercase, with the scopes `git log` already uses. A change to what users run also carries a changeset in `.changeset/`, titled `type(scope): what changed` and written by the `changesets` skill; the version is bumped only by the release pull request, which `release` owns.
 
 ## Skills
 
@@ -54,7 +54,7 @@ Comments state a constraint at the line that needs it. History, rationale, and i
 
 ## Working
 
-`dev/check` is the gate, and a change is not done until it passes. It runs the docs check, the digest check, the comment check, the changeset check and self-test, `clang-format`, the QML type and lint checks, both compiler builds under `-Werror`, and `dev/parity`. `--no-cli` skips the C half for a QML or docs change, `--no-shell` the QML checks, and `--no-docs` the docs and digest checks. CI runs the C half through `.github/workflows/cli.yml`, adding `-fanalyzer`, parity under the sanitizers with both compilers, and a fuzz run whose length follows the trigger (short on a pull request, longer on `main`, longest in the weekly run), and the rest through `.github/workflows/check.yml`, which also fails a pull request that changes a user-facing file without a changeset; the QML checks need the Omarchy shell installed, so they run only locally.
+`dev/check` is the gate, and a change is not done until it passes. It runs the docs check, the digest check, the comment check, the changeset check and self-test, the version check, `clang-format`, the QML type and lint checks, both compiler builds under `-Werror`, and `dev/parity`. `--no-cli` skips the C half for a QML or docs change, `--no-shell` the QML checks, and `--no-docs` the docs and digest checks. CI runs the C half through `.github/workflows/cli.yml`, adding `-fanalyzer`, parity under the sanitizers with both compilers, and a short fuzz run, and the rest through `.github/workflows/check.yml`, which also fails a pull request that changes a user-facing file without a changeset; the QML checks need the Omarchy shell installed, so they run only locally.
 
 A change to a file a reference concept under `.agents/docs/reference` lists in its `sources` fails the digest check until that concept is revisited. Read it, fix what the change made untrue, then run `dev/sync-docs`; the `agent-knowledge` skill owns the rule.
 

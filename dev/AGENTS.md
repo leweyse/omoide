@@ -11,13 +11,15 @@ Read this before changing a check, or before trusting one as evidence. Each scri
 | `check-types` | every QML type name resolves against its file's own imports | properties, signals, or behavior |
 | `check-docs` | the knowledge bundle is well formed, its links and paths resolve, mirrored skills match the lock, every `AGENTS.md` has its `CLAUDE.md` | that a claim in a document is true |
 | `sync-docs --check` | every reference concept's `source_digest` matches the files its `sources` name | that the document still describes those files; only a reader can tell |
-| `changeset` | pending changesets parse, and `--since <ref>` finds a changeset added wherever a user-facing file changed since the merge base; `selftest` runs add, status and version in throwaway repositories | that the bump is the right one or the summary true, or that the release workflow can open its pull request on GitHub |
+| `changeset` | every pending changeset has a `type(scope): what changed` title and a bump that suits its type, and `--since <ref>` finds a changeset added wherever a user-facing file changed since the merge base; `selftest` runs both in throwaway repositories | that the bump is the right one or the title true; writing and applying changesets is the changesets CLI's |
+| `sync-version` | `manifest.json`'s version equals `package.json`'s (`--check`), or makes it so | that the version is the one the changesets justify |
 | `cli-surface` | the CLI's subcommands, aliases, flags (hidden ones too), the verbs parity runs, their output keys and exit codes match `cli-surface.lock` | that a change to the surface was approved; the lock diff is what the owner reviews |
 | `capabilities` | every call in `cli/src` that deletes, runs a program, writes outside the database or reaches the network matches `capabilities.lock`, by file and function | a harmful call through a wrapper whose name the tool does not list, or what the call does with its arguments |
 | `check-comments` | no code comment uses the phrasing of history or port rationale | that a comment is needed, or right |
 
 ## Invariants
 
+- **The changesets CLI is the one Node dependency.** It lives in `package.json`'s devDependencies, installed with `pnpm install`, and only writes and applies changesets; every check here stays Python.
 - **Python here, and nowhere a user runs.** These scripts use only the standard library; a new import from outside it is a new development dependency and needs approval.
 - **A check fails loudly.** A check that cannot run, because a tool or the shell is missing, reports failure or states that it skipped. It never passes by doing nothing.
 - **A fixture changes only with the code that changes it.** `parity --record` rewrites fixtures from whatever the CLI does, so a re-recorded fixture is reviewed line by line in the same change. A fixture with no case, or a case with no fixture, fails the run.

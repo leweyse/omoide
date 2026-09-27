@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare a change for users: write the commit message, check what an update does to an existing install, and cut a release. Covers `dev/changeset status` and `version`, the version pull request that bumps manifest.json's version and writes CHANGELOG.md, Conventional Commit messages with this repository's scopes, INDEX_VERSION and SCHEMA_VERSION consequences, and the README's update notes. Use when asked to bump the version, cut a release, write a commit message, or prepare a merge to main; the changeset file itself is `changesets`. Do not commit, amend, push or merge unless that exact action was asked for.
+description: Prepare a change for users: write the commit message, check what an update does to an existing install, and cut a release. Covers `pnpm version-packages` and `pnpm release`, the version pull request the changesets GitHub Action opens to bump package.json's and manifest.json's version and write CHANGELOG.md, Conventional Commit messages with this repository's scopes, INDEX_VERSION and SCHEMA_VERSION consequences, and the README's update notes. Use when asked to bump the version, cut a release, write a commit message, or prepare a merge to main; the changeset file itself is `changesets`. Do not commit, amend, push or merge unless that exact action was asked for.
 ---
 
 # Release
@@ -21,18 +21,18 @@ Do not raise the version by hand in a feature branch. Two branches that each edi
 
 ## How a release happens
 
-`version` in `manifest.json` is the only version, and the CLI embeds it for `--version`, so a release also changes the CLI build. Nothing but `dev/changeset version` changes it.
+`version` in `manifest.json` is what Omarchy shows and the CLI embeds for `--version`, so a release also changes the CLI build. `package.json` carries the same version for the changesets CLI, and only a release changes either: `pnpm version-packages` runs `changeset version`, which bumps `package.json` and writes the changelog, then `pnpm release`, which copies that version into `manifest.json`, changing that one line. `dev/sync-version --check`, in `dev/check`, fails when the two disagree.
 
-On every push to `main`, `.github/workflows/release.yml` runs `dev/changeset version` on a branch named changeset-release/main, force-pushes it, and opens or updates one pull request titled `chore: bump version`. That command takes the highest pending bump, rewrites the `version` line of `manifest.json` and nothing else, prepends a dated section to `CHANGELOG.md` grouped by Major, Minor and Patch, and deletes the changesets it consumed. With only `none` changesets pending it changes nothing, so no pull request opens.
+On every push to `main`, `.github/workflows/release.yml` runs the changesets GitHub Action, which runs `pnpm version-packages` on the branch changeset-release/main and opens or updates one pull request titled `chore: bump version`. The version it picks is the highest pending bump; the changelog groups the changesets under Major, Minor and Patch Changes, each with a link to its commit and pull request; the consumed changesets are deleted. With nothing pending, no pull request opens. It never publishes a package.
 
 Merging that pull request is the release, and every user gets it on their next update. It needs the user's say-so, like any user-visible release, so hand over the pull request and wait; never merge it on an agent's own judgment. Before asking, read its diff: the new version should be the one the changesets justify, and each changelog line should read well to someone who has never seen the code.
 
 Two repository facts the workflow depends on:
 
-- The setting "Allow GitHub Actions to create and approve pull requests", under the repository's Actions settings, must be on, or `gh pr create` is refused.
-- A pull request opened with `GITHUB_TOKEN` starts no other workflow, so `check.yml` and `cli.yml` do not run on the version pull request. Its diff is only the version line, the changelog and deleted changesets, all of which ran through CI on the pull requests that added them. To see CI on it anyway, close and reopen it.
+- The setting "Allow GitHub Actions to create and approve pull requests", under the repository's Actions settings, must be on, or opening the pull request is refused.
+- A pull request opened with `GITHUB_TOKEN` starts no other workflow, so `check.yml` and `cli.yml` do not run on the version pull request. Its diff is only the two versions, the changelog and deleted changesets, all of which ran through CI on the pull requests that added them. To see CI on it anyway, close and reopen it.
 
-To preview a release locally, run `dev/changeset status`. Running `dev/changeset version` on a working branch rewrites files the workflow owns; discard those changes afterwards.
+To preview a release locally, `pnpm changeset status` names the next version. `pnpm version-packages` does the real thing, and the changelog it writes looks each changeset up on GitHub, so it needs `GITHUB_TOKEN` set; on a working branch it rewrites files the workflow owns, so discard those changes afterwards.
 
 ## The commit message
 

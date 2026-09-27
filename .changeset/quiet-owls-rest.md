@@ -1,5 +1,5 @@
 ---
-omoide: minor
+"omoide": minor
 ---
 
 feat(cli): Omoide builds its own command-line tool when the shell loads it, and no longer needs Python

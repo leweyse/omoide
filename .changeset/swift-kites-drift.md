@@ -1,5 +1,5 @@
 ---
-omoide: patch
+"omoide": patch
 ---
 
 fix(space): rows that scroll sideways barely move on a touchpad and snap back
