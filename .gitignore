@@ -21,7 +21,6 @@ __pycache__/
 
 .DS_Store
 
-# Demo scaffolding. Fills the real database with ~26 fake memories and takes
-# them out again; useful locally, not something to ship. dev/check-types IS
-# tracked -- it is the gate that catches QML type references qmllint misses.
+# Demo scaffolding: fills the real database with fake memories and takes them
+# out again. Local only; every other script in dev/ is tracked.
 dev/seed-demo

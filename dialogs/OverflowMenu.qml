@@ -4,23 +4,16 @@ import qs.Ui
 
 // The ⋯ dropdown, owned by the window.
 //
-// It lives here rather than under the button it hangs from because a child
-// positioned outside its parent's bounds renders but is never hit-tested -- a
+// It lives here rather than under the button it hangs from, because a child
+// positioned outside its parent's bounds renders but is never hit-tested. A
 // dropdown below a one-line row could be seen and not clicked. Filling the
-// card means the menu is always inside something that contains it.
+// card keeps the menu inside something that contains it.
 //
-// Entries in, one signal out. It was hardcoded to a memory's Delete; a
-// collection needs Edit and Remove, and a second near-identical file would
-// have drifted the first time either changed.
-// A FocusScope, not a plain Item.
+// Entries in, one signal out, so a memory and a collection share one menu.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden or a field swallowing Escape left NOTHING
-// focused, and with nothing focused no Keys handler in the dialog could fire.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 

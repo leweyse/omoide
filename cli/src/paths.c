@@ -41,7 +41,7 @@ const Paths *paths(void) {
 }
 
 // Where `path` really points, resolving symlinks in whatever part of it
-// exists yet -- the data directory is usually created after this check runs.
+// exists yet, because the data directory is usually created after this check.
 static char *resolve(const char *path) {
   g_autofree char *head = g_strdup(path);
   GString *tail = g_string_new(NULL);

@@ -7,8 +7,8 @@
 int cmd_reindex(int argc, char **argv) {
   parse_options("reindex", NULL, 0, &argc, &argv);
   sqlite3 *db = db_open(true);
-  // Before the index, not after: the cards carry each capture's aspect, so an
-  // unmeasured row would be written out with aspect 0 until the next rebuild.
+  // Before the shell is told, not after: the cards carry each capture's aspect,
+  // so an unmeasured row would render with aspect 0 until the next rebuild.
   const int measured = backfill_dimensions(db);
   refresh_fts(db, NULL);
   write_index(db);
@@ -44,7 +44,7 @@ static bool commit_running(const char *memory_id) {
 //
 // Detected by the process being gone rather than an elapsed-time guess: a
 // timeout either resolves a live model call too early or leaves a dead one
-// spinning. Marking them failed is honest -- the capture itself is intact, and
+// spinning. Marking them failed is honest: the capture itself is intact, and
 // silently re-running the model would spend tokens nobody asked to spend.
 static int64_t sweep_stalled(sqlite3 *db) {
   g_autoptr(GPtrArray) pending = g_ptr_array_new_with_free_func(g_free);

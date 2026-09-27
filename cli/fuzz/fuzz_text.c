@@ -5,8 +5,8 @@
 // extraction, block validation, the date grammar and the flattening done for
 // logs and toasts. Built by dev/fuzz, never shipped.
 //
-// enrich.c is included rather than linked so its static helpers -- the
-// extractor and the validator -- are reachable from here.
+// enrich.c is included rather than linked so its static helpers, the
+// extractor and the validator, are reachable from here.
 #include "../src/enrich.c"
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {

@@ -5,22 +5,14 @@ import "../common"
 
 // A confirmation in the plugin's own dialog language.
 //
-// Not qs.Ui ConfirmDialog: that one hardcodes `radius: 0` and fixed 88x34
-// buttons, which suit the omarchy menu's square-edged card but sit oddly
-// against this plugin's sheets. Everything here comes from a token -- the
-// card's radius, its padding, the button chrome -- so it matches ItemEditor,
-// SettingsDialog and the compose overlay, and follows a theme change with them.
-// A FocusScope, not a plain Item.
+// Not qs.Ui ConfirmDialog: that one hardcodes a square card and fixed-size
+// buttons. Everything here comes from a token (the card's radius, its padding,
+// the button chrome), so it matches ItemEditor, SettingsDialog and the compose
+// overlay, and follows a theme change with them.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 
@@ -69,8 +61,8 @@ FocusScope {
     focus: root.opened
 
     Keys.onPressed: function (event) {
-      // Both guarded. A held Escape unwound every layer; a held Return
-      // would fire a destructive confirm more than once.
+      // Both ignore auto-repeat. A held Escape would unwind every layer, and a
+      // held Return would fire a destructive confirm more than once.
       if (event.key === Qt.Key_Escape) {
         if (!event.isAutoRepeat) root.canceled()
         event.accepted = true

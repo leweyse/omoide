@@ -10,24 +10,17 @@ import "../MemoryModel.js" as Model
 // a to-do should not lose the page you were reading, and the archive and a
 // memory both need to reach the same editor.
 //
-// It is a FORM, not a set of live controls. Every edit is staged locally and
+// It is a form, not a set of live controls. Every edit is staged locally and
 // written only by Save, so a mistyped date can be abandoned by closing the
-// sheet. That is the whole reason the fields do not commit as you leave them.
+// sheet. The fields do not commit as focus leaves them.
 //
 // A to-do has no date of its own here. Its time follows its earliest reminder,
 // which is what the archive groups on. An event keeps its own Starts, because
 // an event's time is the thing itself and its reminders are offsets from it.
-// A FocusScope, not a plain Item.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 
@@ -66,14 +59,13 @@ FocusScope {
     root.opened = true
     root.seeded = false
     root.reload()
-    // The first item, not the key catcher: focusing the catcher left the dialog
-    // with nothing highlighted and no clue where Tab would go. The memory link
-    // comes before the To-do field when there is one, matching the reading order.
-    // Only for the case where reload() will NOT run, so nothing else would place
-    // focus. Testing `seeded` instead would be a race that this side always
-    // wins: callLater fires on the next tick, while reload waits on a
-    // subprocess, so the fallback would claim focus every time and the memory
-    // link would never get it.
+    // The first item, not the key catcher, so something is highlighted and Tab
+    // has a place to start. The memory link comes before the To-do field when
+    // there is one, matching the reading order.
+    // Only for the case where reload() will not run. Testing `seeded` instead
+    // would race: callLater fires on the next tick while reload waits on a
+    // subprocess, so this fallback would always win and the memory link would
+    // never get focus.
     if (!root.service || !root.itemId) {
       Qt.callLater(function () {
         root.seeded = true
@@ -106,11 +98,10 @@ FocusScope {
       root.draftReminders = rows
 
       // Focus here, not in open(): hasMemoryLink is derived from `item`, which
-      // this callback is what delivers. Deciding in open() always ran before the
-      // fetch returned, so the link was never the first stop.
+      // this callback delivers, and open() runs before the fetch returns.
       //
-      // Guarded, because reload() also runs after a save -- re-focusing then
-      // would yank the cursor out from under whatever the user was doing.
+      // Guarded, because reload() also runs after a save, and re-focusing then
+      // would pull the cursor away from whatever the user was doing.
       if (!root.seeded) {
         root.seeded = true
         if (root.hasMemoryLink) memoryLink.forceActiveFocus()
@@ -139,11 +130,8 @@ FocusScope {
     root.draftReminders = next
   }
 
-  // Drops the row from the MODEL, not by hiding its delegate. `removed` was a
-  // flag on the delegate while draftReminders kept the row, so view and model
-  // disagreed: a later add rebuilt an array of the same length, the stale
-  // delegate could survive with removed still true, and no amount of clicking
-  // Add produced a visible row.
+  // Drops the row from the model, not by hiding its delegate, so the view and
+  // the model never disagree about which rows exist.
   //
   // Collecting first preserves whatever the other rows currently have typed in
   // them, which a plain splice on draftReminders would discard.
@@ -154,9 +142,9 @@ FocusScope {
     root.draftReminders = next
   }
 
-  // One call at a time, in order. Several of these depend on the one before --
-  // a changed reminder is a remove followed by an add -- and the CLI rewrites
-  // index.json on each, so firing them together would race.
+  // One call at a time, in order. Several depend on the one before (a changed
+  // reminder is a remove followed by an add), and each one ends by making the
+  // service pull a new index, so firing them together would race.
   function runQueue(queue, finished) {
     if (!service || !queue.length) {
       if (finished) finished()
@@ -228,14 +216,9 @@ FocusScope {
 
   visible: opened
 
-  // Escape, on the ROOT so it catches the key wherever focus happens to be.
-  //
-  // Key events travel up the focused item's PARENT chain. An inner catcher that
-  // is a sibling of the content is never on that chain, so once anything else
-  // took focus -- a button, a chip, the memory link -- Escape passed the catcher
-  // by, reached SpaceWindow, and died there: unwind() steps aside for an open
-  // overlay, expecting the overlay to handle its own. The dialog became
-  // uncloseable by keyboard.
+  // Escape, on the root, because key events travel up the focused item's
+  // parent chain and SpaceWindow's unwind() leaves an open overlay to close
+  // itself. A catcher beside the content would miss keys from a focused button.
   Keys.onPressed: function (event) {
     if (event.key === Qt.Key_Escape) {
       // Only on a real press: holding Escape auto-repeats, and each
@@ -357,9 +340,9 @@ FocusScope {
   backdrop: Color.menu.background
             hot: false
           }
-          // Full-strength accent on focus. controlSpec("focus") applies
-          // focusBorderAlpha (0.25), which read as grey. No `selected` or
-          // `accent` on this type -- it has foreground and `bordered`.
+          // Full-strength accent on focus: controlSpec("focus") applies
+          // focusBorderAlpha, which reads as grey. This type has no `selected`
+          // or `accent`, only foreground and `bordered`.
           borderSpec: activeFocus
                       ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
                       : (bordered
@@ -401,11 +384,9 @@ FocusScope {
           fontFamily: Style.font.menuFamily
         }
 
-        // Multi-line, growing to three. A to-do's title is a sentence -- "Check
-        // Essential Space's MCP support again in mid-October and implement it
-        // for Omoide" -- and on one line the field scrolled sideways as it was
-        // typed, so the start of what you had written was never on screen while
-        // you edited the end of it.
+        // Multi-line, growing to three. A to-do's title is often a sentence,
+        // and a one-line field would scroll its start out of view while the end
+        // is edited.
         AccentTextArea {
           id: titleField
           escapeTo: editorKeys
@@ -477,9 +458,8 @@ FocusScope {
               Component.onCompleted: when.set(modelData.date, modelData.time)
             }
 
-            // Outlined, like every other control on this sheet. A bare glyph
-            // floating beside two bordered fields read as decoration rather
-            // than something you could press.
+            // Outlined, like every other control on this sheet, so it reads as
+            // something to press rather than decoration.
             PanelActionButton {
               focusable: true
               FocusRing {
@@ -491,9 +471,9 @@ FocusScope {
   backdrop: Color.menu.background
                 hot: false
               }
-              // Full-strength accent on focus. controlSpec("focus") applies
-              // focusBorderAlpha (0.25), which read as grey. No `selected` or
-              // `accent` on this type -- it has foreground and `bordered`.
+              // Full-strength accent on focus: controlSpec("focus") applies
+              // focusBorderAlpha, which reads as grey. This type has no
+              // `selected` or `accent`, only foreground and `bordered`.
               borderSpec: activeFocus
                           ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
                           : (bordered
@@ -509,10 +489,9 @@ FocusScope {
               hoverColor: Color.urgent
               fontFamily: Style.font.menuFamily
               onClicked: {
-                // Focus FIRST, then hide. This button is what has focus, and an
-                // invisible item cannot hold it -- Qt drops it, and with nothing
-                // focused in the dialog no Keys handler fires at all, so the
-                // whole keyboard went dead including Escape.
+                // Focus first, then hide. This button has focus, and an
+                // invisible item cannot hold it: Qt drops it, and with nothing
+                // focused no Keys handler in the dialog fires, Escape included.
                 //
                 // The Add button, not the key catcher: having just removed a
                 // row, the next thing within reach should be adding one.
@@ -524,7 +503,7 @@ FocusScope {
         }
 
         // A chip, matching "Add to collection" and "Link a memory": all three
-        // are the same thing -- an inline control that adds a row.
+        // are an inline control that adds a row.
         // An Item, so the button can be given room above it. A Column
         // spacing applies to every gap equally; this one gap wants to be bigger,
         // because the button is an action under a list rather than another row.
@@ -654,8 +633,8 @@ FocusScope {
 
 
             text: "Save"
-            // Primary on a suggestion too, now that accepting has moved up to
-            // the header and stopped competing with it down here.
+            // Primary on a suggestion too: accepting lives in the header, so it
+            // does not compete with Save down here.
             selected: true
             foreground: Color.menu.text
             background: Color.menu.background

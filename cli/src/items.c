@@ -52,8 +52,8 @@ char *create_item(
   const char *kind = spec_str(spec, "kind") ? spec_str(spec, "kind") : "todo";
   const bool event = g_str_equal(kind, "event");
   // Only a TO-DO waits to be accepted. An event is a fact the capture states,
-  // so it goes straight into the calendar surfaces -- it just gets no ALARM
-  // unless the note asked for one.
+  // so it goes straight into the calendar surfaces, with a default alarm
+  // below when it has a time and the note asked for none.
   const char *status = inferred && g_str_equal(kind, "todo") ? "suggested" : "active";
 
   g_autofree char *title = clean_text(json_get(spec, "title"), MAX_TITLE);
@@ -96,8 +96,8 @@ char *create_item(
   }
 
   // Last, because the branches above can ADD a default alarm: capping before
-  // them would be undone by them. Per-item caps also multiply -- eight events
-  // at four alarms each is thirty-two toasts from one screenshot -- so this
+  // them would be undone by them. Per-item caps also multiply: eight events
+  // at four alarms each is thirty-two toasts from one screenshot. So this
   // counts across the whole memory.
   g_autoptr(sqlite3_stmt) count = db_query(db,
       "SELECT COUNT(*) AS n FROM reminders r JOIN items i ON i.id = r.item_id "

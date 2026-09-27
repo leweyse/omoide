@@ -26,14 +26,14 @@ Column {
   property var except: []
 
   // The focused block, by id. The page owns the cursor because the blocks are
-  // split across three renderers -- image above the title, event next, the rest
-  // below -- and only the page knows the order they read in.
+  // split across three renderers (image above the title, event next, the rest
+  // below), and only the page knows the order they read in.
   property string cursorId: ""
   // Whether to PAINT it. The page keeps its place when focus moves to a sibling
   // region but must stop showing a ring, or two highlights sit on screen.
   property bool cursorActive: true
   // Row cursor for a to-dos card that has been drilled into, or -1. Applies to
-  // whichever card holds cursorId -- only the focused one can be drilled into.
+  // whichever card holds cursorId, since only the focused one can be drilled into.
   property int rowCursor: -1
 
   // How much width an image block must leave free on each side. A page that
@@ -113,14 +113,10 @@ Column {
       }
 
       // Bindings, not assignments in onLoaded. onLoaded fires once per load, so
-      // anything pushed there is frozen at that moment: ticking a to-do
-      // reloaded the memory and reassigned `renderer.memory`, but the block kept
-      // the item array it was handed when it first appeared, so the check box
-      // never filled in.
-      //
-      // A Binding applies itself when the target appears AND whenever the value
-      // changes, which is what a re-read needs. Each reads renderer.memory
-      // explicitly so the dependency is unambiguous.
+      // a value pushed there stays frozen when `renderer.memory` is reassigned
+      // after a re-read. A Binding applies when the target appears and whenever
+      // the value changes. Each reads renderer.memory explicitly so the
+      // dependency is unambiguous.
       Binding {
         target: slot.item
         property: "payload"

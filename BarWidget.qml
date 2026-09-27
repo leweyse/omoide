@@ -7,10 +7,9 @@ import "dialogs"
 
 // One icon. Left-click toggles the action menu, right-click opens the library.
 //
-// No click captures directly. A capture is a destructive-ish, interactive thing
-// -- it grabs the pointer for a region pick -- and having that on the primary
-// click meant a misclick on the bar started one. The menu names every mode
-// instead, so a capture is always chosen rather than triggered.
+// No click captures directly. A capture grabs the pointer for a region pick,
+// so a misclick on the bar must not start one; the menu names every mode, and a
+// capture is always chosen rather than triggered.
 //
 // The icon is a small state machine driven by the service's index cache, so
 // every monitor's copy animates together without any broadcast plumbing.
@@ -60,7 +59,7 @@ BarWidget {
   //
   // Settings live inline on this widget's entry in shell.json and the shell
   // owns that file, so writing it means handing the whole entry back through
-  // updateEntryInline -- the same round trip the built-in clock uses when it
+  // updateEntryInline, the same round trip the built-in clock makes when it
   // cycles its format. Reassigning `settings` is what makes the binding on
   // defaultAction update, so the menu's marker moves immediately.
   function setDefaultAction(action) {
@@ -78,12 +77,11 @@ BarWidget {
   }
 
   // Panel plumbing. The shell routes `summon` through open/close/opened, and
-  // the bar coordinates popouts by object identity -- it compares its
-  // activePopout against the item it loaded from the manifest, which is this
-  // one. The menu used to register itself, so no comparison the bar makes ever
-  // matched it: no open-panel underline, no Tab hand-off to the next panel,
-  // and no clean swap when another panel took over. Everything the bar looks
-  // for therefore lives here, and the menu delegates upward.
+  // the bar coordinates popouts by object identity: it compares activePopout
+  // against the item it loaded from the manifest, which is this one. So
+  // everything the bar looks for lives here and the menu delegates upward; a
+  // menu that registered itself would get no open-panel underline, no Tab
+  // hand-off, and no clean swap when another panel takes over.
   //
   // Mirrors the surface of the shell's own Ui/Panel.qml, which is what the
   // first-party panels extend.
@@ -141,44 +139,22 @@ BarWidget {
       SpaceIcon {
         anchors.centerIn: parent
 
-        // Nudged left by most of a physical pixel, to sit on the centre.
+        // Optical centring, in physical pixels. The icon canvas sits on a half
+        // pixel, so at a fractional scale the frame's walls paint at different
+        // weights and the ink reads right of centre. Ui/OpticalGlyph makes the
+        // same correction for glyph icons from TextMetrics; a drawn mark has no
+        // ink bounds, so this figure is measured off a screenshot.
         //
-        // The mark is built from rectangles and its ancestors land on half
-        // pixels -- the icon canvas sits 5.5px into a 27px slot -- so at a
-        // fractional display scale the frame's two walls fall on different
-        // sub-pixel phases and paint at different weights. The heavier right
-        // wall is what reads as the square sitting off-centre, and measured
-        // against the open-panel underline, which shares this slot's centre,
-        // the mark's painted ink sat +0.88 physical px right of it.
-        //
-        // This is the move Ui/OpticalGlyph makes for every glyph icon in the
-        // bar: offset the mark so its painted ink, rather than its layout box,
-        // lands on the centre. A font exposes its ink bounds through
-        // TextMetrics and a drawn mark does not, so this figure was measured
-        // off a screenshot instead of derived -- in physical pixels, because
-        // that is the grid the error comes from.
-        //
-        // layer.enabled was tried here first and is deliberately not used: it
-        // evens the wall weighting out but Qt blits the layer on whole pixels,
-        // which rounds this correction away.
+        // Not layer.enabled: Qt blits a layer on whole pixels, which rounds
+        // this correction away.
         anchors.horizontalCenterOffset: -1.7 / dpr
 
-        // Lifted a pixel off the canvas centre. Every icon either side of this
-        // one is a font glyph, and the shell centres those on their ink rather
-        // than on the canvas they sit in -- which puts them slightly above it.
-        // A mark centred on the box itself therefore lands a row lower than its
-        // neighbours, and the open-panel underline, pinned to the bottom of the
-        // slot, turns that into visible crowding: three pixels of air under
-        // this mark where every other icon has five. One pixel up puts the
-        // frame in the same band the glyphs occupy.
-        //
-        // A nudge rather than a smaller mark: the frame's own marks are sized
-        // off it, and shrinking it collapses the four corner points into each
-        // other well before the frame itself looks wrong.
-        // Quantising the mark's lengths rounded the frame up from 15 to 16
-        // physical px, which put its bottom edge a pixel closer to the
-        // underline than every neighbour. The extra fifth of a logical pixel
-        // here puts the bottom back on row 22 with the rest of the row.
+        // Lifted to the band the neighbouring glyph icons occupy: the shell
+        // centres a glyph on its ink, which sits above the canvas centre, and
+        // the open-panel underline makes a lower mark look crowded. Measured,
+        // so the bottom edge lands on the same physical row as its neighbours.
+        // A nudge rather than a smaller mark, because the frame's corner
+        // points are sized off it and collide when it shrinks.
         anchors.verticalCenterOffset: -0.6
         iconSize: Style.bar.iconCanvas
         color: root.bar ? root.bar.foreground : Color.bar.text
@@ -195,9 +171,8 @@ BarWidget {
     tooltipText: root.tooltip()
 
     onPressed: function (whichButton) {
-      // Middle-click is deliberately unbound: it used to open the library, and
-      // a paste-adjacent button doing that by accident is worse than it not
-      // working at all.
+      // Middle-click is deliberately unbound. It is the paste button, and
+      // opening the library by accident is worse than no action at all.
       if (whichButton === Qt.RightButton)
         root.openSpace()
       else if (whichButton === Qt.LeftButton)

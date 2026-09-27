@@ -8,11 +8,10 @@ import "../MemoryModel.js" as Model
 Flickable {
   id: root
 
-  // Whether this page is the one holding the keyboard. The window hands the
-  // rail and the page the keyboard one at a time, and the rail already hides
-  // its cursor when it is not the holder -- a page that kept drawing its own
-  // put two cursors on screen at once, so a highlighted row looked ready for
-  // Enter while the keys were still going to the sidebar.
+  // Whether this page holds the keyboard. The window gives it to the rail or
+  // the page, never both, so the page draws its cursor only while it holds it.
+  // Otherwise a highlighted card looks ready for Enter while the keys still go
+  // to the sidebar.
   property bool hasKeyboard: true
 
   property var service: null
@@ -34,10 +33,10 @@ Flickable {
   // occasionally.
   property bool searchOpen: false
 
-  // Derived from appliedQuery, NOT from the live field. Keyed off the field it
-  // flipped the grid to the results set on the first keystroke -- while those
-  // results still belonged to the previous query -- so typing showed "0
-  // RESULTS" and an empty page until the debounce caught up.
+  // Derived from appliedQuery, NOT from the live field. Keyed off the field,
+  // the grid would switch to the result set on the first keystroke, while those
+  // results still belong to the previous query, and show "0 RESULTS" until the
+  // debounce catches up.
   readonly property bool searching: searchOpen && appliedQuery.length > 0
 
   function runSearch() {
@@ -79,9 +78,7 @@ Flickable {
     root.awaiting = false
   }
 
-  // "" means All. Filtering happens here rather than in the CLI: index.json
-  // already carries every card's kind, domain and tags, so a chip is a local
-  // predicate and switching one is instant.
+  // "" means All; otherwise a chip id, which the CLI filters by.
   property string facet: ""
 
   function matchesFacet(memory) {
@@ -128,8 +125,8 @@ Flickable {
 
   // --- keyboard ------------------------------------------------------------
   //
-  // Two Tab regions -- Collections, then Captures -- plus the filter chips,
-  // which are a drill-in reached with "f" and left with Esc rather than a Tab
+  // Two Tab regions, Collections then Captures, plus the filter chips, which
+  // are a drill-in reached with "f" and left with Esc rather than a Tab
   // sibling. They are page state you toggle while watching the grid change, not
   // a place you pass through on the way somewhere.
 
@@ -137,7 +134,7 @@ Flickable {
     !root.searching && (root.index.collections || []).length > 0
 
   // Named, not numbered: region 0 is Collections when there are any and
-  // Captures when there are not, and an integer alone made that unreadable.
+  // Captures when there are not, which an integer alone does not say.
   readonly property var regionNames:
     root.hasCollections ? ["collections", "captures"] : ["captures"]
   readonly property int regionCount: root.regionNames.length
@@ -150,9 +147,7 @@ Flickable {
   // Cursor within the filter chips, or -1 when the chips do not have focus.
   //
   // Indexes filterChips, NOT shownFacets: the "All" chip is drawn before the
-  // facet Repeater, so a cursor over shownFacets alone made Left off the first
-  // facet run past the start of the row and drop out of the chips entirely --
-  // "All" was unreachable.
+  // facet Repeater, and a cursor over shownFacets alone could never reach it.
   property int filterCursor: -1
 
   readonly property var filterChips:
@@ -161,11 +156,10 @@ Flickable {
   // Takes the index explicitly instead of reading `regionName`.
   //
   // `regionName` is a binding on `region`, and the order between a binding
-  // updating and that property's own change handler running is not defined. Read
-  // from inside onRegionChanged it came back STALE -- still "captures" one frame
-  // after moving to Collections -- so the handler seeded the grid instead of the
-  // tile and nothing ended up focused at all. `regionNames` depends on
-  // hasCollections, not on region, so resolving through it here is safe.
+  // updating and that property's own change handler running is not defined.
+  // Read from inside onRegionChanged it can be STALE, and the handler would seed
+  // the wrong region. `regionNames` depends on hasCollections, not on region, so
+  // resolving through it here is safe.
   function nameOf(i) {
     var names = root.regionNames
     return names[Math.max(0, Math.min(i, names.length - 1))]
@@ -205,7 +199,7 @@ Flickable {
     }
 
     if (event.text === "f" && root.shownFacets.length > 0) {
-      // 0 is "All", the leftmost chip -- the same first-item rule as everywhere.
+      // 0 is "All", the leftmost chip: the same first-item rule as everywhere.
       root.filterCursor = 0
       return true
     }
@@ -256,12 +250,9 @@ Flickable {
       return true
     }
     if (event.key === Qt.Key_Down) {
-      // Cross into the grid under the tile you were on, not at the first card.
-      //
-      // The stride comes from the live delegate rather than a constant. It used
-      // to be Style.space(112) -- the tile's HEIGHT standing in for its width,
-      // which was already wrong and became wrong by 100px when the tile was
-      // reshaped. Asking the row cannot drift.
+      // Cross into the grid under the current tile, not at the first card. The
+      // stride comes from the live delegate rather than a constant, so it cannot
+      // drift from the tile's real width.
       var first = collectionsRow.itemAtIndex(0)
       var tileW = first ? first.width : collectionsRow.tileWidth
       var stride = tileW + collectionsRow.spacing
@@ -431,8 +422,7 @@ Flickable {
 
     MemoryCard {
       // No modelData here: MasonryGrid assigns `memory` on the loaded item, so
-      // a required modelData would never be set and the card would fail to
-      // create -- which showed up as an empty grid.
+      // a required modelData is never set and the card fails to create.
       onActivated: root.openMemory(memory.id)
     }
   }
@@ -452,12 +442,13 @@ Flickable {
       // The clip that lets the row scroll, held a pixel OUTSIDE the tiles.
       //
       // A focused tile draws its accent border on the device pixel that rounds
-      // just outside its own bounds, so a row clipping on that same line ate
-      // the border of the tile at x 0 whole -- corner marks with no line
-      // between them, on the first tile only. Clipping a pixel wider keeps the
-      // border and still cuts a scrolled tile a pixel before anyone could see
-      // it. The row itself stays where it was, so the tiles line up with the
-      // captures below.
+      // just outside its own bounds, so a clip on that line cuts the first
+      // tile's border. Clipping a pixel wider keeps the border and still cuts a
+      // scrolled tile before it shows. Above and below too: where the tiles'
+      // top and bottom pixel rows land against a clip that fits them exactly
+      // varies from frame to frame, so a scrolled row loses its top edge. The
+      // wrapper holds the row's own height, so the layout does not grow. The row
+      // itself keeps its position, so the tiles line up with the captures below.
       Item {
         id: collectionsClip
         readonly property real bleed: Math.max(1, Style.space(1))
@@ -618,9 +609,9 @@ Flickable {
       // Smart filters. The kinds are derived from what a capture holds, the
       // sources from its link, and the rest are the tags the model assigned.
       //
-      // One horizontally scrollable strip rather than a wrapping block: wrapped,
-      // two dozen chips took five rows and pushed the captures off the page.
-      // A strip keeps the row height constant however many facets exist.
+      // One horizontally scrollable strip rather than a wrapping block, so the
+      // row height stays constant however many facets exist and the captures
+      // stay on the page.
       Item {
         width: parent.width
         // Trailing air of its own, so the chips read as a control strip above
@@ -723,9 +714,8 @@ Flickable {
       Item {
         width: parent.width
         // Trailing air of its own when open, the same way the chip strip
-        // carries its own -- so the field reads as a control above the grid
-        // rather than as its first row. Zero when closed, so it costs nothing
-        // while unused.
+        // carries its own, so the field reads as a control above the grid rather
+        // than as its first row. Zero when closed.
         height: root.searchOpen ? field.height + Style.spacing.xl : 0
         visible: root.searchOpen
 
@@ -747,10 +737,10 @@ Flickable {
           }
           Keys.onEscapePressed: function (event) {
             // Only on a real press. Holding Escape auto-repeats, and each repeat
-            // would dismiss another layer -- a held key unwound the whole stack.
+            // would dismiss another layer.
             if (event.isAutoRepeat) { event.accepted = true; return }
-            // First Esc leaves the field, a second closes search entirely --
-            // consistent with how Esc unwinds everywhere else.
+            // First Esc leaves the field, a second closes search entirely, the
+            // same one-rung unwind as everywhere else.
             focusSink.forceActiveFocus()
             event.accepted = true
           }

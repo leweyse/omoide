@@ -2,22 +2,22 @@
 
 // No system scheduler. The QML service is keepLoaded, so it runs for the whole
 // session, and every alarm it could fire needs that session up anyway. So the
-// database holds the fire times, index.json publishes the pending ones, and the
-// shell arms a single timer against the next.
+// database holds the fire times, the index the shell pulls lists the pending
+// ones, and the shell arms a single timer against the next.
 //
 // What the shell must not decide is *whether* an alarm is still owed. That
-// stays here, in fire_reminder, so a repeated trigger -- a resumed laptop, two
-// shells, a manual run -- costs a no-op instead of a second notification.
+// stays here, in fire_reminder, so a repeated trigger (a resumed laptop, two
+// shells, a manual run) costs a no-op instead of a second notification.
 
 // How late an alarm may be and still be worth showing. Past this it retires
 // without a toast: a notification for a moment thoroughly gone is noise.
-// Inside it -- a reboot, a suspend, a shell restart -- is exactly when the
-// reminder is still the thing that was asked for.
+// Inside it, after a reboot, a suspend or a shell restart, the reminder is
+// still the thing that was asked for.
 static const GTimeSpan LATE_GRACE = 30 * G_TIME_SPAN_MINUTE;
 
 // Deliver one alarm, at most once. Returns what happened:
 //   "fired"    the notification went out
-//   "expired"  owed, but too late to be useful -- retired without a toast
+//   "expired"  owed, but too late to be useful; retired without a toast
 //   "skipped"  not owed: cancelled, completed, already fired, or still future
 //
 // The row is marked before the notification is sent rather than after.

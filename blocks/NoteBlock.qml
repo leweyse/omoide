@@ -4,9 +4,9 @@ import qs.Ui
 
 // The user's own words, verbatim, and never rewritten by the model.
 //
-// Labelled rather than decorated: an accent bar down the left edge reads as a
-// text cursor, which made this card look like a focused input field. "Note" is
-// a renderer-owned label, the same as Summary / Event Date / To-dos.
+// Labelled rather than decorated: an accent bar down the left edge would read
+// as a text cursor and make the card look like a focused input field. "Note" is
+// a renderer-owned label, the same as Summary, Event Date and To-dos.
 BlockCard {
   id: root
   property var payload: ({})

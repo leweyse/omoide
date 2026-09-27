@@ -204,8 +204,8 @@ int cmd_uninstall(int argc, char **argv) {
   }
 
   const Paths *p = paths();
-  // Every tree removed here is ours by construction -- see paths.c -- so
-  // there is nothing to recognise before deleting it.
+  // Every tree removed here is ours by construction (see paths.c), so there
+  // is nothing to recognise before deleting it.
   remove_tree(p->state_dir);   // derived: always removed
   g_autofree char *link = command_link_path();
   if (is_our_link(link))
@@ -271,7 +271,7 @@ static char *display_argv(char **argv) {
 }
 
 // A custom command is stored as `sh -c <what was typed>`, and the dialog
-// shows -- and saves back -- what was typed. Reporting the wrapper would have
+// shows and saves back what was typed. Reporting the wrapper would have
 // the next save wrap it a second time.
 static json_object *command_for_display(json_object *command) {
   if (json_object_is_type(command, json_type_array) && json_object_array_length(command) == 3

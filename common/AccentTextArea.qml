@@ -6,35 +6,22 @@ import qs.Ui
 // AccentField's multi-line twin: wraps, grows with what is typed up to a line
 // limit, then scrolls with the cursor kept in view.
 //
-// A separate component rather than a flag on AccentField, because the kit's
-// TextField inherits Qt Quick Controls TextField, which is a TextInput and
-// cannot wrap at all. Multi-line means TextArea, a different base type. What
-// they share -- the accent focus border, the diagonal corner marks, the
-// hover-not-focus fill, the Escape handoff -- is repeated here rather than
-// factored out: two base types cannot share an ancestor, and a mixin for six
-// bindings would cost more to follow than the six bindings do.
+// A separate component rather than a flag on AccentField: the kit's TextField
+// is a TextInput and cannot wrap, so multi-line needs TextArea, a different
+// base type. The focus border, corner marks, hover-only fill and Escape handoff
+// are repeated rather than shared, since the two base types have no common
+// ancestor. A change to the focus language of one belongs in AccentField too.
 //
-// Keep the two in step: a change to the focus language of one belongs in
-// [[AccentField]] as well.
+// A plain Item wrapping a Flickable, so the text scrolls under a frame that
+// stays put. A capped TextArea alone clips and does not follow its cursor;
+// `TextArea.flickable` hands it to the Flickable, which keeps the cursor
+// rectangle on screen. The frame and corner marks live on the wrapper so they
+// do not scroll.
 //
-// A plain Item wrapping a Flickable, rather than a bare TextArea, so that the
-// text can scroll under a frame that stays where it is. A TextArea alone does
-// not follow its own cursor -- capped in height, it simply clips, and typing
-// past the last visible line puts the cursor somewhere off the bottom with no
-// way to see what is being written. `TextArea.flickable` is what Qt provides
-// for this: it hands the text area to the Flickable, which then keeps the
-// cursor rectangle on screen as it moves. The frame and the corner marks are
-// out here on the scope so they frame the field rather than scrolling with its
-// contents.
-//
-// Deliberately NOT a FocusScope. A scope is the tidy way to wrap a control, but
-// it has to be a tab stop to be reachable, and then both it and the text area
-// inside it are stops: Shift+Tab out of the text lands back on the scope, which
-// hands focus straight back to the text, and the keyboard can never leave. The
-// hand-built editor this replaced was a bare TextEdit with activeFocusOnTab in
-// an ordinary container, and Tab worked; this keeps that arrangement and adds
-// only the scrolling. `focusField()` stands in for the delegation a scope would
-// have done.
+// Deliberately not a FocusScope. A scope must be a tab stop to be reachable,
+// and then Shift+Tab out of the text lands on the scope, which hands focus
+// straight back: the keyboard can never leave. `focusField()` stands in for
+// the delegation a scope would do.
 Item {
   id: root
 
@@ -47,9 +34,8 @@ Item {
   property alias selectByMouse: area.selectByMouse
   property alias lineCount: area.lineCount
 
-  // Where focus goes when Esc is pressed in here. Without this, Esc falls
-  // through to whatever is above -- in a dialog that means closing it and
-  // throwing the edit away, which is not what Esc in a text field should do.
+  // Where focus goes when Esc is pressed in here. Without it, Esc reaches the
+  // enclosing dialog and closes it, discarding the edit.
   property Item escapeTo: null
 
   property color foreground: Color.foreground
@@ -63,10 +49,8 @@ Item {
   // The band it is allowed to occupy: it opens at `minLines`, grows with what
   // is typed, and at `maxLines` stops growing and scrolls instead.
   //
-  // A floor as well as a cap, because the two multi-line inputs here want
-  // different starting shapes. A to-do title is one line that occasionally runs
-  // to three; a summary is a paragraph, and opening it one line tall would say
-  // the wrong thing about what belongs in it.
+  // A floor as well as a cap: a to-do title starts as one line, a summary as a
+  // paragraph.
   property int minLines: 1
   property int maxLines: 3
 
@@ -77,9 +61,8 @@ Item {
   readonly property real _borderTop: Border.top(_borderSpec)
   readonly property real _borderBottom: Border.bottom(_borderSpec)
 
-  // Measured from the font rather than from contentHeight/lineCount: while the
-  // field is empty there is no line to divide by, and the ratio jitters by a
-  // fraction as lines are added, which showed up as the box twitching mid-word.
+  // Measured from the font rather than contentHeight/lineCount, which has no
+  // line to divide by while empty and jitters as lines are added.
   FontMetrics {
     id: metrics
     font: area.font
@@ -92,25 +75,20 @@ Item {
                   + root.shownLines * metrics.height
   height: implicitHeight
 
-  // The text area is the tab stop, not this wrapper -- see the note above.
-  // Callers wanting to put the keyboard here by hand go through this rather
-  // than forceActiveFocus(), which on the wrapper would focus the wrapper.
+  // The text area is the tab stop, not this wrapper. Callers focus the field
+  // through this; forceActiveFocus() on the wrapper would focus the wrapper.
   function focusField() { area.forceActiveFocus() }
 
   // Tab, driven by hand.
   //
   // `TextArea.flickable` reparents the text area into the Flickable's content
-  // item, and from in there Qt's own traversal does not find its way back out:
-  // activeFocusOnTab stops the key being typed into the text, but nothing moves
-  // the focus, so the field swallows Tab and the dialog's keyboard order dies at
-  // it. So the component does the step itself, from the wrapper rather than from
-  // the text area, which is what makes it land outside the component instead of
-  // back inside it.
+  // item, and Qt's own traversal does not find its way back out: the field
+  // would swallow Tab. So the step starts from the wrapper, which lands it
+  // outside the component.
   //
-  // The loop is the guard on that: if the chain hands back this item or the text
-  // area, keep walking rather than focusing ourselves and trapping the keyboard
-  // again -- the exact failure this replaces. Bounded, so a chain that only
-  // contains us cannot spin.
+  // The loop skips this item and the text area if the chain hands them back,
+  // so focus never returns inside. Bounded, so a chain holding only us cannot
+  // spin.
   function moveFocus(forward) {
     var from = root
     for (var i = 0; i < 16; i++) {
@@ -129,9 +107,8 @@ Item {
 
   BorderSurface {
     anchors.fill: parent
-    // Hover only, never focus. A fill change on focus lowers contrast against
-    // the text you are about to type, and the accent border plus the corner
-    // marks already say where the keyboard is.
+    // Hover only, never focus. A focus fill lowers contrast against the text
+    // being typed, and the accent border and corner marks already show focus.
     color: Style.controlFill(false, area.hovered, root.foreground, root.accent)
     borderSpec: area.activeFocus
                 ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
@@ -167,18 +144,14 @@ Item {
     TextArea.flickable: TextArea {
       id: area
 
-      // No `focus: true`. Inside a FocusScope that would have named this the
-      // scope's focused child; in a plain Item it instead propagates up to the
-      // dialog's own scope and claims the keyboard the moment the field is
-      // built -- which would override each dialog's choice of where to start.
-      // The keyboard arrives here by Tab, by a click, or by focusField().
+      // No `focus: true`. In a plain Item it propagates to the dialog's scope
+      // and claims the keyboard when the field is built, overriding where each
+      // dialog chooses to start. The keyboard arrives by Tab, a click, or
+      // focusField().
       wrapMode: TextArea.Wrap
 
-      // Not optional, and not inherited from the scope. A TextEdit-derived item
-      // with this off INSERTS a tab rather than moving focus, so Tab went into
-      // the text and the field became a dead end for the keyboard -- the scope
-      // being a tab stop only got focus in, never out. The hand-built editor
-      // this component replaced carried the same line for the same reason.
+      // Required. A TextEdit-derived item with this off inserts a tab instead
+      // of moving focus, and the field becomes a dead end for the keyboard.
       activeFocusOnTab: true
 
       font.family: Style.font.family
@@ -212,30 +185,25 @@ Item {
       }
 
       Keys.onEscapePressed: function (event) {
-        // Only on a real press. Holding Escape auto-repeats, and each repeat
-        // would dismiss another layer -- a held key unwound the whole stack.
+        // Only on a real press. Each auto-repeat of a held Escape would
+        // dismiss another layer.
         if (event.isAutoRepeat) { event.accepted = true; return }
         if (root.escapeTo) {
           root.escapeTo.forceActiveFocus()
           event.accepted = true
           return
         }
-        // No target: hand the key to an ancestor. Un-accepting is NOT the
-        // default here -- Qt's specific-key handlers arrive pre-accepted, so
-        // simply returning swallows the press.
+        // No target: hand the key to an ancestor. Qt's specific-key handlers
+        // arrive pre-accepted, so returning alone would swallow the press.
         event.accepted = false
       }
 
-      // Return is left to the text. A multi-line field is where someone breaks
-      // a line, and taking that key to save the dialog spends the one thing the
-      // field is for -- the buttons and Ctrl-less shortcuts are where saving
-      // belongs. Tab and Escape still leave.
+      // Return is left to the text: it breaks a line here, and saving belongs
+      // to the dialog's buttons. Tab and Escape still leave.
     }
 
     ScrollBar.vertical: ScrollBar {
-      // Present only while it means something: a field that fits its content
-      // has nothing to indicate, and a permanent rail inside a one-line input
-      // reads as chrome the control does not need.
+      // Shown only while the content overflows.
       policy: flick.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
     }
   }

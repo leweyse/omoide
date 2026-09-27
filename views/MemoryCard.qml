@@ -7,8 +7,8 @@ import "../common/Radii.js" as Radii
 
 // One memory in a grid: thumbnail, title, lede, then tags and open to-dos.
 //
-// Its own file because two grids show it -- the Library and a collection -- and
-// a second copy would drift the moment either changed. `activated` rather than
+// Its own file because two grids show it, the Library and a collection, and a
+// second copy would drift the moment either changed. `activated` rather than
 // a direct call, so the card does not need to know which page owns it.
 BorderSurface {
   id: card
@@ -21,11 +21,9 @@ BorderSurface {
   // Insets for everything but the thumbnail, which deliberately bleeds to the
   // edges.
   //
-  // Wider than it is tall. Across, lg left the title starting ten physical
-  // pixels off a border that is itself two and a half, which read as text
-  // pressed against the frame. Down, the same increase just stretched the card:
-  // the rows already carry their own spacing, so the extra only showed up as
-  // slack above the title and under the last tag.
+  // Wider than it is tall. Across, less than xxl reads as text pressed against
+  // the frame. Down, more only adds slack above the title and under the last
+  // tag, because the rows already carry their own spacing.
   readonly property real padX: Style.spacing.xxl
   readonly property real padY: Style.spacing.lg
 
@@ -33,13 +31,11 @@ BorderSurface {
   height: cardLayout.implicitHeight + card.borderTop + card.borderBottom
   radius: Style.cornerRadius
   color: Color.popups.background
-  // The outline-button border, not popups.border -- that token defaults to
-  // the ACCENT, so an accent focus ring on a card was invisible against every
-  // unfocused card beside it. Same width, so nothing reflows.
-  // Accent on focus. The width does NOT change -- a card measures its height
-  // as content plus border widths, so a thicker focus border would resize the
-  // card and reflow the grid on every arrow key. 2px in BOTH states, matching
-  // the dialog chrome and the image frame, which is what keeps that rule.
+  // At rest, the outline-button border, not popups.border: that token defaults
+  // to the ACCENT, which would make the accent focus border indistinguishable.
+  // The width is the same 2px in BOTH states. A card measures its height as
+  // content plus border widths, so a thicker focus border would resize the card
+  // and reflow the grid on every arrow key.
   borderSpec: card.hasCursor
               ? Border.flat(Color.accent, Math.max(1, Style.space(2)))
               : Border.withWidth(
@@ -83,9 +79,8 @@ BorderSurface {
     // behind, so the inner curve matches the outer one.
     RoundedImage {
       width: parent.width
-      // The capture's own shape, not a fixed ratio. A fixed 0.62 cropped
-      // every thumbnail to the same rectangle, so a wide selection and a
-      // tall one looked identical in the grid.
+      // The capture's own shape, not a fixed ratio, so a wide selection and a
+      // tall one look different in the grid.
       //
       // Bounded, unlike the detail page: this is a browsing surface, and
       // one panorama or one very tall capture should not own a column.
@@ -113,14 +108,10 @@ BorderSurface {
     // Painted rather than transparent, in the card's own colour, so it covers
     // the border's inner edge exactly as the thumbnail above it does.
     //
-    // Left bare, it did not: a stroked Rectangle antialiases its inner edge a
-    // fraction of a pixel into the content area, and the thumbnail -- opaque,
-    // and inset to precisely that edge -- paints over the part that falls under
-    // it. The text region covered nothing, so the same border kept more of its
-    // inner bleed there. Solving the coverage against the two backdrops put the
-    // border's apparent edge a third of a pixel further in beside the text than
-    // beside the image, which is what read as the text half of the card having
-    // a second, heavier frame of its own.
+    // A stroked Rectangle antialiases its inner edge a fraction of a pixel into
+    // the content area. The opaque thumbnail paints over that bleed; a
+    // transparent text region would not, and the text half of the card would
+    // read as having a second, heavier frame.
     //
     // Bottom corners only. This is the last thing in the column, so it meets
     // the card's rounded bottom; square corners here would paint over that
@@ -175,10 +166,9 @@ BorderSurface {
           width: parent.width
           height: metaRow.visible ? metaRow.implicitHeight + Style.spacing.sm : 0
 
-          // Anchored to both sides, not just the bottom. Left to its natural
-          // width the row was as wide as its text, so a long tag ran under the
-          // card's border and out the far side -- clipped mid-word by the
-          // card's own `clip`, with the padding on that edge swallowed.
+          // Anchored to both sides, not just the bottom. At its natural width
+          // the row is as wide as its text, and a long tag would run under the
+          // card's border and be clipped mid-word.
           Row {
             id: metaRow
             anchors.left: parent.left
@@ -200,14 +190,13 @@ BorderSurface {
             Text {
               // Whatever the count leaves. A Row hands each child its implicit
               // width, so the elide below only bites once this is told how much
-              // room it actually has -- and the count is the only thing ahead
-              // of it, so the arithmetic stays honest without a Layout.
+              // room it actually has. The count is the only thing ahead of it, so
+              // the arithmetic stays honest without a Layout.
               width: metaRow.width
                      - (todoCount.visible ? todoCount.width + metaRow.spacing : 0)
               textFormat: Text.PlainText
-              // Three tags was already a cap; it is not a width. Two long ones
-              // overflow where four short ones fit, so the count still has to
-              // give way to the measurement.
+              // Three tags is a cap, not a width. Two long ones overflow where
+              // four short ones fit, so the elide still applies.
               text: (card.memory.tags || []).slice(0, 3).join(" · ")
               elide: Text.ElideRight
               color: Color.muted

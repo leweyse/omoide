@@ -21,8 +21,8 @@ json_object *json_str_or_empty(const char *value) {
   return json_object_new_string(value ? value : "");
 }
 
-// json-c prints doubles with %.17g, so 16/9 rounded to four places came out as
-// 1.7777999999999999. The value is rounded to four places anyway, so four
+// json-c prints doubles with %.17g, which spells 16/9 rounded to four places
+// as 1.7777999999999999. The value is rounded to four places anyway, so four
 // places with the trailing zeros taken off is its shortest exact spelling.
 json_object *json_round4(double value) {
   char text[64];

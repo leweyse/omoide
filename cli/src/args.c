@@ -9,11 +9,10 @@ void parse_options(
   g_autofree char *summary = g_strdup_printf("omoide %s", command);
   g_option_context_set_summary(context, summary);
 
-  // String options are read as FILENAME, which GLib passes through as bytes.
-  // As STRING it converts them from the process locale, which is "C" here --
-  // deliberately, so dates print in English -- and so refused any note or
-  // title with an accent in it. The bytes are made valid UTF-8 below, whatever
-  // the locale, which is what argparse accepted too.
+  // String options are read as FILENAME, which GLib passes through as bytes,
+  // and made valid UTF-8 below. As STRING, GLib would convert them from the
+  // process locale, which is "C" so dates print in English, and refuse any
+  // note or title with an accent in it.
   size_t count = 0;
   while (entries && entries[count].long_name)
     count++;

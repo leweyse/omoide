@@ -6,18 +6,18 @@ import "../common"
 
 // The capture itself.
 //
-// Not a BlockCard: the image already draws its own accent frame, so wrapping it
-// in the card's border put a second frame around the first. This block is just
-// the picture, sized to its own aspect so the frame hugs it.
+// Not a BlockCard: the image draws its own accent frame, and the card's border
+// would put a second frame around it. This block is just the picture, sized to
+// its own aspect so the frame hugs it.
 Item {
   id: root
 
   property var payload: ({})
   property var service: null
 
-  // Not a BlockCard -- the image draws its own frame -- so it declares the two
-  // fields the renderer binds onto every block itself. Unused here: an image is
-  // the capture, not something the agent wrote, so there is nothing to edit.
+  // Not a BlockCard, so it declares the two fields the renderer binds onto
+  // every block itself. Unused here: an image is the capture, not something
+  // the agent wrote, so there is nothing to edit.
   property string blockId: ""
   property string blockType: ""
   property bool hasCursor: false
@@ -30,13 +30,10 @@ Item {
                                                          : shot.sourceAspect
   readonly property real maxHeight: Style.space(340)
 
-  // A gutter the picture never crosses, taken off BOTH sides so it stays
-  // centred on the page. The memory page floats its action buttons over the top
-  // right of whatever comes first -- this block -- and a capture wide enough to
-  // reach the page edge drew artwork under the "More" button, so finding it was
-  // a coin toss against whatever had been screenshotted behind it.
-  //
-  // The page sets this, because the page is what knows the buttons are there.
+  // A gutter the picture never crosses, taken off both sides so it stays
+  // centred. The memory page floats its action buttons over the top right of
+  // its first block, which is this one, so a wide capture must not draw under
+  // them. The page sets this, because the page knows the buttons are there.
   property real sideGutter: 0
 
   // The widest the picture may draw. Floored, so a narrow dialog does not let
@@ -62,9 +59,8 @@ Item {
     width: shot.width
     height: shot.height
     radius: Style.cornerRadius
-    // RoundedImage draws a 2px frame of its own, and it is already accent, so
-    // the ring has to clear it -- otherwise focused and unfocused are one line
-    // of accent either way.
+    // RoundedImage draws an accent frame of its own, so the ring has to clear
+    // it, or focused and unfocused look the same.
     hostBorder: Math.max(1, Style.space(2))
     // Corner marks: their line-in-halo pair keeps contrast against whatever
     // the user captured, which no single fixed line can promise.
@@ -76,9 +72,8 @@ Item {
   RoundedImage {
     id: shot
     // Bounded by height, never by crop: a tall capture gets narrower rather
-    // than losing its top and bottom, which is what the old
-    // Math.min(340, width / aspect) did once the cap kicked in. Centred, so a
-    // portrait selection sits in the middle of the page.
+    // than losing its top and bottom. Centred, so a portrait selection sits in
+    // the middle of the page.
     x: Math.round((parent.width - width) / 2)
     width: Math.round(root.drawWidth)
     height: Math.round(root.drawHeight)

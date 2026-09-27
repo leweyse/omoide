@@ -4,8 +4,8 @@ import qs.Ui
 import "../common"
 import "../MemoryModel.js" as Model
 
-// One to-do, used both inside a memory and in the archive, so the two can
-// never drift apart.
+// One to-do, used both inside a memory and in the archive, so the two read
+// the same.
 //
 // Two states:
 //   active     a circle bound to completed_at
@@ -56,9 +56,8 @@ Item {
                  function () { root.changed() })
   }
 
-  // An Item, not a Row. Anchors on the children of a positioner are not
-  // supported, and this had a verticalCenter-anchored check box sitting next to
-  // a top-aligned text Column, which is what put the two out of line.
+  // An Item, not a Row: anchors on the children of a positioner are not
+  // supported.
   Item {
     id: layout
     opacity: root.done || root.dimmed ? 0.5 : 1.0
@@ -146,8 +145,7 @@ Item {
       anchors.right: suggestActions.visible ? suggestActions.left : parent.right
       anchors.rightMargin: suggestActions.visible ? Style.spacing.lg : 0
       anchors.top: parent.top
-      // A hair of air between the title and its time: at the old font sizes
-      // zero read as one unit, at the new ones it read as crowding.
+      // A hair of air between the title and its time.
       spacing: Style.spacing.xxs
 
       Text {

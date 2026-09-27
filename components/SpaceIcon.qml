@@ -12,7 +12,8 @@ import qs.Commons
 //   working    frame + scan line          a capture is being enriched
 //   failed     frame + hollow dot         enrichment did not complete
 //
-// `marked` adds a corner dot for open to-dos, and can combine with any state.
+// `marked` adds a corner pip for to-dos owed today, and combines with any
+// state.
 Item {
   id: root
 
@@ -31,18 +32,12 @@ Item {
 
   // Every length below is quantised to whole physical pixels.
   //
-  // The mark is drawn from rectangles, and at a fractional display scale a
-  // length that is round in logical pixels is not: a 1px stroke becomes 1.25
-  // physical, so the frame's left wall starts at x and its right at x + 13.75.
-  // Those are different sub-pixel phases, so the two walls rasterise
-  // differently -- the right came out 22% heavier than the left, which reads
-  // as the whole square sitting off-centre even though it is centred to within
-  // a third of a pixel. Quantised, opposite edges are a whole number of
-  // physical pixels apart, share a phase, and paint identically.
-  //
-  // This is what the shell's glyph icons get for free from Text.NativeRendering,
-  // which snaps glyph rasterisation to the same grid. At an integer scale dpr
-  // is 1 and every value below collapses to the plain Math.round it used to be.
+  // At a fractional display scale a length that is round in logical pixels is
+  // not round in physical ones, so opposite walls of the frame land on
+  // different sub-pixel phases and rasterise at different weights, which reads
+  // as the mark sitting off-centre. Quantised, opposite edges share a phase and
+  // paint identically. The shell's glyph icons get the same from
+  // Text.NativeRendering. At an integer scale dp() is a plain Math.round.
   readonly property real dpr: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
   function dp(v) { return Math.max(1 / dpr, Math.round(v * dpr) / dpr) }
 
@@ -50,10 +45,8 @@ Item {
   // else is drawn inside it, badge included.
   readonly property real frameSize: dp(iconSize * 0.78)
 
-  // floor, not round, for every stroke weight: round makes the stroke jump to
-  // 2px at 18px (the Space footer) while the 16px bar copy stays at 1px -- the
-  // same mark, visibly heavier two points larger. A stroke thickens only when
-  // a whole extra pixel fits.
+  // floor, not round, for every stroke weight, so the footer copy and the bar
+  // copy share a weight. A stroke thickens only when a whole extra pixel fits.
   readonly property real frameBorder: dp(Math.max(1, Math.floor(iconSize / 12)))
   // The area inside the frame's stroke, with a little air so the marks read as
   // separate from it rather than thickening it.
@@ -63,10 +56,8 @@ Item {
   readonly property real markRadius: Math.max(dp(1), dp(innerSize * 0.24))
   readonly property real markStroke: dp(Math.max(1, Math.floor(iconSize / 14)))
   readonly property real pointSize: Math.max(dp(2), dp(Math.floor(iconSize * 0.14)))
-  // How far each point sits in from its corner of the inner box.
-  // Proportional to the inner box, not the icon: a fixed pixel left the dots
-  // hugging the corners at the Space footer's size while looking right in the
-  // bar. Scaled, the group pulls toward the centre as the icon grows.
+  // How far each point sits in from its corner of the inner box. Proportional
+  // to the inner box, so the group keeps its shape at every size.
   readonly property real pointInset: Math.max(dp(1), dp(innerSize * 0.15))
   implicitWidth: iconSize
   implicitHeight: iconSize
@@ -92,9 +83,7 @@ Item {
   // Idle: a point at each corner of the capture.
   //
   // Corner-anchored rather than centred, so no point lands on a half pixel at
-  // a bar size where the frame and the mark have different parity. Four 2px
-  // points carry the same ink as the single 4px dot they replace, so the mark
-  // keeps its weight next to the icons either side of it.
+  // a bar size where the frame and the mark have different parity.
   Item {
     id: points
     anchors.centerIn: frame
@@ -119,9 +108,7 @@ Item {
                               : points.width - width - root.pointInset
         y: modelData.ay === 0 ? root.pointInset
                               : points.height - height - root.pointInset
-        // Round, like the failed dot and the badge. Every other mark in the
-        // icon is a circle, so a square point read as a different kind of
-        // thing rather than a smaller one.
+        // Round, like the failed dot and the badge.
         radius: width / 2
         color: root.color
         antialiasing: true
@@ -143,8 +130,8 @@ Item {
     antialiasing: true
   }
 
-  // Capturing: rounded corner marks inside the frame -- crop marks, which is
-  // what the picker is about to do.
+  // Capturing: rounded crop marks inside the frame, for what the picker is
+  // about to do.
   //
   // Each corner is a clipped window onto a rounded rectangle the size of the
   // inner box, showing only that corner. A rounded L cannot be drawn from
@@ -235,17 +222,9 @@ Item {
 
   // Open to-dos: a pip in the frame's top-right corner.
   //
-  // Tucked inside the corner rather than straddling it. Hung outside, the pip
-  // extended the mark's silhouette on one side only -- the square's ink then
-  // stopped 3px short of the underline's left edge and 1px short of its right,
-  // which reads as the whole mark sitting off-centre even when the square
-  // itself is placed dead on the slot's centre line. Inside, the mark's
-  // outline is exactly its frame, so the square's overhang stays even on both
-  // sides and the pip reads as what it is: something laid on top of the mark
-  // rather than part of its shape.
-  //
-  // Anchored to the frame rather than the icon's optical box, so it holds the
-  // corner at every size the mark is drawn at.
+  // Centred on the frame's corner and inside the icon's box, so the mark's
+  // silhouette stays its frame and it still sits centred in the slot. Anchored
+  // to the frame, so it holds the corner at every size.
   //
   // Haloed in the bar's own background so it stays legible over the stroke it
   // sits on.

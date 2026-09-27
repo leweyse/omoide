@@ -20,8 +20,8 @@ Process {
       } catch (e) {
         parsed = null
       }
-      // Raw stdout as a fourth argument: not every caller speaks JSON --
-      // the chooser reads a menu selection, which is a bare label.
+      // Raw stdout as a fourth argument, because not every caller speaks
+      // JSON: the chooser reads a menu selection, which is a bare label.
       proc.callback(exitCode, parsed, String(err.text || ""), String(out.text || ""))
     }
     if (proc.destroyOnExit)

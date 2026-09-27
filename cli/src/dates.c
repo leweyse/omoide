@@ -5,8 +5,7 @@
 //
 // Calendar steps ("tomorrow", "in 2 days", "friday") keep the wall-clock time
 // and take the offset of the day they land on, so "tomorrow at 9" is 9 o'clock
-// across a DST change. Python kept the offset of the moment the text was read,
-// which put such a reminder an hour out.
+// across a DST change.
 #include "omoide.h"
 
 static const struct {
@@ -54,8 +53,8 @@ static const struct {
   { "sun", 7 },
 };
 
-// A matched group as a number. \d matches any Unicode digit, as it did in
-// Python, so the digits are read by their Unicode value rather than as ASCII.
+// A matched group as a number. \d matches any Unicode digit, so the digits
+// are read by their Unicode value rather than as ASCII.
 static bool group_number(GMatchInfo *match, int group, int *out) {
   g_autofree char *text = g_match_info_fetch(match, group);
   if (!text || !*text)
@@ -84,7 +83,7 @@ static bool search(const char *pattern, GRegexCompileFlags flags, const char *te
 }
 
 // The same calendar day as `base`, at a given time, in the local zone. NULL
-// for a time that does not exist -- 25:00, or a minute of 75.
+// for a time that does not exist, such as 25:00 or a minute of 75.
 static GDateTime *at_time(GDateTime *base, int hour, int minute) {
   g_autoptr(GTimeZone) local = g_time_zone_new_local();
   return g_date_time_new(local, g_date_time_get_year(base), g_date_time_get_month(base),
@@ -143,9 +142,9 @@ GDateTime *parse_when(const char *text) {
         group_number_or(match, 4, 9), group_number_or(match, 5, 0));
   g_clear_pointer(&match, g_match_info_free);
 
-  // Day-first, matching the editor's fields and the European locale this runs
-  // in. Without it "24/08/2026 09:00" fell through to the bare-clock branch and
-  // resolved to the next 09:00, ignoring the date entirely.
+  // Day-first, matching the editor's fields. It runs before the bare-clock
+  // branch, which would read "24/08/2026 09:00" as the next 09:00 and drop the
+  // date.
   if (search("\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})(?:[ ,]+(\\d{1,2}):(\\d{2}))?\\b", 0, text, &match))
     return on_date(group_number_or(match, 3, 0), group_number_or(match, 2, 0), group_number_or(match, 1, 0),
         group_number_or(match, 4, 9), group_number_or(match, 5, 0));

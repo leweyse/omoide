@@ -15,8 +15,8 @@
 //
 // Our own picker rather than omarchy-capture-screenshot. That helper freezes
 // the screen with hyprpicker and relies on its own EXIT trap to unfreeze; run
-// as a tracked child of the shell, anything that tears the child down -- a
-// plugin reload above all -- skips the trap and leaves the freeze up, which
+// as a tracked child of the shell, anything that tears the child down, a
+// plugin reload above all, skips the trap and leaves the freeze up, which
 // presents as a completely locked desktop. Owning the freeze here means it is
 // always taken down, and a stale one from a previous run is reaped before the
 // next capture starts.
@@ -87,8 +87,8 @@ static GSubprocess *start_freeze(void) {
 
 // Block until the freeze surface is actually mapped. A fixed sleep is a race:
 // on a cold start hyprpicker needs longer than any delay short enough to feel
-// instant, and if slurp maps first it gets no grab and exits straight away --
-// "the region picker just does not start", intermittently.
+// instant, and if slurp maps first it gets no grab and exits at once, so the
+// region picker intermittently fails to start.
 static bool wait_for_freeze(double timeout_s) {
   const gint64 until = g_get_monotonic_time() + (gint64)(timeout_s * G_TIME_SPAN_SECOND);
   while (g_get_monotonic_time() < until) {
@@ -162,7 +162,7 @@ static double number_of(json_object *value, double fallback) {
   return value && !json_object_is_type(value, json_type_null) ? json_object_get_double(value) : fallback;
 }
 
-// Rounded half to even, as Python's round() does.
+// Rounded half to even.
 static int64_t logical(json_object *monitor, const char *key) {
   const double scale = truthy(json_get(monitor, "scale")) ? number_of(json_get(monitor, "scale"), 1) : 1;
   return (int64_t)nearbyint(number_of(json_get(monitor, key), 0) / scale);
@@ -353,7 +353,7 @@ int cmd_capture(int argc, char **argv) {
     { "mode", 0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_STRING, &mode_option, NULL, NULL }, G_OPTION_ENTRY_NULL
   };
   parse_options("capture", entries, 1, &argc, &argv);
-  // The positional wins over --mode, as it did: argparse assigned it last.
+  // The positional wins over --mode when both are given.
   const char *requested = positional(argc, argv) ? positional(argc, argv) : mode_option;
   if (requested)
     require_choice("capture", "mode", requested, MODES);
@@ -504,8 +504,8 @@ int cmd_commit(int argc, char **argv) {
     }
   }
 
-  // The bar icon must show its working state within a frame, so the index is
-  // written before the model runs, not after.
+  // The bar icon must show its working state within a frame, so the shell is
+  // told before the model runs, not after.
   g_autofree char *pidfile = commit_pidfile(id);
   if (ai_on) {
     g_mkdir_with_parents(paths()->state_dir, 0777);
@@ -613,8 +613,8 @@ int cmd_commit(int argc, char **argv) {
 
 // Run the agent again on a capture that already exists. commit cannot be
 // reused for this: it would insert a second note and image block. Only the
-// agent's own output is replaced, and only rows the user has not corrected --
-// an edited block survives a retry, which is what the `edited` flag is for.
+// agent's own output is replaced, and only rows the user has not corrected.
+// An edited block survives a retry, which is what the `edited` flag is for.
 int cmd_enrich(int argc, char **argv) {
   g_autofree char *id = NULL;
   const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
@@ -656,8 +656,8 @@ int cmd_enrich(int argc, char **argv) {
       image_path = data_path(col_str(image, "rel_path"));
   }
 
-  // Out with the previous answer. An edited block stays, and so does anything
-  // the capture owns -- the note and the image are never origin 'ai'.
+  // Out with the previous answer. An edited block stays, and so does what the
+  // capture owns: the note and the image are never origin 'ai'.
   g_autoptr(GPtrArray) stale = g_ptr_array_new_with_free_func(g_free);
   {
     g_autoptr(sqlite3_stmt) rows =

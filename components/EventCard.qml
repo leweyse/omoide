@@ -6,11 +6,8 @@ import "../MemoryModel.js" as Model
 import "../common/Radii.js" as Radii
 
 // One card in the For you carousel: the calendar tile, the event, and its art.
-//
-// It used to be a fixed 150px tall with everything crammed against the top, so
-// an event with a title and one line left about a hundred pixels of nothing
-// underneath. It now sizes to its content with a floor, and takes the same
-// calendar tile the Event Date block uses.
+// It sizes to its content above a floor, and shares the calendar tile with the
+// Event Date block.
 BorderSurface {
   id: root
 
@@ -37,12 +34,10 @@ BorderSurface {
   height: Math.max(Style.space(96), body.implicitHeight + root.pad * 2)
   radius: Style.cornerRadius
   color: Color.popups.background
-  // The outline-button border, not popups.border -- that token defaults to the
-  // ACCENT, so an accent focus ring on a card was invisible against every
-  // unfocused card beside it. Same width, so nothing reflows.
-  // Accent on focus. The width does NOT change -- a card measures its height
-  // as content plus border widths, so a thicker focus border would resize the
-  // card and reflow the grid on every arrow key.
+  // Accent on focus; at rest the outline-button border, not popups.border,
+  // which defaults to the accent and would hide the focus border. The width
+  // never changes: a card's height includes its border widths, so a thicker
+  // focus border would reflow the row on every arrow key.
   borderSpec: root.hasCursor
               ? Border.flat(Color.accent, 1)
               : Border.controlSpec("normal", Color.popups.text, Color.accent)

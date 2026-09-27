@@ -16,22 +16,20 @@ Item {
   // reflows when the column count changes, so an index would move the cursor to
   // a different card on a window resize.
   property string cursorId: ""
-  // Whether the cursor should be PAINTED. The grid keeps its place when focus
-  // moves to a sibling region, but must stop showing a ring: two highlights on
-  // screen at once is how "Up did nothing" looks, because the eye stays on the
-  // big card instead of the tile that just took focus.
+  // Whether the cursor is painted. The grid keeps its place when focus moves to
+  // a sibling region but stops showing a ring, so only one highlight is ever on
+  // screen.
   property bool cursorActive: true
-  // The cell holding the cursor, so the page can scroll it into view. Set by the
-  // cell itself: the inner Repeater is not reachable from out here, and walking
-  // the tree for it would break the moment this layout changed.
+  // The cell holding the cursor, so the page can scroll it into view. Set by
+  // the cell itself, because the inner Repeater is not reachable from here.
   property var cursorCell: null
 
   // Fires after the cursor lands somewhere new. The grid has no idea what it is
   // inside, so scrolling is the page's job.
   signal cursorMoved()
 
-  // Returns whether the key was used, so the page can hand an unused one on --
-  // that is how Left at the first column reaches the sidebar.
+  // Returns whether the key was used, so the page can hand an unused one on.
+  // That is how Left at the first column reaches the sidebar.
   function moveCursor(dx, dy) {
     var next = Model.stepGrid(root.buckets, root.cursorId, dx, dy)
     if (next === null) return false
@@ -73,8 +71,8 @@ Item {
   function estimate(item) {
     // Cheap proxy for rendered height, kept in step with MemoryCard: a
     // full-bleed thumbnail at the capture's own aspect within the same bounds
-    // the card clamps to, then the padded text block. Only the ratios matter --
-    // this decides which column an item lands in, not how tall it draws.
+    // the card clamps to, then the padded text block. Only the ratios matter,
+    // because this picks a column, not a drawn height.
     var aspect = item && item.aspect > 0 ? item.aspect : 1.6
     var art = item && item.thumb
               ? Math.max(root.columnWidth * 0.34,
@@ -91,10 +89,7 @@ Item {
   readonly property var buckets: Model.balanceColumns(items, columns, estimate)
 
   // What the columns actually came out at, not what estimate() guessed. The
-  // guess decides which column an item lands in, and it is allowed to be wrong
-  // about pixels -- but the page adds its bottom inset to THIS number, so an
-  // estimate that ran short took the inset with it and left the last card
-  // sitting on the bottom edge of the dialog.
+  // page adds its bottom inset to this number, so it has to be the real height.
   implicitHeight: columnsRow.implicitHeight
 
   Row {

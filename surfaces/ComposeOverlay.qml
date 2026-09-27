@@ -12,8 +12,8 @@ import "../common"
 // and the bar icon reports progress from there.
 // A FocusScope, so focus falls back here when a child holding it goes away,
 // and so the Escape handler below is on the parent chain of every control
-// inside. `overlayKeys` was a sibling of the content: a key the note field
-// declined bubbled past it and died.
+// inside. A key handler beside the content, rather than above it, never sees
+// a key the note field declines.
 FocusScope {
   id: root
 
@@ -28,11 +28,10 @@ FocusScope {
   property bool dictating: false
 
   // Submit stays disarmed for the overlay's first moments. The window takes
-  // exclusive keyboard focus the instant it maps, and a capture can arrive
-  // over IPC -- the keybind is exactly that -- so an Enter aimed at whatever
-  // the user was typing into would otherwise land here and commit a capture
-  // they never looked at. 600ms outlives any keystroke already in flight and
-  // is beneath notice for someone pressing Enter on purpose.
+  // exclusive keyboard focus the instant it maps, and it can open over IPC
+  // while the user is typing elsewhere, so an Enter meant for another window
+  // would commit a capture they never looked at. 600ms outlives a keystroke
+  // already in flight and is beneath notice for a deliberate Enter.
   property bool armed: false
 
   // A memory with no text, no image and no voice is worthless. The CLI refuses
@@ -62,17 +61,17 @@ FocusScope {
     var args = ["commit", "--id", root.memoryId, "--note", noteField.text]
     if (!root.hasImage) args.push("--remove-image")
     root.opened = false
-    // Genuinely detached, not service.call(): enrichment waits on a model for
-    // tens of seconds, and a tracked process dies with its QML object -- which
-    // a plugin reload destroys, stranding the memory in ai_status='pending'.
+    // Detached, not service.call(): enrichment waits on a model for tens of
+    // seconds, and a tracked process dies with its QML object, which a plugin
+    // reload destroys. That would strand the memory in ai_status='pending'.
     if (service) service.detach(args)
     root.memoryId = ""
   }
 
   function discard() {
     // memoryId is cleared before the call and on submit, so a dismissal after
-    // a commit has nothing to discard. The CLI refuses to delete a saved
-    // memory anyway -- belt and braces, because losing one is unrecoverable.
+    // a commit has nothing to discard. The CLI also refuses to discard a saved
+    // memory, because losing one is unrecoverable.
     var id = root.memoryId
     root.opened = false
     root.memoryId = ""
@@ -128,10 +127,9 @@ FocusScope {
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
-      // Esc discards, from anywhere in the overlay, on one press. This is a
-      // capture surface: the only thing to lose is an unsaved note, and the
-      // contract has always been that Esc throws the draft away with its image.
-      // A two-stage blur-then-discard made the first press look like nothing.
+      // Esc discards the draft and its image, from anywhere in the overlay, on
+      // one press. There is no blur-first stage: a first press that only drops
+      // focus looks like nothing happened.
       Keys.onPressed: function (event) {
         if (event.key === Qt.Key_Escape) {
           // Once, not once per auto-repeat.
@@ -148,16 +146,13 @@ FocusScope {
         anchors.topMargin: card.contentTopInset
         anchors.leftMargin: card.contentLeftInset
         anchors.rightMargin: card.contentRightInset
-        // Title, capture, note field and actions are four separate sections, so
-        // they get a section-sized gap. Larger than any spacing token: at 12,
-        // and even at 18, the capture's bright frame made the field look
-        // attached to the picture rather than the next thing to do.
+        // Title, capture, note field and actions are separate sections, so the
+        // gap is larger than any spacing token. A smaller one makes the field
+        // look attached to the capture's bright frame.
         spacing: Style.space(24)
 
-        // The plugin's name, so the surface says what it belongs to. It used
-        // to have no heading, on the grounds that a screenshot above a focused
-        // field explains itself -- true, but it left the dialog anonymous when
-        // it appears over an unrelated window.
+        // The plugin's name, so the surface says what it belongs to when it
+        // appears over an unrelated window.
         Text {
           text: "Omoide"
           color: Color.menu.text
@@ -166,14 +161,12 @@ FocusScope {
           font.bold: true
         }
 
-        // The screenshot, at the shape you selected. Removing it turns a
+        // The screenshot, at the shape the user selected. Removing it turns a
         // screenshot capture into a note-only one. No clip here: it would cut
         // the frame's rounded corners, which the image is already masked to.
         //
-        // Bounded by height and never by crop. This was a fixed 2:1 box with
-        // PreserveAspectCrop, so a square region came back with its top and
-        // bottom cut off; now a square or portrait capture gets narrower
-        // instead, and the frame hugs the picture.
+        // Bounded by height and never cropped: a square or portrait capture
+        // gets narrower instead, and the frame hugs the picture.
         Item {
           id: previewBox
           width: parent.width
@@ -199,9 +192,8 @@ FocusScope {
 
           // Floating in the frame, inset far enough not to sit on the border.
           //
-          // Icons rather than labels: two words were wider than a portrait
-          // capture now that the preview keeps its own shape, so they covered
-          // the picture they act on.
+          // Icons rather than labels: words are wider than a portrait capture
+          // and would cover the picture they act on.
           //
           // On a backing plate, because these sit over an arbitrary screenshot
           // and a bare glyph disappears against a busy one. Nearly opaque
@@ -223,8 +215,7 @@ FocusScope {
               spacing: Style.spacing.xs
 
               // Nerd Font glyphs, so they need resolvedFamily rather than the
-              // menu font -- the same reason ActionMenu's default-action pin
-              // does.
+              // menu font, as ActionMenu's default-action pin does.
               PanelActionButton {
                 iconText: "󰏫"
                 tooltipText: "Crop or annotate in tensaku"
@@ -272,8 +263,7 @@ FocusScope {
                              ? "Optional — add a note, or press Enter to save"
                              : "What do you want to remember?"
 
-            // No Escape branch: it bubbles to the root, which discards. Handling
-            // it here only stole the key to move focus somewhere invisible.
+            // No Escape branch: it bubbles to the root, which discards.
             Keys.onPressed: function (event) {
               if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                 // A held Return would commit the capture more than once.
@@ -284,8 +274,7 @@ FocusScope {
           }
 
           // Outlined, and square to the field's own height, so it reads as part
-          // of the input rather than as a third action next to Cancel and Save
-          // -- which is where it used to sit.
+          // of the input rather than as a third action next to Cancel and Save.
           PanelActionButton {
             id: dictateButton
             anchors.right: parent.right
@@ -299,8 +288,8 @@ FocusScope {
                          ? (root.dictating ? "Listening — click to stop"
                                            : "Dictate with Voxtype")
                          : "Voxtype is not installed"
-            // Tinted while recording: the button lost its "Listening…" label
-            // when it lost its text, so the state has to show some other way.
+            // Tinted while recording, because the icon has no label to say
+            // so.
             foreground: root.dictating ? Color.accent : Color.menu.text
             hoverColor: Color.accent
             fontFamily: Style.font.resolvedFamily
@@ -317,9 +306,8 @@ FocusScope {
           font.pixelSize: Style.font.body
         }
 
-        // Anchored, not spaced. A Row plus a fixed-width filler only lines up
-        // while the buttons happen to add up to that width -- change a label
-        // and Save drifts away from the edge the field is aligned to.
+        // Anchored, not spaced, so Save stays on the edge the field ends at
+        // whatever the button labels measure.
         Item {
           width: parent.width
           height: actionRow.height

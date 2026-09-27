@@ -18,8 +18,8 @@ static json_object *ready_card(sqlite3 *db, const char *id) {
 }
 
 // Match any term, as a prefix. Without FTS5's `*` a search typed one character
-// at a time finds nothing until the final letter of a word -- "bandcam" would
-// miss "bandcamp". Terms are split on non-word characters, so none can carry
+// at a time finds nothing until the final letter of a word: "bandcam" has to
+// find "bandcamp". Terms are split on non-word characters, so none can carry
 // a quote into the query.
 static char *fts_escape(const char *query) {
   g_auto(GStrv) terms = g_regex_split(re("\\W+", 0), query ? query : "", 0);
@@ -156,8 +156,8 @@ int cmd_show(int argc, char **argv) {
     json_object_array_add(blocks, block);
   }
 
-  // Cancelled items are gone as far as the page is concerned: returning them
-  // kept a deleted to-do rendering, which looked exactly like a failed delete.
+  // Cancelled items are gone as far as the page is concerned. Showing one
+  // would look exactly like a failed delete.
   json_object *items = json_object_new_array();
   g_autoptr(sqlite3_stmt) item_rows = db_query(db,
       "SELECT * FROM items WHERE memory_id = ? AND status != 'cancelled' "
@@ -241,7 +241,7 @@ int cmd_search(int argc, char **argv) {
 }
 
 // The To-do archive: one query, grouped by time and completion. Grouping never
-// consults a reminder's state -- a fired alarm says nothing about whether the
+// consults a reminder's state. A fired alarm says nothing about whether the
 // to-do is done, so it stays in Past until checked off.
 int cmd_archive(int argc, char **argv) {
   parse_options("archive", NULL, 0, &argc, &argv);
@@ -363,7 +363,7 @@ int cmd_candidates(int argc, char **argv) {
     if (!g_hash_table_contains(skip, col_str(rows, "id")))
       json_object_array_add(found, memory_card(db, rows));
 
-  // A slice, as out[:limit] was: a negative limit drops that many from the end.
+  // A negative limit drops that many from the end, and dev/parity pins it.
   const int total = (int)json_object_array_length(found);
   const int keep = limit >= 0 ? MIN(limit, total) : MAX(0, total + limit);
   json_object *candidates = json_object_new_array();

@@ -15,13 +15,10 @@ import "../common/Radii.js" as Radii
 // A centered layer-shell surface rather than a desktop window: that is the
 // idiom every first-party Omarchy surface uses (clipboard, emojis, image
 // picker, menu), and it is what gets reliable keyboard focus, Esc handling and
-// theme integration. FloatingWindow is only used by the dev-gallery tool, and
-// under Hyprland it never mapped here.
+// theme integration. A FloatingWindow does not map under Hyprland here.
 //
-// The reference is a phone with a bottom pill switching For you / Library. In
-// a dialog that becomes a left rail with the same destinations -- the switcher
-// moves, the information architecture does not. Destinations stay data-driven,
-// so a later Events section is one entry in `sections`.
+// Destinations are a left rail, driven by `sections`, so a new section is one
+// entry there.
 Item {
   id: root
 
@@ -56,8 +53,8 @@ Item {
   property int railCursor: 0
 
   // An open overlay owns the keyboard, so the dialog's own map goes dormant
-  // while one is up. Overflow menu included: unlike the sheets, it has no key
-  // handler of its own, so Escape used to fall through it and shut the dialog.
+  // while one is up. That includes the overflow menu, which has no key handler
+  // of its own; without this, Escape would fall through it and shut the dialog.
   readonly property bool overlayOpen:
     itemEditor.opened || blockEditor.opened || imagePreview.opened
     || renamePrompt.opened || overflowMenu.opened
@@ -193,8 +190,8 @@ Item {
     root.enterContent()
   }
 
-  // The title as the library knows it. The detail view has its own copy, but
-  // the menu is owned by the window and only has the id.
+  // The title the open detail page loaded, since only that page's menu asks.
+  // The menu is owned by the window and only has the id.
   function memoryTitle(id) {
     var list = (root.service && root.service.index
                 && root.service.index.memories) || []
@@ -212,9 +209,8 @@ Item {
 
   function openItem(id) {
     // Anywhere except the memory itself: if the capture is not already the page
-    // behind this sheet, the sheet offers a way to it. Tasks was the case that
-    // proved the earlier rule wrong -- you have not come from the memory there,
-    // so the link is exactly what you want.
+    // behind this sheet, the sheet offers a way to it. From Tasks, for one, the
+    // user has not come from the memory, so the link is what they want.
     itemEditor.showMemoryLink = (root.section !== "detail")
     itemEditor.open(id)
   }
@@ -267,8 +263,8 @@ Item {
     if (helpSheet.opened) { helpSheet.close(); return true }
 
     if (event.key === Qt.Key_Escape) {
-      // A held Escape auto-repeats. Swallow the repeats: otherwise one press
-      // unwound every layer at once -- overlay, sub-page and dialog.
+      // A held Escape auto-repeats. Swallow the repeats, or one press would
+      // unwind every layer at once: overlay, sub-page and dialog.
       if (event.isAutoRepeat) return true
       // The page gets first refusal. Library's filter chips are a drill-in, and
       // Esc there has to leave the chips -- if unwind() ran first it would shut
@@ -389,9 +385,8 @@ Item {
   }
 
   // Every overlay in here takes focus onto its own key catcher when it opens,
-  // and none of them can hand it back on their own -- they do not know who had
-  // it. So the window takes focus back whenever one closes. Without this, using
-  // any overlay once left Esc dead for the rest of the session.
+  // and none can hand it back, because none knows who had it. So the window
+  // takes focus back whenever one closes, or Esc would stay dead afterwards.
   function restoreFocus() {
     Qt.callLater(function () { keys.forceActiveFocus() })
   }
@@ -472,7 +467,7 @@ Item {
           // its gap are accounted for. 4px right of the title.
           readonly property real labelInset: contentPadX + Style.spacing.md
 
-          // Defines the split now that the fill is subtle.
+          // Defines the split, which the subtle fill alone does not.
           Rectangle {
             anchors.right: parent.right
             anchors.top: parent.top
@@ -495,11 +490,11 @@ Item {
 
             // The name, at the hero's weight and size but not a PanelHero:
             // with no icon the hero still applies its 14px label inset, which
-            // pushed the title 6px right of every row label under it.
+            // would put the title right of every row label under it.
             //
             // 10px, the same padding the rows carry. Set explicitly rather than
             // through labelInset, because it is a chosen number here, not a
-            // derived one -- change the rows' padding and the title stays put.
+            // derived one. Changing the rows' padding leaves the title put.
             Text {
               width: parent.width
               leftPadding: rail.contentPadX
@@ -511,9 +506,8 @@ Item {
               font.bold: true
             }
 
-            // Under the name, as its subtitle. It was in the footer, which is
-            // now where the keyboard hint lives -- and a count belongs with the
-            // thing it counts rather than in the corner opposite it.
+            // Under the name, as its subtitle: a count belongs with the thing
+            // it counts. The footer holds the keyboard hint.
             Text {
               width: parent.width
               leftPadding: rail.contentPadX
@@ -556,10 +550,9 @@ Item {
                 required property var modelData
                 required property int index
                 // Named `selected`, not `current`. CursorSurface already has a
-                // `current`, and redeclaring it here shadowed the property its
-                // own paint reads -- which left `hasCursor` doing the work of
-                // both states, so a keyboard cursor had nothing left to look
-                // like.
+                // `current` that its own paint reads, and redeclaring it would
+                // shadow that, leaving the keyboard cursor with no look of its
+                // own.
                 readonly property bool selected: root.sectionIndex() === index
 
                 width: rail.width - rail.pad * 2
@@ -665,8 +658,8 @@ Item {
         }
 
         // Its own strip rather than floating in the corner. Anchored over the
-        // content it covered whatever reached the top edge full-width -- the
-        // search field ended up with a close button sitting inside it.
+        // content, it would cover anything full-width at the top edge, such as
+        // the search field.
         Item {
           id: titleBar
           anchors.top: parent.top
@@ -675,8 +668,8 @@ Item {
           // Tall enough for both, measured independently: the title is inset
           // like the content it heads, the close button sits in the corner.
           // The gap BELOW the title belongs to the view loader, not here: a
-          // view's own top inset scrolls away with its content, so relying on
-          // it left the title touching whatever had scrolled up to meet it.
+          // view's own top inset scrolls away with its content, and the title
+          // would touch whatever scrolled up to meet it.
           height: Math.max(Style.spacing.panelPadding + pageHeading.implicitHeight,
                            titleBar.chromeInset + closeButton.height)
 
@@ -736,8 +729,8 @@ Item {
             anchors.rightMargin: titleBar.chromeInset
             iconText: "✕"
             tooltipText: "Close  (Esc)"
-            // A bigger glyph in the same hit area: the button was findable,
-            // the ✕ itself was what read small.
+            // A bigger glyph in the same hit area, so the ✕ does not read
+            // small.
             fontSize: Style.font.iconLarge
             size: Style.space(22)
             foreground: Color.menu.text
@@ -897,9 +890,8 @@ Item {
             Quickshell.execDetached(["tensaku-edit", source])
         }
 
-        // Linking a memory and filing into a collection were inline modes that
-        // swapped UI in place under the cursor. Same component for both: they are
-        // the same interaction -- type, pick, done.
+        // Linking a memory and filing into a collection share one sheet,
+        // because they are the same interaction: type, pick, done.
         // Add, rename and remove across the whole to-do list of one memory. The
         // item editor still owns a single to-do's date and reminders.
         TodosEditor {
@@ -967,10 +959,9 @@ Item {
         Loader {
           id: viewLoader
           anchors.top: titleBar.bottom
-          // The WHOLE gap under the page title, not an addition to one. The
-          // views used to carry their own top inset as well, which made the
-          // space 30px at rest and 12px once scrolled -- too far and then too
-          // close. Chrome owns it now, so it is the same either way.
+          // The WHOLE gap under the page title, not an addition to one. Views
+          // carry no top inset of their own, so the gap is the same at rest and
+          // once scrolled.
           anchors.topMargin: Style.spacing.panelPadding
           anchors.bottom: parent.bottom
           anchors.left: rail.right

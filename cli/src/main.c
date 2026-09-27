@@ -23,7 +23,7 @@ static const Command COMMANDS[] = {
   { "state", NULL, "counts for the bar widget", cmd_state },
   { "item", NULL, "to-do and event operations", cmd_item },
   { "reminder", NULL, "alarms attached to an item", cmd_reminder },
-  // sync-timers is what shells older than this release call on startup.
+  // sync-timers is the name older installs' shells call on startup.
   { "sweep", "sync-timers", "deliver late alarms and clear dead drafts", cmd_sweep },
   { "collection", NULL, "collections", cmd_collection },
   { "link", NULL, "related captures", cmd_link },

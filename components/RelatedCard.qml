@@ -22,11 +22,10 @@ BorderSurface {
                      label.implicitHeight + Style.spacing.lg * 2 + Style.space(14))
   radius: Style.cornerRadius
   color: Color.popups.background
-  // The outline-button border, not popups.border -- that token defaults to the
-  // ACCENT, so an accent focus ring was invisible against every unfocused card.
-  // Accent on focus. The width does NOT change -- a card measures its height
-  // as content plus border widths, so a thicker focus border would resize the
-  // card and reflow the grid on every arrow key.
+  // Accent on focus; at rest the outline-button border, not popups.border,
+  // which defaults to the accent and would hide the focus border. The width
+  // never changes: a card's height includes its border widths, so a thicker
+  // focus border would reflow the grid on every arrow key.
   borderSpec: root.hasCursor
               ? Border.flat(Color.accent, 1)
               : Border.controlSpec("normal", Color.popups.text, Color.accent)

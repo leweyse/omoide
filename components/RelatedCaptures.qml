@@ -7,9 +7,8 @@ import "../MemoryModel.js" as Model
 // Related captures: only what the user linked, plus a chip that opens the
 // link picker. The picker itself is a dialog owned by SpaceWindow.
 //
-// Nothing is inferred. Whether two captures are related is a judgement about
-// meaning, and scoring shared tags and word overlap either offered everything
-// or nothing with no useful middle -- so the plugin does not guess.
+// Nothing is inferred: whether two captures are related is the user's
+// judgement.
 Column {
   id: root
 
@@ -23,8 +22,8 @@ Column {
     root.cursor >= 0 && root.cursor === (root.linked || []).length
 
   signal openMemory(string id)
-  // The link picker is a dialog owned by the window, so this section only
-  // asks for it -- it no longer swaps a search field in under the cursor.
+  // The link picker is a dialog owned by the window; this section only asks
+  // for it.
   signal linkRequested()
 
   spacing: Style.spacing.md
@@ -52,9 +51,8 @@ Column {
     fontFamily: Style.font.resolvedFamily
   }
 
-  // Two up. The cards carry the thumbnail, so a linked capture is recognised
-  // by its artwork the way it is in the library grid -- a column of titles
-  // would make "related" read as a list of links rather than of captures.
+  // Two up, as cards with their thumbnails, so a linked capture is recognised
+  // by its artwork the way it is in the library grid.
   Grid {
     id: cards
     width: parent.width
@@ -74,7 +72,7 @@ Column {
 
         width: cards.cellWidth
         memory: modelData
-        // Cards come first, then the chip -- which is why chipFocused is one
+        // Cards come first, then the chip, which is why chipFocused is one
         // past the last index.
         hasCursor: root.cursor === index
         onOpened: root.openMemory(modelData.id)

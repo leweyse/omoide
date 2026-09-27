@@ -12,11 +12,10 @@ import "../common"
 Flickable {
   id: root
 
-  // Whether this page is the one holding the keyboard. The window hands the
-  // rail and the page the keyboard one at a time, and the rail already hides
-  // its cursor when it is not the holder -- a page that kept drawing its own
-  // put two cursors on screen at once, so a highlighted row looked ready for
-  // Enter while the keys were still going to the sidebar.
+  // Whether this page holds the keyboard. The window gives it to the rail or
+  // the page, never both, so the page draws its cursor only while it holds it.
+  // Otherwise a highlighted row looks ready for Enter while the keys still go
+  // to the sidebar.
   property bool hasKeyboard: true
 
   property var service: null
@@ -45,15 +44,14 @@ Flickable {
     root.region === 1 ? root.suggestions : (root.groups[root.tab] || [])
 
   // Explicit index, not a read of `regionRows`: that is a binding on `region`,
-  // and reading it inside region's own change handler can return the region you
-  // just left. With an empty tasks list and non-empty suggestions, Tab landed
-  // nothing at all.
+  // and reading it inside region's own change handler can return the region
+  // just left.
   function rowsFor(i) {
     return i === 1 ? root.suggestions : (root.groups[root.tab] || [])
   }
 
-  // Tab lands on the target region's FIRST row, not wherever you last were in
-  // it -- the same rule everywhere, so Tab is predictable.
+  // Tab lands on the target region's FIRST row, not the last position in it:
+  // the same rule everywhere, so Tab is predictable.
   onRegionChanged: root.cursor = root.rowsFor(root.region).length > 0 ? 0 : -1
 
   // A tab switch replaces the rows under the cursor, so an index into the old
@@ -101,8 +99,8 @@ Flickable {
       return true
     }
 
-    // Space ticks the box without opening anything -- the point of a task list
-    // is clearing it, and that should not cost a dialog each time.
+    // Space ticks the box without opening anything. The point of a task list is
+    // clearing it, and that should not cost a dialog each time.
     if (event.key === Qt.Key_Space) {
       root.toggleCursor()
       return true
@@ -181,9 +179,8 @@ Flickable {
   Component.onCompleted: reload()
 
   // The item editor is a separate surface, so a delete or a completion made
-  // there has to reach this list somehow. Every mutation rewrites index.json
-  // and pings the service, so its index changing is the general "data moved"
-  // signal -- no direct wiring between the two surfaces needed.
+  // there has to reach this list somehow. Every mutation makes the service pull
+  // a new index, so its index changing is the general "data moved" signal. The two surfaces need no direct wiring.
   Connections {
     target: root.service
     function onIndexChanged() { root.reload() }
@@ -197,8 +194,8 @@ Flickable {
     width: root.width - Style.spacing.panelPadding * 2
     spacing: Style.spacing.xxxl
 
-    // Buttons, not chips: a chip is a filter you add to a set, a tab is a
-    // switch between whole views, and at chip size it read as neither.
+    // Buttons, not chips: a chip is a filter added to a set, a tab is a switch
+    // between whole views.
     Row {
       width: parent.width
       spacing: Style.spacing.controlGap

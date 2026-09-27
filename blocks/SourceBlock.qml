@@ -5,7 +5,7 @@ import qs.Ui
 import "../MemoryModel.js" as Model
 
 // Category chip, domain and byline. No favicon: fetching one needs the
-// network, so V1 shows the domain the capture already told us.
+// network, so this shows the domain the capture already carries.
 BlockCard {
   id: root
   property var payload: ({})

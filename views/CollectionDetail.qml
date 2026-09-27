@@ -5,9 +5,8 @@ import "../common"
 
 // One collection: its own page, laid out like a memory's.
 //
-// Header of Back / title / ⋯, then the same grid the Library uses. Collections
-// used to filter the Library's grid instead, which left them nowhere to be
-// renamed or removed from.
+// Header of Back / title / ⋯, then the same grid the Library uses. The page is
+// where a collection is renamed or removed.
 Flickable {
   id: root
 
@@ -30,8 +29,6 @@ Flickable {
   }
 
   contentWidth: width
-  // Bottom inset only. The gap above belongs to the window's view loader, so it
-  // is chrome and survives scrolling.
   // --- keyboard ------------------------------------------------------------
   //
   // One region: the captures grid. The walk itself belongs to MasonryGrid, so
@@ -170,8 +167,7 @@ Flickable {
 
     MemoryCard {
       // No modelData here: MasonryGrid assigns `memory` on the loaded item, so
-      // a required modelData would never be set and the card would fail to
-      // create -- which showed up as an empty grid.
+      // a required modelData is never set and the card fails to create.
       onActivated: root.openMemory(memory.id)
     }
   }

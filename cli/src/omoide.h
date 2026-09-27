@@ -2,15 +2,16 @@
 //
 // Everything that touches disk lives here: SQLite, blobs, thumbnails, the AI
 // enrichment pass, reminder alarms, and the derived index the QML side renders
-// from. The QML plugin is deliberately thin -- it spawns this and reads JSON
+// from. The QML plugin is deliberately thin: it spawns this and reads JSON
 // back.
 //
 // Exit codes:
 //   0  success
 //   1  usage or runtime error
 //   2  nothing to do (a cancelled capture, an empty submit), and also what a
-//      malformed command line exits with, as argparse did
-//   3  the database is newer than this code understands -- refusing to write
+//      malformed command line exits with
+//   3  the database is newer than this code understands; nothing is read or
+//      written
 #pragma once
 
 #include <glib.h>
@@ -37,9 +38,9 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(json_object, json_object_put)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(json_tokener, json_tokener_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(sqlite3_stmt, sqlite3_finalize)
 
-// --- main.c
+// --- args.c
 // Parses a subcommand's options in place, leaving argv[0] and positionals.
-// A malformed command line exits 2, as argparse did.
+// A malformed command line exits 2.
 void parse_options(
     const char *command, const GOptionEntry *entries, int max_positional, int *argc, char ***argv);
 void require_option(const char *command, const char *flag, const char *value);
@@ -64,14 +65,16 @@ char *py_float(double value);   // how Python prints a float: 45.0, 12.5
 char *first_line(const char *text);
 json_object *settings(void);   // the bar widget's inline settings
 
-// JSON values read the way the Python CLI read them.
+// Loose readings of a JSON value that a model or a person may have written as
+// any type. Their exact results, down to how a boolean is spelled, reach stored
+// rows and the log, and dev/parity pins them.
 bool truthy(json_object *value);
 char *as_text(json_object *value);   // str(value); "" for NULL
 bool as_int(json_object *value, int64_t *out);   // int(value), when it has one
 
 // --- regex.c
 // Compiled once per process and cached. Every pattern is UTF-8 with Unicode
-// character classes, which is GRegex's default and what Python's re does.
+// character classes, which is GRegex's default.
 GRegex *re(const char *pattern, GRegexCompileFlags flags);
 char *re_replace(const char *pattern, const char *text, const char *replacement);
 
@@ -90,9 +93,9 @@ const Paths *paths(void);
 void guard_paths(void);
 
 // --- log.c
-// Pairs of key and value, ending with NULL. Never pass note or OCR text:
-// lengths only. This is for debugging the plugin, not a second copy of what
-// the user captured.
+// Pairs of key and value, ending with NULL. Never pass captured text, an
+// agent's output, or a command line the user typed: names and lengths only.
+// This is for debugging the plugin, not a second copy of what was captured.
 void log_event(const char *event, ...) G_GNUC_NULL_TERMINATED;
 
 // --- json.c
@@ -116,7 +119,7 @@ void db_exec(sqlite3 *db, const char *sql);
 // A statement that does not prepare is a bug, so it dies rather than returns.
 sqlite3_stmt *db_query(sqlite3 *db, const char *sql, const char *types, ...);
 bool db_step(sqlite3_stmt *stmt);   // true while there is a row
-// Columns by name, as sqlite3.Row allowed. NULL for SQL NULL.
+// Columns by name. NULL for SQL NULL.
 const char *col_str(sqlite3_stmt *stmt, const char *name);
 int64_t col_int(sqlite3_stmt *stmt, const char *name);
 bool col_null(sqlite3_stmt *stmt, const char *name);
@@ -173,7 +176,7 @@ void write_index(sqlite3 *db);
 int backfill_dimensions(sqlite3 *db);
 
 // --- enrich.c
-// A value from a model or a caller as one clean line: str(value), whitespace
+// A value from a model or a caller as one clean line: as text, whitespace
 // collapsed, at most `limit` characters; "" for anything falsy.
 char *clean_text(json_object *value, long limit);
 char *http_url(json_object *value);   // "" unless http(s)

@@ -17,8 +17,8 @@ Item {
   property var shell: null
   property var manifest: null
 
-  // Resolved from this file's own location, not the manifest: since Omarchy
-  // 4.0.4 the shell strips `__sourceDir` from third-party manifests.
+  // Resolved from this file's own location, not the manifest: the host strips
+  // `__sourceDir` from a third-party manifest.
   readonly property string pluginDir:
     decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")).replace(/\/$/, "")
 
@@ -55,22 +55,9 @@ Item {
   readonly property int failedCount: (index && index.failedCount) || 0
   readonly property int openTodoCount: (index && index.todos ? index.todos.length : 0)
 
-  // Today's business: to-dos due at any point in the current day, plus anything
-  // overdue and still open.
-  //
-  // The bar mark used to light on openTodoCount > 0, which counts what exists
-  // rather than what is owed -- a single to-do due in October kept it lit
-  // through August and September, so it never changed and never told anyone
-  // anything.
-  //
-  // The whole day rather than a rolling window from now: "is there anything to
-  // do today" has one answer from midnight to midnight, so the mark is lit when
-  // the day starts instead of switching on partway through the afternoon as a
-  // deadline drifts inside some window of the current moment.
-  //
-  // Overdue counts too. A to-do that slipped past its day is still pending, and
-  // a cutoff that only looked forward would quietly drop it at midnight -- the
-  // mark going out for the one item most likely to need attention.
+  // Lit by what is owed today, not by what exists: open to-dos due before
+  // local midnight, overdue included. The cutoff is the end of the day rather
+  // than a window from now, so the answer holds from midnight to midnight.
   property int dueTodayCount: 0
 
   function refreshDueToday() {
@@ -113,10 +100,8 @@ Item {
     })
   }
 
-  // A second capture while one is in flight cancels the first: the screenshot
-  // helper opens with `pkill slurp && exit 0` so that pressing the shortcut
-  // twice dismisses the picker. That makes any accidental double-invocation
-  // look like "the picker closed on its own", so requests are serialised here.
+  // One capture at a time. `capturing` is held until captureCooldown ends,
+  // because a detached capture has no exit to wait for.
   property bool capturing: false
   property string pendingMode: ""
 
@@ -133,21 +118,10 @@ Item {
 
   // --- building the CLI ------------------------------------------------------
   //
-  // `omarchy plugin add` only clones, and there is no install hook, so the
-  // first load after an add or an update is where the CLI gets built. Every
-  // step is an argv, never a shell string.
-  //
-  // The build is keyed by the source it came from: the git tree ids of
-  // everything the binary compiles or embeds. An update changes them, so the
-  // next shell load builds; an unchanged checkout finds its build and costs
-  // two git calls. A checkout with local edits to those paths, or one that is
-  // not a git checkout at all, has no id worth trusting, so it builds on every
-  // load -- that is the development loop.
-  //
-  // Calls made before the build finishes wait in cliQueue. After an update
-  // that has not restarted the shell yet, this old QML keeps its old id and so
-  // its old binary: the QML and the CLI it talks to always come from one
-  // checkout.
+  // .agents/docs/reference/cli-build.md describes the design. Every step is an
+  // argv, never a shell string. cliSources is everything the binary compiles or
+  // embeds; a file embedded from any other path must be added here, or an
+  // update that changes only that file keeps running the old build.
   readonly property var cliSources: ["cli", "sql", "prompts", "manifest.json"]
   property bool cliReady: false
   property var cliQueue: []
@@ -255,10 +229,10 @@ Item {
     if (root.capturing) return
     root.capturing = true
     root.pendingMode = mode || "screenshot"
-    // One-shot ticket for auto-dictation, consumed by the next compose call.
-    // The compose payload arrives over public same-user IPC, so its flags are
-    // claims, not facts -- and autoDictate turns the microphone on. Only a
-    // voice capture this shell launched itself has the standing to do that.
+    // One-shot ticket for auto-dictation, spent by the next compose call. The
+    // compose payload arrives over same-user IPC, so its flags are claims, and
+    // autoDictate turns the microphone on. Only a voice capture this shell
+    // launched itself may do that.
     root.voiceTicket = root.pendingMode === "voice"
     // The click that chose the action must be fully delivered and the menu
     // surface gone before slurp maps, or the release lands in the picker.
@@ -269,20 +243,18 @@ Item {
     id: captureLaunch
     interval: 120
     onTriggered: {
-      // Detached, NOT a tracked Process. A capture waits on an interactive
-      // picker for as long as the user takes, and a tracked child dies with
-      // its QML object -- which a plugin reload destroys. That killed the
-      // picker mid-selection and left the screen frozen. The CLI reports back
-      // over IPC when it is done, so there is nothing to track anyway.
+      // Detached, not a tracked Process. A capture waits on an interactive
+      // picker for as long as the user takes, and a tracked child dies when a
+      // plugin reload destroys its QML object, killing the picker with the
+      // screen still frozen. The CLI reports back over IPC.
       root.detach(["capture", root.pendingMode])
       captureCooldown.restart()
     }
   }
 
-  // Held after launching, not cleared immediately: the capture is detached so
-  // there is no exit to wait for, and a double-click on the bar icon would
-  // otherwise fire two pickers. The CLI holds a lock too -- this just avoids
-  // spawning a process that only exits again.
+  // Held after launching, because a detached capture has no exit to wait for.
+  // The CLI's capture lock also refuses a second picker; this saves spawning a
+  // process that only exits again.
   Timer {
     id: captureCooldown
     interval: 1200
@@ -387,13 +359,12 @@ Item {
     }
   }
 
-  // The keybind's chooser is Omarchy's own menu in dmenu mode, so it is the
-  // same dialog as every other picker on the system. The selection comes back
-  // to this process and goes through capture(), which means the voice ticket
-  // and the compose overlay's arming apply exactly as they do from the bar
-  // menu. Tracked, not detached: if the plugin reloads mid-wait the waiter
-  // dies and the menu is an Esc away from gone, which beats a process that
-  // waits forever on a menu that was replaced.
+  // The keybind's chooser is Omarchy's own menu in dmenu mode. The selection
+  // comes back here and goes through capture(), so the voice ticket and the
+  // compose overlay apply exactly as they do from the bar menu. Tracked, not
+  // detached: if the plugin reloads mid-wait the waiter dies and the menu is
+  // an Esc away from gone, rather than a process waiting forever on a menu
+  // that was replaced.
   property var chooserProc: null
 
   function toggleChooser() {
@@ -468,8 +439,8 @@ Item {
   }
 
   // Startup catch-up: deliver anything that came due while no shell was
-  // running, and clear dead drafts. Deliberately late -- the index has to load
-  // first, and nothing in it is urgent.
+  // running, and clear dead drafts. Deliberately late, because the index loads
+  // first and nothing in the sweep is urgent.
   Timer {
     interval: 2000
     running: true
@@ -477,18 +448,12 @@ Item {
     onTriggered: root.call(["sweep"], function () { root.refresh() })
   }
 
-  // The scheduler.
+  // The scheduler; .agents/docs/reference/reminders.md describes the split
+  // with the CLI. It relies on this service being keepLoaded.
   //
-  // No system timer. This service is keepLoaded, so it outlives every window
-  // the plugin opens, and a notification needs the session up anyway -- there
-  // is nowhere to draw a toast without one. index.json carries the pending
-  // alarms and the FileView above watches it, so anything the CLI writes
-  // re-arms this within the same tick.
-  //
-  // The wait is capped even when the next alarm is hours out, and that cap IS
-  // the catch-up: a suspended laptop, a clock jump and a CLI that failed to
-  // write all resolve on the next tick. None of them send a signal worth
-  // waiting on.
+  // The wait is capped even when the next alarm is hours out, and the cap is
+  // the catch-up: a suspend, a clock jump or a CLI that failed to write all
+  // resolve on the next tick, and none of them sends a signal to wait on.
   readonly property int alarmTickMs: 60000
 
   Timer {
@@ -498,7 +463,7 @@ Item {
   }
 
   // `index` is a property var, so this is its generated change signal. Every
-  // CLI mutation rewrites index.json, which lands here.
+  // CLI change signals refresh, and the pull that follows lands here.
   onIndexChanged: root.armAlarms()
 
   function armAlarms() {
@@ -518,7 +483,7 @@ Item {
       }
       // Due. Detached, and the CLI decides whether it is still owed, so a
       // repeated tick or a second shell costs a no-op rather than a second
-      // toast. Firing rewrites index.json, which re-arms this from the top.
+      // toast. Firing signals refresh, and the pull re-arms this from the top.
       root.detach(["reminder", "fire", "--id", alarms[i].id])
     }
 
@@ -540,9 +505,9 @@ Item {
   IpcHandler {
     target: "omoide"
 
-    // There is deliberately no capture method here. The keybind opens the
-    // chooser, and a capture starts only from a click or Enter on a surface
-    // the shell drew itself -- IPC opens windows, it does not act.
+    // No capture method, deliberately: IPC opens windows, it does not act.
+    // The keybind opens the chooser, and a capture starts only from a click
+    // or Enter on a surface the shell drew itself.
     function toggleChooser(): string {
       root.toggleChooser()
       return "ok"

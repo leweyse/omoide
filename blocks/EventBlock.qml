@@ -13,14 +13,13 @@ BlockCard {
   property var item: null
   property var service: null
   signal changed()
-  // Reminders are edited in the item editor, and until now nothing on this
-  // block could open it -- an event's alarms were visible and unreachable.
+  // Reminders are edited in the item editor, and this is the block's way in.
   signal openItem(var item)
   heading: "Event Date"
 
   // One control, in the corner, rather than a chip in the flow and click
-  // handlers on the text. Everything it opens -- the time, the place, the
-  // alarms -- lives in the item editor, so one affordance says so once.
+  // handlers on the text. Everything it opens (the time, the place, the
+  // alarms) lives in the item editor, so one affordance says so once.
   trailing: Component {
     PanelActionButton {
       bordered: true
@@ -46,9 +45,9 @@ BlockCard {
 
   Column {
     width: parent.width
-    // The card's own sections: the details, the rule, the reminders. A wider
-    // gap than the lines WITHIN the details, so the grouping is legible --
-    // 4px inside a group, 12px between groups.
+    // The card's own sections: the details, the rule, the reminders. The gap
+    // between groups is wider than the one inside the details, so the grouping
+    // is legible.
     spacing: Style.spacing.xxxl
 
     Row {
@@ -63,8 +62,8 @@ BlockCard {
 
       Column {
         width: parent.width - badge.width - Style.spacing.lg
-        // The time, the place and the map link sat 3px apart, which read as one
-        // wrapped paragraph rather than three separate facts.
+        // Enough space that the time, the place and the map link read as three
+        // separate facts, not one wrapped paragraph.
         spacing: Style.spacing.md
 
         Text {

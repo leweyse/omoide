@@ -2,13 +2,8 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// One chip in a row of them.
-//
-// Its own component because the Collections row had three: a collection this
-// memory is in, one it could be filed into, and the control that opens the name
-// field. Two were hand-built Rectangles at caption size and the third was a
-// Button with control-sized padding, so they sat at different heights in the
-// same Flow.
+// One chip in a row of them, at one height whatever it holds: a collection
+// the memory is in, one it could be filed into, or a control.
 //
 // Filled reads as a fact, outlined as an offer.
 BorderSurface {
@@ -24,8 +19,7 @@ BorderSurface {
   property bool hasCursor: false
 
   // Opt into Qt's tab order, the same way qs.Ui Button does. Needed inside a
-  // dialog, where Tab walks the controls rather than a page-owned cursor -- with
-  // this off, Tab skipped straight past "Add a reminder" to the buttons below.
+  // dialog, where Tab walks the controls rather than a page-owned cursor.
   property bool focusable: false
 
   // One flag for "the keyboard is on this chip", whichever route put it there.
@@ -39,10 +33,8 @@ BorderSurface {
   Keys.onEnterPressed: if (root.focusable) root.clicked()
   Keys.onSpacePressed: if (root.focusable) root.clicked()
 
-  // The same padding tokens qs.Ui Button uses, so a chip and a button relate
-  // rather than each having its own arbitrary inset. They differ in font size,
-  // which is the intended distinction: a chip is a compact label, a button is a
-  // control. Derived, not a hardcoded 26px.
+  // The same padding tokens qs.Ui Button uses, so a chip and a button share an
+  // inset and differ only in font size.
   property real horizontalPadding: Style.spacing.controlPaddingX
   property real verticalPadding: Style.spacing.controlPaddingY
 
@@ -50,9 +42,8 @@ BorderSurface {
   width: chipLabel.implicitWidth + root.horizontalPadding * 2
   radius: Style.space(4)
 
-  // Hover only, never focus. A fill behind the label on focus lowers contrast
-  // against the text for no gain -- the accent border and the inner ring already
-  // say where the keyboard is.
+  // Hover only, never focus. A focus fill lowers contrast against the label,
+  // and the accent border and inner ring already show focus.
   readonly property bool hot: mouse.containsMouse
 
   color: root.outlined
@@ -60,13 +51,11 @@ BorderSurface {
             ? Style.hoverFillFor(root.tint, root.tint, Color.urgent)
             : "transparent")
          : Style.normalFillFor(Color.popups.text, Color.accent, Color.urgent)
-  // Border.flat, NOT controlSpec("focus"): controlSpec applies focusBorderAlpha,
-  // which defaults to 0.25, so the accent came out at quarter strength and read
-  // as the same muted grey as an unfocused chip. flat() applies no alpha.
+  // Border.flat, not controlSpec("focus"), which applies focusBorderAlpha and
+  // makes the accent hard to tell from an unfocused chip.
   //
-  // A filled chip has no border at rest, so this is what makes the cursor
-  // visible on one; on an outlined chip it replaces the resting colour at the
-  // same width, so only the colour changes.
+  // A filled chip has no border at rest, so this is what shows the cursor on
+  // one; on an outlined chip it replaces the resting colour at the same width.
   borderSpec: root.focused
               ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
               : (root.outlined
@@ -74,8 +63,7 @@ BorderSurface {
                  : Border.none())
 
   // The same focus language as a card: accent on the border, a quiet ring just
-  // inside it. gap 1, not 2 -- a chip is only ~26px tall, and 3px of inset would
-  // start crowding the label.
+  // inside it. Gap 1, because a chip is short and a wider inset crowds the label.
   FocusRing {
     diagonalCorners: true
     anchors.fill: parent

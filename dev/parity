@@ -464,7 +464,7 @@ RICH_REPLY = json.dumps({
         {"type": "note", "text": "a model's note is ignored"},
         {"type": "unknown"}]})
 
-# name, seed steps (reference argv lists, or callables on the home), argv
+# name, seed steps (CLI argv lists, or callables on the home), argv
 CASES = [
     ("migrate-fresh", [], ["migrate"]),
     ("migrate-again", [["migrate"]], ["migrate"]),

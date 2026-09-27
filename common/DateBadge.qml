@@ -1,12 +1,8 @@
 import QtQuick
 import qs.Commons
 
-// The calendar tile: month above, day below.
-//
-// One component because there were two copies -- the Event Date block and the
-// For you card -- at different sizes, with different fills, and one of them
-// nested inside the card's artwork, so a card with no thumbnail showed no date
-// at all.
+// The calendar tile: month above, day below. Shared by the Event Date block
+// and the For you card, so both read the same.
 //
 // Children are sized and aligned rather than anchored: anchors on the children
 // of a positioner are not supported.

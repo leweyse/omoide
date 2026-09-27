@@ -4,9 +4,8 @@ import qs.Ui
 
 // One selectable card: a radio, a name, and a line describing what picking it
 // does. Shared by the agent grid and the screenshot-input grid in
-// SettingsDialog, so the two read as one kind of choice rather than a list and
-// a toggle -- and so the radio offset, the gap and the type sizes cannot drift
-// apart between them.
+// SettingsDialog, so the two read as one kind of choice and share the radio
+// offset, gap and type sizes.
 //
 // An unavailable choice is shown dimmed with the reason in `detail` rather
 // than hidden, the same way an uninstalled agent is.

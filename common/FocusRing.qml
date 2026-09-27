@@ -9,77 +9,51 @@ import qs.Commons
 // focus would resize the card and reflow the whole masonry layout on every
 // arrow key. Painted on top, this cannot move anything.
 //
-// The ring grows INWARD rather than outward. Outward would be the more usual
-// look, but MemoryCard, EventCard and RelatedCard all set `clip: true` for their
-// rounded thumbnails, and every page is inside a clipping Flickable, so anything
-// drawn past a card's bounds is cut off. In the events carousel, where cards sit
-// 6px apart, it would also collide with its neighbour. Inward reads as the same
-// two concentric lines with a gap, costs no layout, and cannot be clipped.
+// The ring grows inward. MemoryCard, EventCard and RelatedCard set
+// `clip: true` for their rounded thumbnails, every page sits in a clipping
+// Flickable, and carousel cards sit close together, so anything drawn past a
+// card's bounds would be cut off or collide with a neighbour.
 Rectangle {
   id: root
 
   property bool hasCursor: false
   property bool hot: false
 
-  // Two vertical bars, just inside the left and right edges, instead of a full
-  // ring. Named for what it draws: it started as a single left bar, and a
-  // property called leftOnly that drew both sides would mislead the next reader.
-  //
-  // For a control -- a button, a chip, a text field -- a closed ring inside an
-  // already-bordered box reads as a second frame, and on something only 24px
-  // tall the two lines nearly touch. A pair of side bars brackets the control
-  // without closing a second outline around it. Cards keep the ring: they are
-  // big enough for it to read as depth rather than as a mistake.
-  // Two corner marks -- top-left and bottom-right -- instead of a closed ring.
-  //
-  // The control-sized counterpart to `cornersOnly`. Buttons and fields used to
-  // show a bar down each side, which never sat right: two vertical strokes
-  // parallel to a border already there read as a second frame rather than as a
-  // cursor, and on a short control they had almost no straight run to occupy.
-  // Diagonal corners borrow the language the capture and collection cards
-  // already speak, at a size a control can carry -- and two rather than four,
-  // because four around a 26px button is a box, not a hint.
+  // Two corner marks, top-left and bottom-right, instead of a closed ring: the
+  // control-sized counterpart to `cornersOnly`. On a button, chip or field a
+  // closed ring inside the border reads as a second frame, and four marks
+  // around something that small read as a box.
   property bool diagonalCorners: false
 
-  // Corner marks instead of a closed ring: the rounded corners of the inner
-  // ring, and nothing along the runs. Crop marks -- the same idiom as the bar
-  // icon's capturing state -- for hosts whose content is itself a picture:
-  // a full second outline boxed the artwork in, four corners just point at
-  // it. The stroke is a pixel heavier than the ring's, because four short
-  // arcs carry less ink than a closed outline.
+  // Four corner marks instead of a closed ring, the same idiom as the bar
+  // icon's capturing state, for hosts whose content is itself a picture. The
+  // stroke is a pixel heavier than the ring's, because four short arcs carry
+  // less ink than a closed outline.
   property bool cornersOnly: false
 
 
   // Distance from the host's edge to the ring: the host's own border plus the
-  // transparent gap. `hostBorder` is stated rather than assumed because the
-  // image block's frame is 2px, not 1 -- and that frame is already accent, so
-  // the gap is the only thing distinguishing focused from unfocused there.
+  // transparent gap. `hostBorder` is stated because the image block's frame is
+  // 2px and already accent, so the gap is all that marks focus there.
   property real gap: Style.space(2)
   property real hostBorder: 1
-  //
-  // A control's marks sit one pixel further in again. They are short enough now
-  // that at the shared inset they read as growing out of the border rather than
-  // floating inside it -- the gap that separates a cursor from the frame it
-  // marks has to scale with how little of it there is.
+  // A control's marks sit one pixel further in, so short marks read as
+  // separate from the border rather than growing out of it.
   readonly property real inset: root.hostBorder + root.gap
                                 + (root.diagonalCorners ? Style.space(1) : 0)
 
-  // The surface the ring is drawn over. Stated by the caller, because the ring's
-  // colour is computed from it -- see below.
+  // The surface the ring is drawn over. Stated by the caller, because the
+  // ring's colour is computed from it.
   property color backdrop: Color.popups.background
 
   // Exclusion, computed rather than blended.
   //
-  // A shader Blend cannot be used here: this item is a CHILD of the host it
-  // would need to sample, and a ShaderEffectSource pointing at an ancestor
-  // recurses -- Qt requires `recursive: true` for that and then samples the
-  // PREVIOUS frame, which smears. But exclusion against an opaque colour has a
-  // closed form: white excluded with C is 1 - C. Where the backdrop under the
-  // ring is the host's own fill, this is not an approximation of the blend, it
-  // is the same result arrived at arithmetically.
-  //
-  // Over artwork the closed form is only an approximation; the corner marks
-  // answer that with a line-in-halo pair instead (see below).
+  // A shader Blend cannot be used: this item is a child of the host it would
+  // sample, and a ShaderEffectSource on an ancestor needs `recursive: true`,
+  // which samples the previous frame and smears. Exclusion against an opaque
+  // colour has a closed form, white excluded with C is 1 - C, so over the
+  // host's own fill this is exact. Over artwork it is an approximation, which
+  // the corner marks' edging covers.
   readonly property color tint:
     Qt.rgba(1 - root.backdrop.r, 1 - root.backdrop.g, 1 - root.backdrop.b, 1)
 
@@ -93,10 +67,10 @@ Rectangle {
   // underneath, the ring would vanish along the card's top edge.
   z: 10
 
-  // For a host sitting on arbitrary image content. A single line can vanish into
-  // a photo of the same tone; a light line paired with a dark one cannot, since
-  // whichever loses contrast, the other keeps it. This is the cheap stand-in for
-  // a difference blend -- see the note in ImageBlock.
+  // For a host on arbitrary image content. A single line can vanish into a
+  // photo of the same tone; a light line paired with a dark one cannot, since
+  // whichever loses contrast, the other keeps it. The cheap stand-in for a
+  // difference blend.
   property bool twoTone: false
 
   Rectangle {
@@ -106,9 +80,8 @@ Rectangle {
     color: "transparent"
     radius: Math.max(0, root.radius - 3)
     border.width: 1
-    // The backdrop, like the marks' edging -- not a hardcoded black. In a
-    // dark theme that IS near-black; in a light one the pair flips, and the
-    // two lines stay inverses of each other either way.
+    // The backdrop, not a hardcoded black, so the two lines stay inverses of
+    // each other in a light theme too.
     border.color: Qt.rgba(root.backdrop.r, root.backdrop.g,
                           root.backdrop.b, 0.55)
   }
@@ -118,12 +91,9 @@ Rectangle {
     anchors.fill: parent
     anchors.margins: root.inset
     color: "transparent"
-    // The host's radius less TWO pixels, not less the full inset. Reducing by the
-    // inset is the true concentric maths, but at a 6px radius it left the inner
-    // corners visibly squarer than the outer ones. A single pixel keeps both
-    // curves reading as the same shape while still tucking the inner one in.
-    // Reducing by the full inset (3 here) made the inner corners look squarer
-    // than the outer ones.
+    // The host's radius less two pixels, not less the full inset. True
+    // concentric maths leaves the inner corners visibly squarer than the outer
+    // ones at small radii.
     radius: Math.max(0, root.radius - 2)
     // 1px either way: the accent border on the card is what announces focus, so
     // a heavy inner line here would just compete with it.
@@ -134,25 +104,16 @@ Rectangle {
   }
 
   // The corner marks. Each is a clipped window onto a rectangle the size of
-  // the full ring, showing only its corner -- a rounded L cannot be drawn
-  // from rectangles directly, and this way the curve is the ring's real
-  // corner radius rather than an approximation. Same construction as the
-  // capturing state of SpaceIcon.
-  // The corner marks. Each is a clipped window onto a rectangle the size of
-  // the full ring, showing only its corner -- a rounded L cannot be drawn
-  // from rectangles directly, and this way the curve is the ring's real
-  // corner radius rather than an approximation. Same construction as the
-  // capturing state of SpaceIcon.
+  // the full ring, showing only its corner. A rounded L cannot be drawn from
+  // rectangles directly, and this way the curve is the ring's real corner
+  // radius. Same construction as the capturing state of SpaceIcon.
   //
   // Three strokes per mark: the tint line with a 1px edging of the backdrop's
-  // own colour on either side. The pair is the accessibility guarantee: line
-  // and edging are inverses of each other, so on any artwork, any theme, and
-  // any colour vision, whichever melts into the content, the other separates
-  // it -- luminance does the work, never hue. Thin edgings rather than one
-  // fat halo, because a 4px band swallowed the curve and the corner read as a
-  // squared bracket. A pure per-pixel inversion was tried before either and
-  // rejected: exclusion maps mid-grey to mid-grey, so the marks vanished on
-  // exactly the content they were meant to survive.
+  // colour on either side. Line and edging are inverses, so on any artwork,
+  // theme or colour vision one of them separates the mark from the content;
+  // luminance does the work, never hue. Keep the edgings thin: a wide halo
+  // swallows the curve. A per-pixel inversion does not work, because exclusion
+  // maps mid-grey to mid-grey.
   Item {
     id: corners
     visible: root.cornersOnly || root.diagonalCorners
@@ -163,26 +124,16 @@ Rectangle {
       anchors.fill: parent
       anchors.margins: root.inset
 
-      // The host's radius less three, sitting `inset` (4) in from its edge.
-      //
-      // True concentric maths would be the full inset, and the closed ring
-      // below explains why that is not used: at a 6px radius it turns the inner
-      // corners visibly squarer than the outer ones. But two was a pixel too
-      // generous for the corner marks -- against a capture card's rounded frame
-      // they read as rounder than the curve they sit inside. Three splits it:
-      // the arc still reads as the same shape as the host's corner without
-      // bulging out of it.
+      // The host's radius less three: close enough to concentric to read as
+      // the host's own corner, without bulging rounder than the curve the mark
+      // sits inside.
       readonly property real ringRadius: Math.max(0, root.radius - 3)
       // Past the curve and onto the straight edge, so the mark reads as a
       // corner of the ring rather than a dot. Capped so opposite corners can
       // never meet on a small host.
       //
-      // Shorter on a control than on a card, and by length rather than weight:
-      // the stroke stays the same so the two read as one language, but a card's
-      // run is sized against a 380px edge and the same run on a 26px button
-      // reaches nearly halfway along it, which stops being a corner and starts
-      // being a bracket around the label. Enough to clear the curve and show a
-      // little straight edge is all a control needs.
+      // Shorter on a control than on a card, by length rather than weight, so
+      // the mark stays a corner and does not become a bracket around the label.
       readonly property real armRun:
         root.diagonalCorners ? Style.space(4) : Style.space(6)
       readonly property real arm:

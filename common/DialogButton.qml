@@ -5,21 +5,15 @@ import qs.Ui
 // A button for the plugin's dialogs, where focus shows in the outline and
 // never in the fill.
 //
-// Two departures from a bare qs.Ui Button, both of which every dialog here was
-// already writing out by hand:
+// Two departures from a bare qs.Ui Button:
 //
-// The fill. Button ranks a focus FILL above hover in its colour precedence, so
-// tabbing onto a control both lit its border and washed a panel of colour in
-// behind the label. On something already outlined that is one signal too many:
-// the border colour and the ring just inside it have said where the keyboard
-// is, and the fill only spends contrast against the text sitting on top of it.
-// Worse on the primary button, whose selected fill it replaced -- so Save
-// stopped looking primary at the moment it was focused. Chip.qml already
-// follows this rule for chips; this is the same rule for buttons.
+// The fill. Button ranks a focus fill above hover, which spends contrast
+// against the label and, on the primary button, replaces the selected fill so
+// Save stops looking primary while focused. The border and the ring already
+// show focus. Chip.qml follows the same rule.
 //
-// The border. Border.controlSpec("focus") applies focusBorderAlpha, which
-// defaults to 0.25, so the accent arrived at quarter strength and read as the
-// same muted grey as an unfocused control. Border.flat applies no alpha.
+// The border. Border.controlSpec("focus") applies focusBorderAlpha, which makes
+// the accent hard to tell from an unfocused control. Border.flat applies none.
 //
 // Pressed folds into hover rather than keeping its own fill: Button holds that
 // state on an internal MouseArea a derived type cannot read, and a pointer that

@@ -9,15 +9,14 @@ import "../MemoryModel.js" as Model
 
 // Blocks, then three fixed sections in the reference's order: Related
 // captures, Collections, and the accuracy disclaimer. Those are page
-// furniture, not blocks -- the model never emits them and cannot reorder them.
+// furniture, not blocks: the model never emits them and cannot reorder them.
 Flickable {
   id: root
 
-  // Whether this page is the one holding the keyboard. The window hands the
-  // rail and the page the keyboard one at a time, and the rail already hides
-  // its cursor when it is not the holder -- a page that kept drawing its own
-  // put two cursors on screen at once, so a highlighted row looked ready for
-  // Enter while the keys were still going to the sidebar.
+  // Whether this page holds the keyboard. The window gives it to the rail or
+  // the page, never both, so the page draws its cursor only while it holds it.
+  // Otherwise a highlighted card looks ready for Enter while the keys still go
+  // to the sidebar.
   property bool hasKeyboard: true
 
   property var service: null
@@ -67,9 +66,8 @@ Flickable {
   onMemoryIdChanged: reload()
 
   // The item editor is a separate surface, so a delete or a completion made
-  // there has to reach this list somehow. Every mutation rewrites index.json
-  // and pings the service, so its index changing is the general "data moved"
-  // signal -- no direct wiring between the two surfaces needed.
+  // there has to reach this list somehow. Every mutation makes the service pull
+  // a new index, so its index changing is the general "data moved" signal. The two surfaces need no direct wiring.
   Connections {
     target: root.service
     function onIndexChanged() { root.reload() }
@@ -83,15 +81,14 @@ Flickable {
   }
 
   // Collections this memory looks like it belongs in: the agent's tags matched
-  // against names that already exist. OFFERED, never applied -- a collection
+  // against names that already exist. OFFERED, never applied: a collection
   // records a decision, and a guess written into one is indistinguishable from
-  // a deliberate filing afterwards. `links` was removed from this plugin for
-  // exactly that reason.
+  // a deliberate filing afterwards.
   // --- keyboard ------------------------------------------------------------
   //
   // Three regions: the block cards, the related captures, then the badge row of
   // collections and links. Arrows walk the cards, which is also how this page
-  // scrolls, so EVERY card takes the cursor -- including the ones Enter does
+  // scrolls, so EVERY card takes the cursor, including the ones Enter does
   // nothing on.
 
   // The blocks in the order they are drawn, not the order they are stored: the
@@ -99,9 +96,9 @@ Flickable {
   // three BlockRenderer instances below. A cursor that walked stored order would
   // jump around the page.
   // A function of the memory rather than a binding read from elsewhere, so it can
-  // be called with the value that just arrived. Reading the `orderedBlocks`
-  // binding inside memory's own change handler returned the PREVIOUS ordering --
-  // empty on first load -- so seeding the cursor there focused nothing.
+  // be called with the value that just arrived. Read inside memory's own change
+  // handler, the `orderedBlocks` binding can still hold the PREVIOUS ordering,
+  // which is empty on first load.
   function orderBlocks(mem) {
     var all = (mem && mem.blocks) || []
     var img = [], evt = [], rest = []
@@ -117,15 +114,14 @@ Flickable {
 
   readonly property var orderedBlocks: root.orderBlocks(root.memory)
 
-  // related.linked, not `siblings`: that property is declared for a prev/next
-  // walk that was never wired up, so nothing ever assigns it. The section
+  // related.linked, not `siblings`: nothing assigns that property. The section
   // loads its own link set.
   readonly property var relatedRows: related.linked || []
 
   readonly property int regionCount: 3
   property int region: 0
-  // Focused block, by id -- the blocks live in three renderers, so an index
-  // would mean nothing.
+  // Focused block, by id. The blocks live in three renderers, so an index would
+  // mean nothing.
   property string blockCursor: ""
   property int relatedCursor: -1
   property int badgeCursor: -1
@@ -161,7 +157,7 @@ Flickable {
 
   // Explicit index rather than reading a region-derived binding: the order
   // between a binding updating and its own property's change handler is
-  // undefined, and reading one in here returns the region you just left.
+  // undefined, and reading one in here can return the region just left.
   function enterRegion(i) {
     root.todoCursor = -1
     root.blockCursor = ""
@@ -186,7 +182,7 @@ Flickable {
   // land, and recover if a reload dropped the block it was sitting on.
   //
   // Skipped while drilled into a to-dos card: ticking a row reloads the memory,
-  // and re-seeding there would throw you back out to the card.
+  // and re-seeding there would throw the cursor back out to the card.
   onMemoryChanged: {
     if (root.region !== 0 || root.todoCursor >= 0) return
     // Ordered from the memory in hand. blockIndex() reads the binding, which is
@@ -212,9 +208,8 @@ Flickable {
     var up = event.key === Qt.Key_Up
 
     // One continuous column. Down runs off the last block into Related, off
-    // Related into Collections, and Up walks back -- the page reads as a single
-    // scroll, so a vertical key that stopped dead at a section boundary just
-    // looked like the arrows had broken.
+    // Related into Collections, and Up walks back. The page reads as a single
+    // scroll, so a vertical key must not stop dead at a section boundary.
     if (down || up) {
       if (root.region === 0) {
         var moved = Model.stepList(root.orderedBlocks.length, root.blockIndex(),
@@ -304,9 +299,9 @@ Flickable {
     return out
   }
 
-  // What Enter means depends on the card, because only four of the seven types
-  // have an editor. An inert card is still focusable -- it is part of the scroll
-  // path -- so Enter there simply does nothing.
+  // What Enter means depends on the card, because only some block types have
+  // an editor. An inert card is still focusable, as part of the scroll path, so
+  // Enter there simply does nothing.
   function activateBlock(block) {
     if (!block) return
     var t = block.type
@@ -314,11 +309,10 @@ Flickable {
         || t === "text" || t === "quote" || t === "code") {
       root.editBlock(block.id, t, block.payload || ({}))
     } else if (t === "event") {
-      // The ITEM editor, not the block editor. An event block's payload is just
-      // an item_id -- there is no prose in it -- so the block editor showed an
-      // empty "Text" field. Its date, place and reminders live on the item, and
-      // that is also where the card's own pencil goes, so the keyboard and the
-      // mouse now agree.
+      // The ITEM editor, not the block editor. An event block's payload is only
+      // an item_id, with no prose in it. Its date, place and reminders live on
+      // the item, which is also where the card's own pencil goes, so the keyboard
+      // and the mouse agree.
       var ev = (block.payload && block.payload.item_id) || ""
       if (ev.length) root.openItem(ev)
     } else if (t === "image") {
@@ -363,16 +357,14 @@ Flickable {
     var badge = root.badges[i]
     if (!badge) return
     // A collection this memory is already in is a plain label with no click
-    // handler, so Enter does nothing there either -- the keyboard must not
-    // invent an action the mouse does not have.
+    // handler, so Enter does nothing there either. The keyboard must not invent
+    // an action the mouse does not have.
     if (badge.kind === "suggest") root.fileInto(badge.name)
     else if (badge.kind === "add") root.collectionRequested()
   }
 
-  // Real geometry, from whichever of the three renderers holds the card. The
-  // first version scrolled by proportion of the content with a half-a-screen
-  // deadzone, which meant a page only a little taller than the viewport never
-  // scrolled at all -- and that is the common case here.
+  // Real geometry, from whichever of the three renderers holds the card, so a
+  // page only a little taller than the viewport still scrolls to it.
   function ensureBlockVisible() {
     var id = root.blockCursor
     if (!id.length) return
@@ -418,10 +410,8 @@ Flickable {
   Keys.onLeftPressed: root.step(-1)
   Keys.onRightPressed: root.step(1)
 
-  // Floating, at the top right, OUTSIDE the column. In the column it was a
-  // 26px header row that pushed the whole page down; here it adds no height and
-  // cannot shift anything. It scrolls with the content, which is where it was
-  // before.
+  // Floating, at the top right, OUTSIDE the column, so it adds no height and
+  // cannot shift anything. It scrolls with the content.
   //
   // The menu itself is owned by the window rather than hung off this button: a
   // child positioned outside its parent's bounds renders but is never
@@ -505,7 +495,7 @@ Flickable {
 
     // Extra air above and below, on top of the page's own spacing. The title
     // is the hinge between the capture and what was made of it, and at the
-    // stack's default gap it read as just another row.
+    // stack's default gap it reads as just another row.
     Item {
       id: titleRow
       width: parent.width
@@ -547,7 +537,7 @@ Flickable {
     }
 
     // The event, before everything else. When a capture is about something
-    // happening at a time, that is the thing you came back for -- ahead of the
+    // happening at a time, that is what the user came back for, ahead of the
     // note, the source and the summary. Hoisted here rather than reordered in
     // the database, so the stored positions stay as the agent wrote them.
     BlockRenderer {
@@ -684,7 +674,7 @@ Flickable {
       Text {
         width: parent.width
         // With the reason, when there is one. An unexplained failure tells the
-        // user nothing they can act on, and until schema v5 nothing recorded it.
+        // user nothing they can act on.
         textFormat: Text.PlainText
         text: (root.memory.aiError && root.memory.aiError.length)
               ? "Enrichment failed: " + root.memory.aiError
@@ -696,9 +686,8 @@ Flickable {
         font.pixelSize: Style.font.body
       }
 
-      // A reason with nothing to do about it is just bad news. Anything you
-      // have corrected by hand survives the retry -- that is what the block
-      // editor's `edited` flag buys.
+      // A reason with nothing to do about it is just bad news. Anything corrected
+      // by hand survives the retry, because the block editor sets `edited`.
       Chip {
         label: "Try again"
         tint: Color.accent

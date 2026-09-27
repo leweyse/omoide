@@ -6,24 +6,16 @@ import "../MemoryModel.js" as Model
 
 // One dialog for "type something, pick from a list".
 //
-// Both things it serves -- linking a memory and filing into a collection -- were
-// inline modes that swapped UI in place. As dialogs they stop shifting the page
-// under the cursor, and focus containment comes for free: the sheet takes the
-// keyboard, arrows walk the rows, Esc leaves.
+// It serves linking a memory and filing into a collection. As a dialog it does
+// not shift the page under the cursor, and it contains focus: the sheet takes
+// the keyboard, arrows walk the rows, Esc leaves.
 //
 // The owner supplies `rows` and reloads them when `query` changes; this component
 // owns no data of its own.
-// A FocusScope, not a plain Item.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 
@@ -35,7 +27,7 @@ FocusScope {
   // [{ id, label, sublabel }]
   property var rows: []
   // When true, Enter on a non-empty query that matches no row submits the text
-  // itself -- that is how a brand new collection gets created.
+  // itself. That is how a new collection gets created.
   property bool allowFreeText: false
   property string emptyText: "Nothing to choose from."
 
@@ -67,12 +59,11 @@ FocusScope {
 
   // A place to park focus, inside the scope so it stays on the parent chain.
   //
-  // NOT the scope root itself: a FocusScope given focus delegates it back to the
-  // child it last had, so `escapeTo: root` bounced straight back to the text
-  // field, whose handler accepted the key again -- Escape appeared to do nothing
-  // at all. A plain Item holds focus without forwarding it, and keys from it
-  // still bubble up to the root handler below. Zero-sized, so it cannot affect
-  // layout or swallow a click.
+  // Not the scope root itself: a FocusScope given focus hands it back to the
+  // child it last had, so `escapeTo: root` would return focus to the text field
+  // and Escape would do nothing. A plain Item holds focus without forwarding it,
+  // and keys from it still bubble up to the root handler below. Zero-sized, so
+  // it cannot affect layout or swallow a click.
   Item { id: focusSink }
 
   Scrim {
@@ -113,8 +104,7 @@ FocusScope {
       anchors.top: parent.top
       anchors.margins: Style.spacing.panelPadding
       // Title, field and results are three sections, not three controls, so
-      // they get a section-sized gap. At xl (10) the heading sat on the field
-      // and the field on the results.
+      // they get a section-sized gap.
       spacing: Style.space(20)
 
       Text {
@@ -182,8 +172,7 @@ FocusScope {
         width: parent.width
         spacing: Style.spacing.sm
         // Invisible, not merely empty: a zero-height Column still takes a
-        // spacing slot from its parent, which left 20px of dead air under the
-        // "nothing to choose from" line.
+        // spacing slot from its parent.
         visible: (root.rows || []).length > 0
 
         Repeater {
@@ -256,9 +245,8 @@ FocusScope {
   function moveCursor(d) {
     var n = (root.rows || []).length
     if (n === 0) { root.cursor = -1; return }
-    // Only Down enters the list. stepList treats -1 as "unset" and would have
-    // Up jump straight to the LAST row, which reads as the cursor teleporting
-    // when all you did was press Up in the text field.
+    // Only Down enters the list. stepList treats -1 as unset and would send Up
+    // to the last row, which reads as the cursor teleporting from the field.
     if (root.cursor < 0 && d < 0) return
     var moved = Model.stepList(n, root.cursor, d)
     if (moved === null) {

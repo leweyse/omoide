@@ -8,11 +8,10 @@ import "../components"
 Flickable {
   id: root
 
-  // Whether this page is the one holding the keyboard. The window hands the
-  // rail and the page the keyboard one at a time, and the rail already hides
-  // its cursor when it is not the holder -- a page that kept drawing its own
-  // put two cursors on screen at once, so a highlighted row looked ready for
-  // Enter while the keys were still going to the sidebar.
+  // Whether this page holds the keyboard. The window gives it to the rail or
+  // the page, never both, so the page draws its cursor only while it holds it.
+  // Otherwise a highlighted row looks ready for Enter while the keys still go
+  // to the sidebar.
   property bool hasKeyboard: true
 
   property var service: null
@@ -25,8 +24,8 @@ Flickable {
   // --- keyboard ------------------------------------------------------------
   //
   // Two regions: the events carousel, then the task rows. Tab crosses between
-  // them, and so does Down at the bottom of Events -- the carousel is one row
-  // deep, so Down there has nothing else to mean.
+  // them, and so does Down in Events. The carousel is one row deep, so Down
+  // there has nothing else to mean.
 
   readonly property var events: root.index.events || []
   readonly property var tasks: (root.index.todos || []).slice(0, 8)
@@ -77,9 +76,8 @@ Flickable {
     if (event.key === Qt.Key_Down || event.key === Qt.Key_Up) {
       var d = event.key === Qt.Key_Down ? 1 : -1
 
-      // Events is ONE row deep. It owns the horizontal keys, so a vertical key
-      // there can only mean "leave" -- stepping the events list on Down walked
-      // to the next card instead of crossing into Tasks.
+      // Events is one row deep and owns the horizontal keys, so a vertical key
+      // there only means "leave".
       if (root.region === 0) {
         if (d > 0 && root.tasks.length > 0) root.region = 1
         return true
@@ -162,8 +160,12 @@ Flickable {
 
       // The clip that lets the row scroll, held a pixel OUTSIDE the cards: a
       // focused card draws its accent border on the device pixel that rounds
-      // just outside its own bounds, and a clip on that same line ate the
-      // border of the card at x 0 whole. The row itself stays where it was.
+      // just outside its own bounds, and a clip on that line cuts the first
+      // card's border. Above and below too: where the cards' top and bottom
+      // pixel rows land against a clip that fits them exactly varies from frame
+      // to frame, so a scrolled row loses its top edge. The wrapper holds the
+      // row's own height, so the layout does not grow. The row itself keeps its
+      // position.
       Item {
         id: eventsClip
         readonly property real bleed: Math.max(1, Style.space(1))

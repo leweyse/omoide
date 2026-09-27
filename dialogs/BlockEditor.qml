@@ -6,23 +6,15 @@ import "../common"
 // Correcting what the agent wrote.
 //
 // Two fields, because a block has at most two editable parts: a heading it
-// wrote itself (only lists have one) and its body. Everything else about a
-// block -- its type, its position, the items it points at -- is structure, not
-// content, and is not editable here.
+// wrote itself (only lists have one) and its body. Its type, position and the
+// items it points at are structure, not content, and are not editable here.
 //
-// Saving marks the row `edited`, which is what stops a later retry overwriting
-// the correction. That flag is the whole reason this sheet is worth having.
-// A FocusScope, not a plain Item.
+// Saving marks the row `edited`, which stops a later retry overwriting the
+// correction.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and every control inside sits on the parent
+// chain the Escape handler below listens on.
 FocusScope {
   id: root
 
@@ -67,14 +59,9 @@ FocusScope {
 
   visible: opened
 
-  // Escape, on the ROOT so it catches the key wherever focus happens to be.
-  //
-  // Key events travel up the focused item's PARENT chain. An inner catcher that
-  // is a sibling of the content is never on that chain, so once anything else
-  // took focus -- a button, a chip, the memory link -- Escape passed the catcher
-  // by, reached SpaceWindow, and died there: unwind() steps aside for an open
-  // overlay, expecting the overlay to handle its own. The dialog became
-  // uncloseable by keyboard.
+  // Escape, on the root, because key events travel up the focused item's
+  // parent chain and SpaceWindow's unwind() leaves an open overlay to close
+  // itself. A catcher beside the content would miss keys from a focused button.
   Keys.onPressed: function (event) {
     if (event.key === Qt.Key_Escape) {
       // Only on a real press: holding Escape auto-repeats, and each
@@ -108,10 +95,8 @@ FocusScope {
 
     MouseArea { anchors.fill: parent; onClicked: {} }
 
-    // Esc closes the dialog. This is the rung the fields blur INTO: they release
-    // focus on the first Esc, and the second lands here. Without it the dialog
-    // became uncloseable by keyboard once a field had let go, because
-    // SpaceWindow's unwind() steps aside for whatever overlay is open.
+    // Esc closes the dialog. The fields release focus on the first Esc and
+    // blur into this item, so the second Esc lands here.
     Item {
       id: editorKeys
       anchors.fill: parent
@@ -177,18 +162,15 @@ FocusScope {
           font.pixelSize: Style.font.body
         }
 
-        // The plugin's one multi-line input, shared with the to-do title. It used to
-        // be a TextEdit hand-dressed in a BorderSurface here, because the kit has no
-        // multi-line field -- which meant this dialog carried its own copy of the
-        // accent border, the corner marks and the Escape handoff, and drifted from
-        // the fields around it whenever one of those changed.
+        // The plugin's one multi-line input, shared with the to-do title, so the
+        // accent border, the corner marks and the Escape handoff match the
+        // fields around it.
         AccentTextArea {
           id: bodyEdit
           escapeTo: editorKeys
           width: parent.width
-          // Opens at the height the hand-built box had, and stops at twelve lines,
-          // which is a full paragraph. Past that it scrolls rather than growing, so
-          // a long summary cannot push the dialog's buttons off the bottom.
+          // Past maxLines it scrolls rather than growing, so a long summary
+          // cannot push the dialog's buttons off the bottom.
           minLines: 6
           maxLines: 12
           selectByMouse: true
@@ -221,7 +203,7 @@ FocusScope {
               hot: false
             }
             // Full-strength accent on focus: controlSpec("focus") applies
-            // focusBorderAlpha (0.25), which reads as grey.
+            // focusBorderAlpha, which reads as grey.
             borderSpec: activeFocus
                         ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
                         : Border.controlSpec(
@@ -246,7 +228,7 @@ FocusScope {
               hot: false
             }
             // Full-strength accent on focus: controlSpec("focus") applies
-            // focusBorderAlpha (0.25), which reads as grey.
+            // focusBorderAlpha, which reads as grey.
             borderSpec: activeFocus
                         ? Border.flat(Color.accent, Math.max(1, Style.space(1)))
                         : Border.controlSpec(

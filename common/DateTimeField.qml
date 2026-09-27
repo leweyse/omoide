@@ -5,9 +5,8 @@ import qs.Ui
 // A date and a time, as two masked fields. DD/MM/YYYY, which is how the value
 // reads locally; the caller converts to what the CLI parses.
 //
-// The mask is what makes this editable at all: it fixes the shape, so only
-// digits go in and the caret walks between segments instead of the user
-// retyping a whole phrase to move an appointment by an hour.
+// The mask fixes the shape, so only digits go in and the caret walks between
+// segments.
 //
 // Values are read out of the fields rather than bound in both directions. A
 // two-way binding between a property and `text` fights itself the moment the
@@ -48,9 +47,9 @@ Row {
     font.pixelSize: Style.font.subtitle
 
     // Caret to the front on entry. With a mask, Qt leaves it wherever the
-    // pointer landed or wherever it was last, so typing a fresh date would
-    // overwrite the middle of the old one. callLater because Qt sets the
-    // position itself as part of taking focus.
+    // pointer landed or where it last was, so typing would overwrite the middle
+    // of the value. callLater because Qt sets the position itself as part of
+    // taking focus.
     onActiveFocusChanged: if (activeFocus)
       Qt.callLater(function () { dateField.cursorPosition = 0 })
   }

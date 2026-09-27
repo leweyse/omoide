@@ -6,20 +6,12 @@ import "../common"
 
 // A capture at full size.
 //
-// Clicking a screenshot used to jump straight to tensaku, which is an editor --
-// a heavy answer to "let me see that properly". This shows the image, and
-// offers the editor as one of the things you can then do with it.
-// A FocusScope, not a plain Item.
+// Shows the image, and offers the editor (tensaku) as one of the things to do
+// with it, rather than opening an editor to answer "let me see that properly".
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 
@@ -79,8 +71,8 @@ FocusScope {
     RoundedImage {
       id: shot
       anchors.centerIn: parent
-      // Fits the dialog with room to breathe, at the image's own aspect ratio
-      // so nothing is cropped -- the point here is seeing all of it.
+      // Fits the dialog with room to breathe, at the image's own aspect ratio,
+      // so nothing is cropped.
       readonly property real maxWidth: parent.width - Style.spacing.panelPadding * 2
       readonly property real maxHeight: parent.height - Style.space(70)
       width: shot.sourceAspect > 0

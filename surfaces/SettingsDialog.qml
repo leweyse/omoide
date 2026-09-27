@@ -8,23 +8,13 @@ import "../components"
 
 // Choosing the model that enriches captures.
 //
-// A dialog in the plugin, not gum in a terminal. The terminal route opened a
-// window with nothing in it -- xdg-terminal-exec's -e took only the binary and
-// dropped the subcommand -- and a themed surface is what the rest of the
-// plugin already is.
+// Its own surface, owned by the service rather than the Space dialog, so it
+// opens without Space.
 //
-// Its own surface, owned by the service rather than the Space dialog: choosing
-// a model has nothing to do with browsing memories, and hosting it inside
-// Space meant both had to open at once.
-// A FocusScope, not a plain Item.
-//
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden or a field swallowing Escape left NOTHING
-// focused, and with nothing focused no Keys handler in the dialog could fire.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler sees keys wherever focus actually sits.
+// The root is a FocusScope, so focus falls back to it when the focused child
+// disappears or declines a key. With nothing focused, no Keys handler here
+// would fire. Being the root also puts it on the parent chain of every
+// control, so the Escape handler sees keys wherever focus sits.
 FocusScope {
   id: root
 
@@ -51,8 +41,7 @@ FocusScope {
 
   readonly property var providers: (config && config.providers) || []
 
-  // Presets plus custom, as one list: custom used to be a separate row below
-  // the repeater, which cannot participate in a grid layout.
+  // Presets plus custom, as one list, so custom takes a cell in the grid.
   readonly property var choices: {
     var out = []
     for (var i = 0; i < root.providers.length; i++) out.push(root.providers[i])
@@ -74,11 +63,10 @@ FocusScope {
       if (root.providers[i].id === root.chosen) return root.providers[i]
     return null
   }
-  // Whether `image` is offerable at all. A custom command is its own case:
-  // the CLI hands it the image path when visionMode is "image" (run_ai in
-  // cli/src/enrich.c), so it must be selectable -- but we cannot claim on
-  // the user's behalf that their command reads images, so it carries no
-  // "reads images" marker.
+  // Whether `image` is offerable at all. A custom command gets the image path
+  // when visionMode is "image" (run_ai in cli/src/enrich.c), so it is
+  // selectable. It carries no "reads images" marker, because nothing here
+  // knows whether the user's command reads them.
   readonly property bool visionCapable: root.isCustom
     || !!(root.chosenProvider && root.chosenProvider.vision)
   onVisionCapableChanged: if (!root.visionCapable) root.vision = "ocr"
@@ -190,10 +178,9 @@ FocusScope {
               font.pixelSize: Style.font.title
             }
 
-            // Turning enrichment off is a rare, destructive-ish action, so it
-            // sits out of the way of Cancel / Use this model rather than
-            // beside them where it can be hit by accident. The tooltip carries
-            // what the button no longer says in words.
+            // Turning enrichment off is rare and loses the choice, so it sits
+            // away from Cancel and Use this model. The tooltip says what the
+            // icon does.
             PanelActionButton {
               id: turnOff
               anchors.right: parent.right
@@ -241,9 +228,8 @@ FocusScope {
 
           // One row per preset, plus custom. An uninstalled provider is shown
           // disabled with the reason rather than hidden.
-          // Two columns. Seven choices at a comfortable gap do not fit the
-          // dialog in one column, and shrinking the gap to make them fit is
-          // what made the list hard to scan in the first place.
+          // Two columns: every choice fits at a comfortable gap, which one
+          // column cannot do without cramping the list.
           Grid {
             id: providerGrid
             width: parent.width
@@ -296,8 +282,8 @@ FocusScope {
             placeholderText: "my-agent --json"
             onTextChanged: root.customCommand = text
             Keys.onEscapePressed: function (event) {
-              // Only on a real press. Holding Escape auto-repeats, and each repeat
-              // would dismiss another layer -- a held key unwound the whole stack.
+              // Only on a real press. Holding Escape auto-repeats, and each
+              // repeat would dismiss another layer.
               if (event.isAutoRepeat) { event.accepted = true; return }
               keys.forceActiveFocus()
               event.accepted = true
@@ -317,8 +303,8 @@ FocusScope {
             placeholderText: "model to run, e.g. llama3.2"
             onTextChanged: root.model = text
             Keys.onEscapePressed: function (event) {
-              // Only on a real press. Holding Escape auto-repeats, and each repeat
-              // would dismiss another layer -- a held key unwound the whole stack.
+              // Only on a real press. Holding Escape auto-repeats, and each
+              // repeat would dismiss another layer.
               if (event.isAutoRepeat) { event.accepted = true; return }
               keys.forceActiveFocus()
               event.accepted = true
@@ -338,13 +324,9 @@ FocusScope {
               font.pixelSize: Style.font.body
             }
 
-            // The same cards as the agent grid above, in the same two columns.
-            // This was a two-segment toggle with its description underneath,
-            // which meant the description only ever described the mode you had
-            // already picked -- you had to select the other one to find out
-            // what it did. As cards both trade-offs are on screen at once, and
-            // `image` carries its own reason when the chosen agent cannot use
-            // it, exactly as an uninstalled agent does.
+            // The same cards as the agent grid above, so both trade-offs are
+            // on screen at once. `image` carries its own reason when the chosen
+            // agent cannot use it, as an uninstalled agent does.
             Grid {
               id: visionGrid
               width: parent.width

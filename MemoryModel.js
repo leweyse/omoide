@@ -1,6 +1,6 @@
-// Pure helpers for the QML side. No Qt types in here on purpose: the same file
-// is required by node for unit tests, which is the convention every *Model.js
-// in the Omarchy shell follows.
+// Pure helpers for the QML side. No Qt types in here on purpose, so node can
+// require the file outside the shell, the convention every *Model.js in the
+// Omarchy shell follows.
 //
 // Time formatting lives here and nowhere else, so the to-do inside a memory and
 // the same to-do in the archive can never disagree about how a date reads.
@@ -30,7 +30,7 @@ function dayOffset(target, reference) {
   return Math.round((a - b) / 86400000)
 }
 
-// "12:30 today", "14:30 tomorrow", "18:30 22 Dec" -- the reference's phrasing.
+// "12:30 today", "14:30 tomorrow", "18:30 22 Dec".
 function formatWhen(iso, now) {
   var when = parseDate(iso)
   if (!when) return ""
@@ -102,8 +102,8 @@ function digestLine(digest) {
 //
 // `cursor` of -1 means nothing is focused yet: the first press enters at the top
 // going down and at the bottom going up, rather than at whichever end -1 + d
-// happens to fall on. Returns null when the press should be left alone -- an
-// empty list, or an arrow already at the end -- so the caller can hand the key
+// happens to fall on. Returns null when the press should be left alone (an
+// empty list, or an arrow already at the end), so the caller can hand the key
 // back for something else to use. That is what lets Left at the first Tasks tab
 // fall through to the sidebar instead of being swallowed.
 function stepList(count, cursor, d) {
@@ -125,7 +125,7 @@ function stepList(count, cursor, d) {
 // Returns null to mean "I did not use this key", which is what lets Left at the
 // first column fall through to the sidebar.
 //
-// Three rules that are easy to get wrong, all covered by tests:
+// Three rules that are easy to get wrong:
 //   - a first press with no cursor enters at the top of the first non-empty
 //     column, whichever direction it was
 //   - sideways into a shorter column clamps to that column's last row, so the
@@ -182,7 +182,7 @@ function columnAt(x, columnCount, columnWidth, gap) {
 // The CLI verb for acting on a to-do row from the keyboard, or null when the row
 // cannot be acted on.
 //
-// Three pages show these rows -- Tasks, For you, and a memory's to-dos card --
+// Three pages show these rows (Tasks, For you, and a memory's to-dos card),
 // and each has the row as plain data rather than as a delegate it can call a
 // method on. Deciding here keeps one answer to "what does Space do to this row"
 // instead of three that can drift.
@@ -261,7 +261,7 @@ function collectionStem(text) {
 // Collections a memory looks like it belongs in: its tags matched against the
 // names that already exist, minus the ones it is already in.
 //
-// Pure on purpose -- tags in, names out -- so the matching rule is testable
+// Pure on purpose, tags in and names out, so the matching rule is testable
 // without a running shell, and so nothing here can write anything.
 function suggestCollections(tags, allNames, currentNames) {
   var wanted = {}, already = {}, out = []
@@ -295,8 +295,8 @@ function formatLead(offsetMin) {
          + (value > 0 ? " after" : " before")
 }
 
-// One reminder as a line of text. A relative alarm reads as a lead time, an
-// absolute one as a date -- the same row can be either.
+// One reminder as a line of text. A relative alarm reads as a lead time and an
+// absolute one as a date; the same row can be either.
 function reminderLine(reminder) {
   if (!reminder) return ""
   var lead = formatLead(reminder.offsetMin)
@@ -348,14 +348,14 @@ function linesToItems(body) {
 }
 
 // Qt's Text defaults to AutoText, which sniffs its input for markup and renders
-// it as rich text -- and rich text loads <img src> over the network. Everything
+// it as rich text, and rich text loads <img src> over the network. Everything
 // a block carries is derived from whatever was on screen when the capture was
 // taken, so it is untrusted: a caption that says <img src="http://host/?x"> is a
 // request off this machine, made by the desktop, on open.
 //
 // Fields that need no markup set textFormat: Text.PlainText at the binding,
 // which is the cheaper guarantee. This exists for the one place that does want
-// markup of its own -- a list item's bold label -- where the model's text has to
+// markup of its own, a list item's bold label, where the model's text has to
 // survive being concatenated into a StyledText string.
 function escapeMarkup(text) {
   return String(text === null || text === undefined ? "" : text)

@@ -6,10 +6,9 @@ import "../MemoryModel.js" as Model
 
 // The whole to-do list of one memory, edited as a list.
 //
-// The per-item editor handles one to-do's date and reminders; this handles the
-// list itself -- add another, retitle the ones that are there, drop the ones that
-// are not wanted. Those are list operations, and doing them one dialog at a time
-// through the item editor meant reopening it once per to-do.
+// The per-item editor handles one to-do's date and reminders. This handles the
+// list itself: add another, retitle the ones there, drop the ones not wanted,
+// all in one dialog rather than one per to-do.
 //
 // Rows are staged in `draft` and nothing is written until Save, so Cancel is a
 // real undo. `draft` is the single truth: a delete rewrites it rather than
@@ -27,7 +26,7 @@ FocusScope {
   // block_id null, which means a new row would save and never show up.
   property string blockId: ""
 
-  // [{ id, title }] -- id empty for a row that does not exist yet.
+  // [{ id, title }], with id empty for a row that does not exist yet.
   property var draft: []
   // What was loaded, to diff against on save.
   property var loaded: []

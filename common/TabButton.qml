@@ -5,11 +5,10 @@ import qs.Ui
 // A tab trigger: a button-sized control whose LABEL can be underlined when
 // selected, with its count kept separate.
 //
-// Not qs.Ui Button, which takes its label as one `text` string and exposes no
-// handle on the Text that renders it -- so there is no way to underline from
-// outside, and no way to underline the name without dragging the count into the
-// rule with it. The chrome here is deliberately the kit's: the same fills, the
-// same control paddings, so a tab still reads as a button next to one.
+// Not qs.Ui Button, which takes its label as one `text` string with no handle
+// on the Text that renders it, so the name cannot be underlined apart from the
+// count. The chrome is the kit's: the same fills and paddings, so a tab still
+// reads as a button next to one.
 BorderSurface {
   id: root
 

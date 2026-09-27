@@ -36,8 +36,7 @@ BorderSurface {
                                    : (root.hot ? "hover-cursor" : "normal"),
                                    Color.popups.text, Color.accent, Color.urgent)
 
-  // Concentric with the pill: radius is height/2, so a ring inset by 2 lands on
-  // (height - 4) / 2 -- the same curve one step in.
+  // Takes the pill's radius, so the corner marks follow its curve.
   FocusRing {
     diagonalCorners: true
     anchors.fill: parent
@@ -82,9 +81,8 @@ BorderSurface {
       font.pixelSize: Style.font.body
     }
 
-    // Level with the label, not raised. It was offset up as a superscript,
-    // copying the reference UI, which at 8px against a 10px label just read as
-    // misaligned rather than as typography.
+    // Level with the label, not raised: at this size a superscript reads as
+    // misaligned.
     Text {
       anchors.verticalCenter: parent.verticalCenter
       visible: root.count > 0

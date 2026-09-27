@@ -140,8 +140,8 @@ static void migrate(sqlite3 *db, int from) {
     g_unlink(snapshot);   // clean on success; no litter left behind
 }
 
-// One connection per process, closed on the way out however the command ends
-// -- a normal return or a die() -- so the WAL is checkpointed and nothing is
+// One connection per process, closed on the way out however the command ends,
+// by a normal return or a die(), so the WAL is checkpointed and nothing is
 // left for a leak checker to report. close_v2 because a die() can leave
 // statements unfinalized, and those must not keep the close from happening.
 static sqlite3 *open_db = NULL;

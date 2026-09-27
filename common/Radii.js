@@ -6,13 +6,10 @@
 // curve needs that much less radius to stay parallel to it. A card with a
 // 6px outer radius and a 2px border therefore wants 4 on whatever fills it.
 //
-// Do NOT shave an extra pixel off to "tighten" the seam. It was tried, and it
-// backfires: BorderSurface paints its rounded corner itself, and the card's
-// `clip: true` clips children to its bounding RECTANGLE rather than to that
-// curve. An inner surface any squarer than the curve therefore has nothing
-// trimming it, and its corner paints straight over the rounding -- a hard
-// black notch inside the card's rounded border, which is worse than the seam
-// it was meant to close.
+// Do not shave an extra pixel off to tighten the seam. BorderSurface paints
+// its rounded corner itself, and the card's `clip: true` clips children to its
+// bounding rectangle, not to that curve. An inner surface any squarer than the
+// curve paints over the rounding and leaves a hard notch inside the border.
 //
 // Not for containment radii either. A scrim or clip laid inside a card wants a
 // radius that matches or exceeds the curve it sits in, so its own corners stay

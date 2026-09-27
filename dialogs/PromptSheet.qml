@@ -7,17 +7,10 @@ import "../common"
 //
 // The same shape as ConfirmSheet, which answers a yes/no question. This one
 // answers "what should it be called", which a confirmation cannot.
-// A FocusScope, not a plain Item.
 //
-// A scope keeps activeFocus when the child holding it disappears or declines a
-// key: focus falls back to the scope instead of vanishing. Without that, a
-// focused control being hidden -- a reminder row removed by its own delete
-// button -- or a field swallowing Escape left NOTHING focused, and with nothing
-// focused no Keys handler in the dialog could fire. The keyboard died and no
-// number of Escapes brought it back.
-//
-// Being the root also puts it on the parent chain of every control inside, so
-// the Escape handler below sees keys wherever focus actually sits.
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
 FocusScope {
   id: root
 
@@ -118,7 +111,7 @@ FocusScope {
         onAccepted: root.submit()
         Keys.onEscapePressed: function (event) {
           // Only on a real press. Holding Escape auto-repeats, and each repeat
-          // would dismiss another layer -- a held key unwound the whole stack.
+          // would dismiss another layer.
           if (event.isAutoRepeat) { event.accepted = true; return }
           root.canceled()
           event.accepted = true

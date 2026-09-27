@@ -109,8 +109,8 @@ ProcResult proc_run(const char *const *argv, const char *input, double timeout_s
 // --- proc_run_agent: capped, grouped, and killed as a group
 //
 // A capture-sized output would be read to EOF by a plain communicate: a
-// provider that streams -- a wedged loop, JSONL events, a debug log left on --
-// is bounded only by the timeout, and every byte is held in memory before
+// provider that streams, such as a wedged loop, JSONL events or a debug log
+// left on, is bounded only by the timeout, and every byte is held in memory before
 // anything looks at it. Here the cap is the ceiling and crossing it ends the
 // run, because output that large is a malfunction and not an answer.
 
@@ -148,8 +148,8 @@ static void on_chunk(GObject *source, GAsyncResult *result, gpointer data) {
   const guint8 *bytes = g_bytes_get_data(chunk, NULL);
   if (size > room) {
     // Flagged here, not on the next read: the chunk that crosses the cap can
-    // also be the last one, and waiting for a read that never comes let a
-    // truncated answer through as if the provider had printed bad JSON.
+    // also be the last one, and waiting for a read that never comes would let
+    // a truncated answer through as if the provider had printed bad JSON.
     g_byte_array_append(reader->sink, bytes, (guint)room);
     agent->over = true;
     agent->streams_open--;
@@ -265,7 +265,7 @@ ProcResult proc_run_agent(const char *const *argv, const char *input, double tim
   }
 
   // The process is gone; give the readers a moment for what is still in the
-  // pipes, then stop -- a grandchild holding a pipe open must not hold us.
+  // pipes, then stop. A grandchild holding a pipe open must not hold us.
   const gint64 until = g_get_monotonic_time() + G_TIME_SPAN_SECOND;
   while (agent.streams_open > 0 && g_get_monotonic_time() < until)
     g_main_context_iteration(context, FALSE);

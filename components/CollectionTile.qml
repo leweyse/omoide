@@ -3,16 +3,10 @@ import qs.Commons
 import qs.Ui
 import "../common"
 
-// A collection: its count, its name, and one cover.
-//
-// Was a 2x2 mosaic of up to four thumbnails with the name on a plate over the
-// top. Two problems, both structural rather than cosmetic: the plate covered 40%
-// of the tile, so the bottom row of any two-row grid was a 10px sliver; and at
-// 104px wide a quarter-tile cell is 51px, where a screenshot is texture rather
-// than something you can recognise.
-//
-// One cover beside the text fixes both. The count sits at the top and the name at
-// the bottom, so a one-word name and a three-line one both look deliberate.
+// A collection: its count, its name, and one cover beside them. One cover
+// rather than a mosaic, because a quarter-tile thumbnail is too small to
+// recognise. The count sits at the top and the name at the bottom, so a
+// one-word name and a three-line one both look deliberate.
 BorderSurface {
   id: root
 
@@ -36,9 +30,9 @@ BorderSurface {
   height: Style.space(112)
   radius: Style.cornerRadius
   color: Color.popups.background
-  // Accent on focus, and NOT popups.border at rest -- that token defaults to the
-  // accent, so an accent focus border was invisible against every unfocused
-  // card. The width never changes, so nothing reflows.
+  // Accent on focus, and not popups.border at rest: that token defaults to the
+  // accent, which would hide the focus border. The width never changes, so
+  // nothing reflows.
   borderSpec: root.hasCursor
               ? Border.flat(Color.accent, 1)
               : Border.controlSpec("normal", Color.popups.text, Color.accent)
@@ -68,9 +62,7 @@ BorderSurface {
     anchors.top: parent.top
     anchors.bottom: parent.bottom
     anchors.margins: root.pad
-    // Floored at a width where a cropped screenshot is still a picture: at one
-    // tile per row on a narrow dialog, a third of the tile is generous, but the
-    // floor keeps the art from vanishing if the tile ever gets narrower still.
+    // Floored at a width where a cropped screenshot is still a picture.
     width: Math.max(Style.space(60), Math.round(root.width * 0.34))
     radius: Style.space(5)
     borderWidth: 0

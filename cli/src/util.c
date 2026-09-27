@@ -15,9 +15,9 @@ void die(int code, const char *fmt, ...) {
   exit(code);
 }
 
-// OMOIDE_NOW pins the clock for the parity harness, which runs the Python CLI
-// with the same value so both sides compute the same "now". Anything that is
-// not a full timestamp with a zone is ignored rather than guessed at.
+// OMOIDE_NOW pins the clock for dev/parity, so every run of a case computes
+// the same "now". Anything that is not a full timestamp with a zone is ignored
+// rather than guessed at.
 GDateTime *now_utc(void) {
   const char *pinned = g_getenv("OMOIDE_NOW");
   if (pinned && *pinned) {
@@ -43,11 +43,11 @@ char *iso_now(void) {
 }
 
 // A stored timestamp always carries its zone: iso() writes UTC with a Z. A
-// value arriving without one came from a person -- typed into the date fields,
-// or passed on the command line -- and a person means local time.
+// value arriving without one came from a person, typed into the date fields or
+// passed on the command line, and a person means local time.
 //
-// GLib only reads full date-times, while people (and the stored data this CLI
-// inherited) also write a bare date, "10", or "10:00", with a space or a T. The
+// GLib only reads full date-times, while people and rows already stored also
+// write a bare date, "10", or "10:00", with a space or a T. The
 // missing parts are filled in and GLib does the actual reading.
 GDateTime *parse_iso(const char *value) {
   if (!value || strlen(value) < 10)
@@ -109,10 +109,10 @@ char *first_line(const char *text) {
   return g_strdup(lines[0] ? lines[0] : "");
 }
 
-// Sortable and filesystem-safe: a timestamp plus enough entropy. 12 hex, not
-// 6: the stamp has one-second resolution, so the entropy is all that separates
-// two ids made in the same second, and at 6 a capture that produced a few
-// thousand rows hit UNIQUE about a third of the time.
+// Sortable and filesystem-safe: a timestamp plus 12 hex digits of entropy.
+// The stamp has one-second resolution, so the entropy alone separates ids made
+// in the same second, and it must not collide across the thousands of rows one
+// capture can create.
 //
 // OMOIDE_TEST_IDS swaps the entropy for a counter, so the parity harness can
 // compare two runs that created rows in the same order.
@@ -133,7 +133,8 @@ char *new_id(const char *prefix) {
 }
 
 // The shortest spelling that reads back as the same double, with a ".0" on a
-// whole number -- what Python prints, and so what the log has always said.
+// whole number. Log lines and stored values use this spelling, and dev/parity
+// pins it.
 char *py_float(double value) {
   char text[40];
   for (int precision = 1; precision <= 17; precision++) {
@@ -177,7 +178,7 @@ bool as_int(json_object *value, int64_t *out) {
       const double d = json_object_get_double(value);
       if (d != d || d > 9e18 || d < -9e18)
         return false;
-      *out = (int64_t)d;   // toward zero, as int() does
+      *out = (int64_t)d;   // toward zero
       return true;
     }
     case json_type_string: {
@@ -208,7 +209,7 @@ json_object *settings(void) {
   g_autoptr(json_object) config = json_object_from_file(path);
 
   // Placed in the bar, the widget's entry lives in its section; otherwise in
-  // plugins[]. The last section holding it wins, as it always has.
+  // plugins[]. The last section holding it wins.
   json_object *entry = NULL;
   json_object *layout = json_get(json_get(config, "bar"), "layout");
   const char *sections[] = { "left", "center", "right" };

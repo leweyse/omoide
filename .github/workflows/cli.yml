@@ -1,6 +1,6 @@
 # The CLI is built on each user's machine by Service.qml, so nothing here is
-# published. These are the checks a change has to pass first. Arch, because
-# that is what it is built against -- cli/build.rsp names Arch's paths.
+# published. These are the checks a change has to pass first. The container is
+# Arch because cli/build.rsp names Arch's include paths.
 name: cli
 
 on:

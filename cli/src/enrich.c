@@ -6,11 +6,11 @@
 #include <math.h>
 #include <string.h>
 
-// Ceilings on what one agent answer may turn into. Nothing here is a guess at
-// what a good answer looks like -- the prompt already asks for a handful of
-// blocks -- they are the point past which a reply stops being an answer and
-// starts being a way to fill a database or the session's timer table. A
-// capture is OCR of someone else's page, so the number is not ours to trust.
+// Ceilings on what one agent answer may turn into. They are not a guess at a
+// good answer, which the prompt already asks to be a handful of blocks. They
+// are the point past which a reply stops being an answer and starts filling a
+// database or the session's timer table. A capture is OCR of someone else's
+// page, so the number is not ours to trust.
 enum {
   MAX_BLOCKS = 24,   // a real capture yields four or five
   MAX_LIST_ITEMS = 20,
@@ -46,8 +46,8 @@ char *clean_text(json_object *value, long limit) {
 }
 
 // A model-supplied URL is only ever handed to a browser, so http(s) is the
-// whole allowed set. Anything else -- file://, javascript:, a bare word -- is
-// dropped. map_url ends up behind a button that says "Google Maps", so the
+// whole allowed set. Anything else, such as file://, javascript: or a bare
+// word, is dropped. map_url ends up behind a button that says "Google Maps", so the
 // label and the destination must not be free to disagree.
 #define HTTP_URL "^(https?)://([^/\\s]+)"
 
@@ -324,7 +324,7 @@ static json_object *extract_json(const char *text) {
   json_object_put(parsed);
 
   // Strict mode refuses anything after the value, and here there always is
-  // something -- the rest of the prose. So a lenient pass finds where the
+  // something: the rest of the prose. So a lenient pass finds where the
   // object ends, and the strict one then reads exactly that much, which keeps
   // the strictness about the object itself.
   for (const char *start = strchr(text, '{'); start; start = strchr(start + 1, '{')) {
@@ -366,8 +366,9 @@ GStrv harden(
   if (g_strcmp0(provider, "claude") == 0) {
     // --tools controls which tools EXIST, where --allowed-tools only
     // pre-approves ones that still do. "" is documented as none at all. Read
-    // alone is not enough in an empty working directory -- claude refuses to
-    // read outside its workspace -- so the capture's own folder is granted.
+    // alone is not enough in an empty working directory, because claude
+    // refuses to read outside its workspace, so the capture's own folder is
+    // granted.
     g_strv_builder_add_many(argv, "--tools", vision ? "Read" : "", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--add-dir", folder, NULL);
@@ -544,7 +545,7 @@ json_object *run_ai(
   return data;
 }
 
-// Write an agent's answer onto a memory. Returns how many items it created.
+// Write an agent's answer onto a memory. Returns how many to-dos it created.
 // Shared by commit and enrich so a retry produces exactly what a first pass
 // would. Blocks land with origin 'ai', which is what lets a retry tell its own
 // output apart from the capture's and the user's.
@@ -613,9 +614,9 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
   return created;
 }
 
-// Turn "remind me to call Ana tomorrow at 3pm" into a to-do, or nothing. Only
-// fires on an explicit "remind me" -- inferring intent from arbitrary prose is
-// exactly the guesswork the model is for.
+// Turn "remind me to call Ana tomorrow at 3pm" into a to-do, or nothing. It
+// fires only on an explicit "remind me". Inferring intent from arbitrary prose
+// is the guesswork the model is for.
 #define REMIND_PREFIX "(?i)^\\s*(?:please\\s+)?remind\\s+me\\s+(?:to\\s+|that\\s+|about\\s+)?"
 #define TRAILING_WHEN \
   "(?i)\\b(later\\s+today|tonight|tomorrow|today|in\\s+\\d+\\s*[a-z]+|" \
@@ -630,7 +631,7 @@ json_object *todo_from_note(const char *note) {
   g_autofree char *title = strip_space(rest);
   g_autoptr(GDateTime) when = parse_when(note);
   g_autofree char *without_when = re_replace(TRAILING_WHEN, title, "");
-  // .strip(" ,.;:-")
+  // Trim spaces and , . ; : - from both ends.
   const char *start = without_when;
   while (*start && strchr(" ,.;:-", *start))
     start++;

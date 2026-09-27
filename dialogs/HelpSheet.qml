@@ -11,21 +11,16 @@ import "../common"
 // menu bar to hang a "Shortcuts" entry off. So the list lives behind the key
 // people already try, and the rail footer names that key.
 //
-// Two columns, and everything fits without scrolling. A single scrolling column
-// hid half the list behind a gesture nobody could tell was available -- and a
-// reference you have to discover twice is not a reference.
+// Two columns, and everything fits without scrolling, so no part of the list
+// hides behind a scroll nobody can tell is there.
 //
-// Any key closes it. It answers one question and there is nothing to do here
-// once answered, so making the reader hunt for the right key to leave would be a
-// joke at their expense.
+// Any key closes it. It answers one question, and there is nothing to do here
+// once answered.
 //
-// A FocusScope rather than a plain Item: a scope keeps activeFocus when the child
-// holding it disappears or declines a key, and being the root puts it on the
-// parent chain of everything inside, so the Escape handler sees keys wherever
-// focus actually sits.
-// Its own layer-shell window, not an overlay inside the Space card: the card
-// clamped the sheet to the dialog's height, and a reference that grows past
-// its host deserves the screen as its ceiling, the way compose does.
+// Its own layer-shell window, not an overlay inside the Space card, so its
+// height is bounded by the screen rather than by the card, as compose's is.
+// The root is a plain Item that only holds state; keys arrive at `keys`
+// inside the window, which takes focus on open.
 Item {
   id: root
 
@@ -43,13 +38,11 @@ Item {
     root.closed()
   }
 
-  // Grouped, because a flat list of twenty-seven chords is a wall. The groups
-  // follow the model itself: where you are, then how you move, then what each
-  // page adds on top.
+  // Grouped, following the model itself: where you are, then how you move,
+  // then what each page adds on top.
   //
-  // Every line describes something that actually works -- written from the key
-  // handlers, not from the plan. A help sheet listing an aspiration is worse
-  // than no help sheet.
+  // Every line describes a binding the key handlers implement. Change this
+  // list in the same change as the handler.
   readonly property var groups: [
     {
       title: "Getting around",
@@ -124,10 +117,9 @@ Item {
     }
   ]
 
-  // Split for balance, not down the middle of the array: the first four groups
-  // carry 14 rows, the last four 17. No boundary gives an even split, and moving
-  // Library across makes it 18/13 -- worse, and it would break the reading order
-  // of general-then-per-page. A short right column is the lesser cost.
+  // Split between the general groups and the per-page ones, not down the
+  // middle of the array, so the reading order holds even though the columns
+  // are uneven.
   readonly property int splitAt: 4
   readonly property var leftGroups: root.groups.slice(0, root.splitAt)
   readonly property var rightGroups: root.groups.slice(root.splitAt)

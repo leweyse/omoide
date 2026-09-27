@@ -7,8 +7,8 @@ import "../components"
 //
 // One instance per section: accepted tasks are one, suggestions are another.
 // They are kept apart rather than concatenated because they are different
-// things -- one is your list, the other is the agent's proposal awaiting a
-// verdict -- and because keyboard Tab jumps between them as sibling regions.
+// things: one is the user's list, the other the agent's proposal awaiting a
+// verdict. Keyboard Tab also jumps between them as sibling regions.
 //
 // `label` is optional. The tab already names what the first card holds, so only
 // the secondary section needs a heading.

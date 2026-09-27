@@ -115,7 +115,7 @@ static const struct {
   { "lu.ma", "Luma" },
 };
 
-// First character upper, the rest lower, as Python's str.capitalize().
+// First character upper, the rest lower.
 static char *capitalize(const char *text) {
   if (!*text)
     return g_strdup("");
@@ -186,7 +186,9 @@ static int facet_compare(gconstpointer a, gconstpointer b) {
 }
 
 // Filter chips, counted: what the capture is, where it came from, and what the
-// model tagged it. Facets with a single member are dropped: a chip that
+// model tagged it, over every ready memory, newest first, so the first-seen
+// tie-break follows the library's order. Only a memory's first four tags count
+// toward the vocabulary. Facets with a single member are dropped: a chip that
 // narrows six memories down to one is a worse way to find it than scrolling.
 static json_object *build_facets(json_object *cards) {
   g_autoptr(GPtrArray) facets = g_ptr_array_new_with_free_func(facet_free);
@@ -287,8 +289,8 @@ void refresh_fts(sqlite3 *db, const char *memory_id) {
       append_part(body, text);
     }
 
-    // Item titles are joined as they are, empty ones included, which is what
-    // a plain " ".join did.
+    // Item titles are joined with single spaces as they are, empty ones
+    // included.
     g_autoptr(GString) titles = g_string_new(NULL);
     g_autoptr(sqlite3_stmt) items = db_query(db, "SELECT title FROM items WHERE memory_id = ?", "s", id);
     for (bool first = true; db_step(items); first = false) {
@@ -298,7 +300,7 @@ void refresh_fts(sqlite3 *db, const char *memory_id) {
     }
 
     // Tags belong in the index: they are what the model decided this capture
-    // is about, and the labels on the filter chips -- typing one should find
+    // is about, and the labels on the filter chips. Typing one should find
     // the same memories the chip does.
     g_autoptr(GString) tags = g_string_new(NULL);
     g_autoptr(sqlite3_stmt) tag_rows = db_query(db, "SELECT tag FROM tags WHERE memory_id = ?", "s", id);
@@ -471,8 +473,8 @@ static json_object *build_index(sqlite3 *db) {
       json_object_array_add(events, event_entry(db, rows));
   }
 
-  // Open ones only: a ticked-off to-do appeared under "No open to-dos" and
-  // inflated the bar badge, which counts this list.
+  // Open ones only: the bar badge counts this list, and a completed to-do is
+  // not owed.
   json_object *todos = json_object_new_array();
   {
     g_autoptr(sqlite3_stmt) rows = db_query(db,

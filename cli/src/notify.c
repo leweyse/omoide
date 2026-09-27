@@ -38,8 +38,8 @@ static char *notification_binary(void) {
 //
 // --exec comes last and takes the rest of the line as separate words: the
 // wrapper treats everything after it as the click command's argv, and rejects
-// a single word containing spaces. Passing it before the headline, as a
-// quoted string, was how every clickable toast failed without a trace.
+// a single word containing spaces. Passed before the headline as one quoted
+// string, a clickable toast fails without a trace.
 void notify(const char *headline, const char *body, const char *urgency, const char *image,
     const char *const *exec_argv) {
   g_autofree char *binary = notification_binary();

@@ -13,9 +13,9 @@ Item {
 
   property QtObject bar: null
   // The bar widget this menu belongs to. The bar coordinates popouts by object
-  // identity against the item it loaded from the manifest, so that item -- not
-  // this one -- has to be what the panel registers. Falls back to `root` so the
-  // menu still works standalone.
+  // identity against the item it loaded from the manifest, so that item, not
+  // this one, is what the panel registers. Falls back to `root` so the menu
+  // still works standalone.
   property Item owner: null
   property Item anchorItem: null
   property var service: null
@@ -23,14 +23,12 @@ Item {
 
   signal defaultRequested(string action)
 
-  // One inset for both axes of a row. They were rowPaddingX (12) across and
-  // sm (4) down, so the highlight was padded three times wider than it was tall.
+  // One inset for both axes of a row, so the highlight is padded evenly.
   readonly property real rowInset: Style.spacing.xl
 
   readonly property bool opened: panel.open
-  // Fails closed. `!== false` treated a missing flag as available, which is the
-  // wrong default for a capability check: better to hide an action that would
-  // have worked than to offer one that cannot.
+  // Fails closed: a missing flag means unavailable. Better to hide an action
+  // that would have worked than to offer one that cannot.
   readonly property bool voiceAvailable: !!(service && service.index
                                             && service.index.voiceAvailable === true)
   property int cursor: 0
@@ -60,10 +58,10 @@ Item {
     return line
   }
 
-  // No requestPopout/releasePopout here: KeyboardPanel already does that
-  // bookkeeping from its own `open` change, with the coordinator key taken from
-  // `owner`. Doing it a second time from here is what registered this item
-  // instead of the widget. Closing for a panel switch belongs to the owner too.
+  // No requestPopout/releasePopout here: KeyboardPanel does that bookkeeping
+  // from its own `open` change, keyed by `owner`. Doing it again here would
+  // register this item instead of the widget. Closing for a panel switch
+  // belongs to the owner too.
   function open() {
     root.cursor = 0
     panel.open = true
@@ -96,8 +94,7 @@ Item {
       service.showSpace({})
     } else if (entry.id === "settings") {
       // An in-plugin dialog, not gum in a terminal: xdg-terminal-exec's -e
-      // took only the binary and dropped the subcommand, so the terminal
-      // opened with nothing to fill in.
+      // takes only the binary and drops the subcommand.
       service.showSettings()
     }
   }
@@ -109,8 +106,7 @@ Item {
     bar: root.bar
     open: false
     focusTarget: keys
-    // The width every first-party panel uses. 270 was narrow enough to read as
-    // a different kind of surface sitting in a row of matching ones.
+    // The width every first-party panel uses, so this reads as one of them.
     contentWidth: panel.fittedContentWidth(Style.space(380))
     contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
@@ -125,10 +121,8 @@ Item {
         } while (root.entries[next].kind === "separator")
         root.cursor = next
       }
-      // PanelKeyCatcher emits BOTH returnRequested and activateRequested for
-      // Enter, so handling both ran the action twice. For a screenshot that
-      // was fatal: omarchy-capture-screenshot starts with `pkill slurp &&
-      // exit 0`, so the second invocation cancelled the first one's picker.
+      // PanelKeyCatcher emits both returnRequested and activateRequested for
+      // Enter. Handle only one, or every entry runs twice.
       onActivateRequested: root.activate(root.entries[root.cursor])
       onTabRequested: function (direction) {
         if (root.owner && typeof root.owner.switchPanel === "function")
@@ -141,9 +135,8 @@ Item {
         anchors.right: parent.right
         spacing: Style.space(2)
 
-        // Every other plugin panel opens with one of these, and without it the
-        // menu read as a bare list with no idea whose it was. The icon is the
-        // bar mark itself, in whatever state it is currently in.
+        // Every other plugin panel opens with one of these, so the menu says
+        // whose it is. The icon is the bar mark itself, in its current state.
         PanelHero {
           width: parent.width
           title: "Omoide"
@@ -196,8 +189,8 @@ Item {
               id: entryRow
               CursorSurface {
                 readonly property bool disabled: modelData.enabled === false
-                // Rows with a reason line are two lines tall; popupRowHeight
-                // is a single-line metric and cramped them.
+                // Rows with a reason line are two lines tall, and popupRowHeight
+                // is a single-line metric.
                 height: entryText.implicitHeight + root.rowInset * 2
                 radius: Style.space(5)
                 hasCursor: root.cursor === index
@@ -218,8 +211,6 @@ Item {
                   anchors.rightMargin: root.rowInset
                   anchors.verticalCenter: parent.verticalCenter
                   visible: modelData.id === root.defaultAction
-                  // No leading "·" any more: a mid-sentence separator only read
-                  // as one while this was glued to the end of the label.
                   text: "default"
                   color: Color.popups.text
                   font.family: Style.font.resolvedFamily
@@ -247,9 +238,8 @@ Item {
 
                 // Sized-and-aligned children rather than anchored ones:
                 // anchors on the children of a positioner are not supported,
-                // and a verticalCenter-anchored glyph beside a
-                // verticalCenter-anchored Column is how the icon and the label
-                // drifted out of line with each other.
+                // and vertically centred anchors let the icon and the label
+                // drift out of line.
                 Row {
                   id: rowLayout
                   anchors.fill: parent
