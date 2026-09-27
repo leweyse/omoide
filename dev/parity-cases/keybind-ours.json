@@ -1,0 +1,26 @@
+{
+ "calls": {
+  "hyprctl": [
+   {
+    "argv": [
+     "binds",
+     "-j"
+    ]
+   }
+  ]
+ },
+ "config": null,
+ "db": null,
+ "exit": 0,
+ "files": [],
+ "index": null,
+ "log": [],
+ "stdout": [
+  {
+   "accel": "SUPER + CTRL + M",
+   "conflict": null,
+   "file": "~/.config/hypr/bindings.lua",
+   "snippet": "o.bind(\"SUPER + CTRL + M\", \"Omoide capture\",\n       \"omarchy-shell -q omoide toggleChooser\")"
+  }
+ ]
+}

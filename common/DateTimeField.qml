@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import qs.Ui
 
 // A date and a time, as two masked fields. DD/MM/YYYY, which is how the value
 // reads locally; the caller converts to what the CLI parses.

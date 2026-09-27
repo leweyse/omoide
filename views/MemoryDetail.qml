@@ -42,28 +42,29 @@ Flickable {
   clip: true
   boundsBehavior: Flickable.StopAtBounds
 
-  // Flickable's built-in wheel step is tuned for touch flicking and crawls with
-  // a mouse or touchpad, which is painful on a page this tall. One notch moves
-  // a readable chunk instead, clamped so it cannot overscroll.
-  WheelHandler {
-    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-    onWheel: function (event) {
-      if (event.angleDelta.y === 0) return
-      var notches = event.angleDelta.y / 120
-      var limit = Math.max(0, root.contentHeight - root.height)
-      root.contentY = Math.max(0, Math.min(limit,
-                                           root.contentY - notches * Style.space(140)))
-    }
-  }
+  PageWheel { page: root }
+
+  // Which memory the page's content belongs to. Until `show` answers for the
+  // one asked for, what it fetches is drawn as placeholders; a re-fetch of the
+  // same memory keeps the page as it is.
+  property string loadedId: ""
+  readonly property bool loaded: root.loadedId.length > 0 && root.loadedId === root.memoryId
 
   function reload() {
     if (!service || !memoryId) return
-    service.call(["show", "--id", memoryId], function (code, json) {
+    var asked = root.memoryId
+    service.call(["show", "--id", asked], function (code, json) {
+      if (!root || asked !== root.memoryId) return
       if (json) root.memory = json
+      root.loadedId = asked
     })
   }
 
-  onMemoryIdChanged: reload()
+  // The previous memory's blocks never show under the next one's id.
+  onMemoryIdChanged: {
+    root.memory = { blocks: [], items: [], collections: [] }
+    reload()
+  }
 
   // The item editor is a separate surface, so a delete or a completion made
   // there has to reach this list somehow. Every mutation makes the service pull
@@ -468,7 +469,26 @@ Flickable {
     width: root.width - Style.spacing.panelPadding * 2
     spacing: Style.spacing.xxxl
 
-    // The capture itself, first. It is the thing you recognise.
+    // Where the capture will be while it is fetched, bounded the way
+    // ImageBlock bounds a landscape capture.
+    Item {
+      id: imageSkeleton
+      visible: !root.loaded
+      width: parent.width
+      height: Math.round(Math.min(Style.space(340), imageSkeleton.maxWidth / 1.6))
+
+      readonly property real maxWidth:
+        Math.max(Style.space(200), width - (pageActions.width + Style.spacing.lg) * 2)
+
+      Skeleton {
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.round(Math.min(imageSkeleton.maxWidth, parent.height * 1.6))
+        height: parent.height
+        radius: Style.cornerRadius
+      }
+    }
+
+    // The capture itself, first. It is what the user recognises.
     BlockRenderer {
       id: imageBlocks
       width: parent.width
@@ -506,14 +526,27 @@ Flickable {
         anchors.left: parent.left
         anchors.right: parent.right
         // Room for the floating actions only when they would actually be
-        // alongside -- which is when there is no capture above to separate them.
-        anchors.rightMargin: imageBlocks.visible
+        // alongside, which is when there is no capture above to separate them.
+        anchors.rightMargin: imageBlocks.visible || !root.loaded
                              ? 0 : pageActions.width + Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.sm
 
+        Skeleton {
+          visible: !root.loaded
+          width: parent.width * 0.6
+          height: Math.round(Style.font.heading * 1.15)
+        }
+
+        Skeleton {
+          visible: !root.loaded
+          width: parent.width * 0.4
+          height: Style.font.subtitle
+        }
+
         Text {
           id: titleText
+          visible: root.loaded
           width: parent.width
           textFormat: Text.PlainText
           text: root.memory.title || ""
@@ -557,6 +590,20 @@ Flickable {
       onPreviewImage: function (path) { root.previewImage(path) }
       onEditBlock: function (blockId, blockType, payload) {
         root.editBlock(blockId, blockType, payload)
+      }
+    }
+
+    // Where the blocks will be, while they are fetched.
+    BlockCard {
+      visible: !root.loaded
+
+      Column {
+        width: parent.width
+        spacing: Style.spacing.sm
+
+        Skeleton { width: parent.width * 0.9; height: Style.font.body }
+        Skeleton { width: parent.width * 0.75; height: Style.font.body }
+        Skeleton { width: parent.width * 0.5; height: Style.font.body }
       }
     }
 

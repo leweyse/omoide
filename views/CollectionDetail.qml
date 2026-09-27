@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../common"
+import "../components"
 
 // One collection: its own page, laid out like a memory's.
 //
@@ -10,22 +11,38 @@ import "../common"
 Flickable {
   id: root
 
-  property var index: ({ memories: [] })
+  property var service: null
   property string collectionName: ""
 
   signal openMemory(string id)
   signal menuRequested(real sceneX, real sceneY)
 
-  // Filtered here rather than in the CLI: every card in index.json already
-  // carries the collections it belongs to, so this needs no round trip.
-  readonly property var memories: {
-    var all = (root.index && root.index.memories) || []
-    var out = []
-    for (var i = 0; i < all.length; i++) {
-      var names = all[i].collections || []
-      if (names.indexOf(root.collectionName) >= 0) out.push(all[i])
+  // The collection's captures, a page at a time, sized and loaded the way the
+  // library loads its own.
+  PagedMemories {
+    id: pages
+    service: root.service
+    args: root.collectionName.length ? ["list", "--collection", root.collectionName] : []
+    pageSize: {
+      var cardHeight = grid.columnWidth / 1.6 + Style.space(100)
+      var rows = Math.ceil(root.height / Math.max(1, cardHeight))
+      return Math.max(12, Math.min(60, grid.columns * rows * 2))
     }
-    return out
+  }
+
+  readonly property var memories: pages.memories
+
+  function maybeLoadMore() {
+    if (root.contentY + root.height * 2 >= root.contentHeight)
+      pages.loadMore()
+  }
+
+  onContentYChanged: root.maybeLoadMore()
+  onContentHeightChanged: root.maybeLoadMore()
+
+  Connections {
+    target: root.service
+    function onIndexChanged() { pages.refreshLoaded() }
   }
 
   contentWidth: width
@@ -71,9 +88,13 @@ Flickable {
       root.contentY = Math.min(limit, bottom + pad - root.height)
   }
 
+  // Bottom inset only. The gap above belongs to the window's view loader, so it
+  // is chrome and survives scrolling.
   contentHeight: layout.implicitHeight + Style.spacing.panelPadding
   clip: true
   boundsBehavior: Flickable.StopAtBounds
+
+  PageWheel { page: root }
 
   // Floating, at the top right, OUTSIDE the column, so it adds no height and
   // cannot shift the page. On this page there is no capture above the title, so
@@ -131,13 +152,21 @@ Flickable {
           font.pixelSize: Style.font.heading
         }
 
+        // The count is fetched with the first page, so until then only its
+        // line holds a placeholder; the title above is already known.
         Text {
+          visible: pages.loaded
           width: parent.width
-          text: root.memories.length
-                + (root.memories.length === 1 ? " memory" : " memories")
+          text: pages.total + (pages.total === 1 ? " memory" : " memories")
           color: Color.muted
           font.family: Style.font.resolvedFamily
           font.pixelSize: Style.font.subtitle
+        }
+
+        Skeleton {
+          visible: !pages.loaded
+          width: Style.space(90)
+          height: Style.font.subtitle
         }
       }
     }
@@ -149,10 +178,12 @@ Flickable {
       onCursorMoved: root.ensureVisible()
       columns: Math.max(2, Math.floor(width / Style.space(230)))
       delegate: cardDelegate
+      placeholderRows: pages.fetchingNew ? (root.memories.length ? 1 : 2) : 0
+      placeholder: skeletonDelegate
     }
 
     Text {
-      visible: root.memories.length === 0
+      visible: pages.loaded && root.memories.length === 0
       width: parent.width
       text: "Nothing in this collection yet. Add a memory to it from its own page."
       wrapMode: Text.WordWrap
@@ -160,6 +191,11 @@ Flickable {
       font.family: Style.font.resolvedFamily
       font.pixelSize: Style.font.subtitle
     }
+  }
+
+  Component {
+    id: skeletonDelegate
+    SkeletonCard {}
   }
 
   Component {

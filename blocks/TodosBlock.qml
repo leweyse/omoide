@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import qs.Ui
 import "../components"
 
 // "To-dos" is a label the renderer owns, never something the model writes.

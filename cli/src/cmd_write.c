@@ -131,7 +131,6 @@ int cmd_item(int argc, char **argv) {
     }
   }
   g_autoptr(json_object) swept = sweep_reminders(db);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
@@ -181,7 +180,7 @@ int cmd_reminder(int argc, char **argv) {
     if (!id)
       die(1, "fire needs --id");
     const char *outcome = fire_reminder(db, id);
-    write_index(db);
+    shell_ipc(IPC_TARGET, "refresh", NULL);
     json_object *out = json_object_new_object();
     json_object_object_add(out, "id", json_object_new_string(id));
     json_object_object_add(out, "outcome", json_object_new_string(outcome));
@@ -189,7 +188,7 @@ int cmd_reminder(int argc, char **argv) {
     return 0;
   }
   g_autoptr(json_object) swept = sweep_reminders(db);
-  write_index(db);
+  shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
 
@@ -257,7 +256,6 @@ int cmd_collection(int argc, char **argv) {
       run_update(
           db, "DELETE FROM memory_collections WHERE memory_id = ? AND collection_id = ?", "ss", memory, id);
   }
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
@@ -287,7 +285,7 @@ int cmd_link(int argc, char **argv) {
   } else {
     run_update(db, "DELETE FROM links WHERE from_id = ? AND to_id = ?", "ss", low, high);
   }
-  write_index(db);
+  shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
 
@@ -336,7 +334,6 @@ int cmd_block(int argc, char **argv) {
         id);
   }
   refresh_fts(db, memory_id);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
@@ -349,7 +346,6 @@ int cmd_delete(int argc, char **argv) {
   require_option("delete", "--id", id);
   sqlite3 *db = db_open(true);
   discard(db, id, false);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
   return 0;
 }
@@ -384,7 +380,6 @@ int cmd_memory(int argc, char **argv) {
     db_step(update);
   }
   refresh_fts(db, id);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
   json_object *out = json_object_new_object();
   json_object_object_add(out, "id", json_object_new_string(id));

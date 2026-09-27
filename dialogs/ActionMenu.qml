@@ -1,5 +1,4 @@
 import QtQuick
-import Quickshell
 import qs.Commons
 import qs.Ui
 import "../components"
@@ -192,7 +191,7 @@ Item {
                 // Rows with a reason line are two lines tall, and popupRowHeight
                 // is a single-line metric.
                 height: entryText.implicitHeight + root.rowInset * 2
-                radius: Style.space(5)
+                radius: Style.cornerRadius
                 hasCursor: root.cursor === index
                 bordered: false
                 foreground: Color.popups.text

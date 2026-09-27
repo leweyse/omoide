@@ -15,7 +15,7 @@ Rectangle {
 
   width: size
   height: size
-  radius: Style.space(4)
+  radius: Style.cornerRadius
   color: Style.normalFillFor(Color.popups.text, Color.accent, Color.urgent)
 
   Column {

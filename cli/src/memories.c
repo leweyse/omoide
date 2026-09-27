@@ -10,7 +10,7 @@ static int remove_entry(const char *path, const struct stat *st, int flag, struc
   (void)flag;
   (void)ftw;
   remove(path);
-  return 0;   // keep going: this is best-effort, like rmtree(ignore_errors=True)
+  return 0;   // keep going: best-effort, errors ignored
 }
 
 // A directory and everything under it, without following a symlink anywhere:

@@ -157,7 +157,7 @@ int cmd_install(int argc, char **argv) {
       g_autofree char *why = g_strstrip(g_strdup(*enable.err ? enable.err
               : *enable.out                                  ? enable.out
                                                              : "plugin enable"));
-      die(1, "install failed (%s); rolled back", why);
+      die(1, "install failed: could not enable the plugin (%s)", why);
     }
   }
   {
@@ -250,15 +250,6 @@ static const struct {
   { "opencode", "every tool permission denied", "every tool permission denied" },
 };
 
-static bool plain_model(const char *name) {
-  return g_str_equal(name, "ollama") || g_str_equal(name, "aichat");
-}
-
-static bool vision_capable(const char *name) {
-  return g_str_equal(name, "claude") || g_str_equal(name, "codex") || g_str_equal(name, "gemini")
-      || g_str_equal(name, "opencode");
-}
-
 // argv as a line someone can read, with empty arguments made visible.
 static char *display_argv(char **argv) {
   g_autoptr(GString) line = g_string_new(NULL);
@@ -295,7 +286,7 @@ int cmd_ai_config(int argc, char **argv) {
     const char *const *preset = ai_preset_argv(i);
     // The command the dialog shows is the command that runs, hardening
     // included: both come from harden(), so they cannot disagree.
-    const bool plain = plain_model(name);
+    const bool plain = provider_is_plain_model(name);
     g_auto(GStrv) ocr_argv = plain ? g_strdupv((char **)preset) : harden(preset, name, false, NULL, NULL);
     g_auto(GStrv) image_argv =
         plain ? g_strdupv((char **)preset) : harden(preset, name, true, "<capture>/screenshot.png", NULL);
@@ -315,7 +306,7 @@ int cmd_ai_config(int argc, char **argv) {
     json_object_object_add(entry, "restriction", json_object_new_string(restriction));
     json_object_object_add(entry, "restrictionImage", json_object_new_string(restriction_image));
     json_object_object_add(entry, "available", json_object_new_boolean(has(preset[0])));
-    json_object_object_add(entry, "vision", json_object_new_boolean(vision_capable(name)));
+    json_object_object_add(entry, "vision", json_object_new_boolean(provider_takes_image(name)));
     json_object_object_add(entry, "needsModel", json_object_new_boolean(g_str_equal(name, "ollama")));
     json_object_array_add(providers, entry);
   }
@@ -417,7 +408,7 @@ int cmd_setup_ai(int argc, char **argv) {
     json_object_object_add(current, "command", json_object_new_array());
     if (!has(provider))
       die(1, "%s is not on PATH", provider);
-    if (!plain_model(provider))
+    if (!provider_is_plain_model(provider))
       fprintf(stderr,
           "omoide: %s runs with its tools switched off and an empty working "
           "directory.\n",

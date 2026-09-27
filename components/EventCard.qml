@@ -45,11 +45,8 @@ BorderSurface {
   FocusRing {
     anchors.fill: parent
     radius: root.radius
+    cornersOnly: true
     hasCursor: root.hasCursor
-    // Artwork bleeds under the ring on this card, so it gets the dark
-    // companion line: whichever of the two loses contrast against the
-    // thumbnail, the other keeps it.
-    twoTone: true
     hot: hoverArea.containsMouse
   }
 

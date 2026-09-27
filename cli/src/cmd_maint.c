@@ -11,18 +11,13 @@ int cmd_reindex(int argc, char **argv) {
   // so an unmeasured row would render with aspect 0 until the next rebuild.
   const int measured = backfill_dimensions(db);
   refresh_fts(db, NULL);
-  write_index(db);
+  shell_ipc(IPC_TARGET, "refresh", NULL);
   json_object *out = json_object_new_object();
   json_object_object_add(out, "reindexed", json_object_new_boolean(true));
   json_object_object_add(out, "version", json_object_new_int(INDEX_VERSION));
   json_object_object_add(out, "measured", json_object_new_int(measured));
   emit(out);
   return 0;
-}
-
-static char *commit_pidfile(const char *memory_id) {
-  g_autofree char *name = g_strdup_printf("commit-%s.pid", memory_id);
-  return g_build_filename(paths()->state_dir, name, NULL);
 }
 
 // Is an enrichment for this memory actually alive?
@@ -58,8 +53,10 @@ static int64_t sweep_stalled(sqlite3 *db) {
     const char *id = g_ptr_array_index(pending, i);
     if (commit_running(id))
       continue;
-    g_autoptr(sqlite3_stmt) mark =
-        db_query(db, "UPDATE memories SET ai_status = 'failed' WHERE id = ?", "s", id);
+    g_autoptr(sqlite3_stmt) mark = db_query(db,
+        "UPDATE memories SET ai_status = 'failed', "
+        "ai_error = 'the enrichment stopped before it finished' WHERE id = ?",
+        "s", id);
     db_step(mark);
     g_autofree char *pidfile = commit_pidfile(id);
     g_unlink(pidfile);
@@ -97,7 +94,7 @@ int cmd_sweep(int argc, char **argv) {
   json_object *result = sweep_reminders(db);
   json_object_object_add(result, "draftsSwept", json_object_new_int64(swept));
   json_object_object_add(result, "stalledEnrichments", json_object_new_int64(stalled));
-  write_index(db);
+  shell_ipc(IPC_TARGET, "refresh", NULL);
   emit(result);
   return 0;
 }
@@ -110,7 +107,7 @@ int cmd_discard(int argc, char **argv) {
   require_option("discard", "--id", id);
   sqlite3 *db = db_open(true);
   const bool removed = discard(db, id, true);
-  write_index(db);
+  shell_ipc(IPC_TARGET, "refresh", NULL);
   json_object *out = json_object_new_object();
   json_object_object_add(out, "discarded", json_object_new_boolean(removed));
   emit(out);

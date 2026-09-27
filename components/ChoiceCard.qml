@@ -20,7 +20,7 @@ CursorSurface {
   signal chose()
 
   height: body.implicitHeight + Style.spacing.lg * 2
-  radius: Style.space(5)
+  radius: Style.cornerRadius
   hasCursor: root.picked
   bordered: false
   foreground: Color.menu.text

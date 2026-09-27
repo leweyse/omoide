@@ -33,7 +33,6 @@ const Paths *paths(void) {
     p.state_dir = g_build_filename(state, "omoide", NULL);
     p.db_path = g_build_filename(p.data_dir, "memories.db", NULL);
     p.blob_dir = g_build_filename(p.data_dir, "blobs", NULL);
-    p.index_path = g_build_filename(p.state_dir, "index.json", NULL);
     p.config_path = g_build_filename(config, "omoide", "config.json", NULL);
     p.log_path = g_build_filename(p.state_dir, "omoide.log", NULL);
   }

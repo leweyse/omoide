@@ -115,7 +115,9 @@ Item {
     if (!root.service || !root.memoryId.length) return
     var args = ["candidates", "--id", root.memoryId]
     if (text && text.trim().length) args = args.concat(["--q", text.trim()])
+    linkPicker.loading = true
     root.service.call(args, function (code, json) {
+      linkPicker.loading = false
       var out = []
       var list = (json && json.candidates) || []
       for (var i = 0; i < list.length; i++)
@@ -193,10 +195,9 @@ Item {
   // The title the open detail page loaded, since only that page's menu asks.
   // The menu is owned by the window and only has the id.
   function memoryTitle(id) {
-    var list = (root.service && root.service.index
-                && root.service.index.memories) || []
-    for (var i = 0; i < list.length; i++)
-      if (list[i].id === id) return list[i].title || ""
+    var page = viewLoader.item
+    var memory = page && page.memory
+    if (memory && memory.id === id) return memory.title || ""
     return ""
   }
 
@@ -557,7 +558,7 @@ Item {
 
                 width: rail.width - rail.pad * 2
                 height: Style.spacing.popupRowHeight
-                radius: Style.space(5)
+                radius: Style.cornerRadius
                 // Two states, two channels: `current` is the page you are on,
                 // `hasCursor` is where the keyboard is. Both can show at once,
                 // on different rows, which is the whole point.
@@ -1015,7 +1016,7 @@ Item {
   Component {
     id: collectionView
     CollectionDetail {
-      index: root.service ? root.service.index : ({ memories: [] })
+      service: root.service
       collectionName: root.collectionName
       onOpenMemory: function (id) { root.openMemory(id) }
       onMenuRequested: function (sceneX, sceneY) {
@@ -1045,6 +1046,7 @@ Item {
         todosEditor.open(blockId, items)
       }
       onLinkRequested: {
+        linkPicker.rows = []
         linkPicker.open()
         root.loadCandidates("")
       }

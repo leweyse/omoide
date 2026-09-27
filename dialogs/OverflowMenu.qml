@@ -98,7 +98,7 @@ FocusScope {
 
           width: parent.width
           height: Style.spacing.popupRowHeight
-          radius: Style.space(4)
+          radius: Style.cornerRadius
           hasCursor: hover.containsMouse
           bordered: false
           foreground: Color.menu.text

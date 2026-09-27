@@ -408,7 +408,7 @@ int cmd_capture(int argc, char **argv) {
   return 0;
 }
 
-static char *commit_pidfile(const char *memory_id) {
+char *commit_pidfile(const char *memory_id) {
   g_autofree char *name = g_strdup_printf("commit-%s.pid", memory_id);
   return state_file(name);
 }
@@ -512,7 +512,6 @@ int cmd_commit(int argc, char **argv) {
     g_autofree char *pid = g_strdup_printf("%d", getpid());
     g_file_set_contents(pidfile, pid, -1, NULL);
   }
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
 
   g_autofree char *ai_error = NULL;
@@ -563,7 +562,6 @@ int cmd_commit(int argc, char **argv) {
   g_unlink(pidfile);
   refresh_fts(db, id);
   g_autoptr(json_object) swept = sweep_reminders(db);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
 
   g_autoptr(sqlite3_stmt) saved = db_query(db, "SELECT * FROM memories WHERE id = ?", "s", id);
@@ -677,7 +675,6 @@ int cmd_enrich(int argc, char **argv) {
   g_autoptr(sqlite3_stmt) pending =
       db_query(db, "UPDATE memories SET ai_status = 'pending', ai_error = NULL WHERE id = ?", "s", id);
   db_step(pending);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
 
   g_autofree char *reason = NULL;
@@ -691,7 +688,6 @@ int cmd_enrich(int argc, char **argv) {
   }
   g_autoptr(json_object) swept = sweep_reminders(db);
   refresh_fts(db, id);
-  write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
 
   json_object *out = json_object_new_object();

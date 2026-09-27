@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
 
 // The singleton half of the plugin.
 //
@@ -22,33 +21,30 @@ Item {
   readonly property string pluginDir:
     decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")).replace(/\/$/, "")
 
-  // The CLI is C, compiled on this machine by buildCli() below, and lives in
-  // the cache rather than the plugin directory: `omarchy plugin update` is a
-  // fast-forward pull, and anything written into the checkout would block it.
-  // binPath is a symlink to the build for the current source, so it stays put
-  // while builds come and go.
-  readonly property string cacheHome:
-    (/^\//.test(Quickshell.env("XDG_CACHE_HOME") || "") ? Quickshell.env("XDG_CACHE_HOME")
-                                                        : Quickshell.env("HOME") + "/.cache")
+  // The CLI is built into the cache, never the checkout: a file written there
+  // blocks `omarchy plugin update`'s fast-forward pull. binPath is a stable
+  // symlink to the build for the current source.
+  readonly property string cacheHome: xdg("XDG_CACHE_HOME", "/.cache")
   readonly property string binDir: cacheHome + "/omoide/bin"
   readonly property string binPath: binDir + "/omoide"
 
-  // Matches the CLI: plain XDG paths under our own name. Not .local/share/omarchy,
-  // which is a symlink to the read-only package tree, and not .local/state/omarchy,
-  // which is Omarchy's own namespace.
-  readonly property string dataHome:
-    (Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share"))
-    + "/omoide"
-  readonly property string stateHome:
-    (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state"))
-    + "/omoide"
+  // The same root paths() derives in cli/src/paths.c. Not .local/share/omarchy,
+  // which is a symlink to the read-only package tree.
+  readonly property string dataHome: xdg("XDG_DATA_HOME", "/.local/share") + "/omoide"
 
-  // Everything the bar and the Space window render comes from this cache, so
-  // no QML code ever opens the database.
+  // As xdg() in cli/src/paths.c: a variable counts only when it is absolute,
+  // so QML and the CLI always agree on where the files are.
+  function xdg(name, fallback) {
+    var value = Quickshell.env(name) || ""
+    return /^\//.test(value) ? value : Quickshell.env("HOME") + fallback
+  }
+
+  // Everything the bar and the Space window render comes from this snapshot,
+  // pulled from the CLI by refresh(), so no QML code ever opens the database.
   property var index: ({
     version: 0, pendingCount: 0, failedCount: 0, memoryCount: 0, suggestions: [],
     digest: { events: 0, todos: 0 },
-    memories: [], events: [], todos: [], collections: []
+    events: [], todos: [], collections: []
   })
 
   readonly property int enrichingCount: (index && index.pendingCount) || 0
@@ -267,58 +263,41 @@ Item {
     root.showSpace(payload || ({}))
   }
 
+  // The index is pulled, never read from disk: `omoide index` prints it, and
+  // every CLI command that changes something ends by calling `refresh` over
+  // IPC. One pull runs at a time, and a refresh that arrives during it queues
+  // exactly one more, so a burst of changes costs two pulls, not one each.
+  property bool indexPulling: false
+  property bool indexStale: false
+
   function refresh() {
-    indexFile.reload()
-  }
-
-  // Must match INDEX_VERSION in cli/src/omoide.h.
-  readonly property int indexVersion: 4
-  property bool rebuildTried: false
-
-  function applyIndex(text) {
-    var parsed = null
-    try {
-      parsed = JSON.parse(text)
-    } catch (e) {
+    if (root.indexPulling) {
+      root.indexStale = true
       return
     }
+    root.indexPulling = true
+    root.call(["index"], function (code, parsed) {
+      root.indexPulling = false
+      if (code === 0)
+        root.applyIndex(parsed)
+      if (root.indexStale) {
+        root.indexStale = false
+        root.refresh()
+      }
+    })
+  }
+
+  // Must match INDEX_VERSION in cli/src/omoide.h. The CLI is built from this
+  // checkout, so a mismatch means the two were changed apart.
+  readonly property int indexVersion: 5
+
+  function applyIndex(parsed) {
     if (!parsed || typeof parsed !== "object")
       return
-
-    // A plugin update can change the cache's shape. Rebuilding on a version
-    // mismatch means an update self-heals instead of rendering a stale cache.
-    //
-    // Once only. This used to reindex on every mismatch, and since a rebuild
-    // rewrites the file with the version the CLI knows, a version the shell did
-    // NOT know became an endless loop: reindex, watch fires, mismatch, reindex.
-    // Bumping INDEX_VERSION without touching this line was enough to trigger
-    // it. Capping it at one attempt means a future skew degrades to a stale
-    // cache instead of a hot loop.
-    if (parsed.version !== undefined && parsed.version !== root.indexVersion) {
-      if (!root.rebuildTried) {
-        root.rebuildTried = true
-        root.call(["reindex"], null)
-        return
-      }
-      console.warn("omoide: index.json is v" + parsed.version + ", expected v"
+    if (parsed.version !== root.indexVersion)
+      console.warn("omoide: the CLI's index is v" + parsed.version + ", expected v"
                    + root.indexVersion + " -- rendering it anyway")
-    }
     root.index = parsed   // emits indexChanged for anything bound to it
-  }
-
-  FileView {
-    id: indexFile
-    path: root.stateHome + "/index.json"
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.applyIndex(text())
-    onFileChanged: reload()
-    onLoadFailed: root.index = ({
-      version: root.indexVersion, pendingCount: 0, failedCount: 0,
-      memoryCount: 0, digest: { events: 0, todos: 0 },
-      memories: [], events: [], todos: [], suggestions: [], collections: [],
-      alarms: []
-    })
   }
 
   Loader {
@@ -445,7 +424,7 @@ Item {
     interval: 2000
     running: true
     repeat: false
-    onTriggered: root.call(["sweep"], function () { root.refresh() })
+    onTriggered: root.call(["sweep"], null)   // it signals refresh itself
   }
 
   // The scheduler; .agents/docs/reference/reminders.md describes the split
@@ -499,6 +478,7 @@ Item {
 
   Component.onCompleted: {
     root.buildCli()
+    root.refresh()   // queued until the CLI is ready
     root.armAlarms()
   }
 

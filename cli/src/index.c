@@ -143,7 +143,7 @@ static char *domain_label(const char *domain) {
 typedef struct {
   char *id, *label, *group;
   int count;
-  int order;   // first-seen, the tie-break Python's stable sort gave
+  int order;   // first-seen order, the tie-break between equal counts
 } Facet;
 
 static void facet_free(gpointer data) {
@@ -190,15 +190,19 @@ static int facet_compare(gconstpointer a, gconstpointer b) {
 // tie-break follows the library's order. Only a memory's first four tags count
 // toward the vocabulary. Facets with a single member are dropped: a chip that
 // narrows six memories down to one is a worse way to find it than scrolling.
-static json_object *build_facets(json_object *cards) {
+json_object *facet_vocabulary(sqlite3 *db) {
   g_autoptr(GPtrArray) facets = g_ptr_array_new_with_free_func(facet_free);
   g_autoptr(GHashTable) by_id = g_hash_table_new(g_str_hash, g_str_equal);
 
-  for (size_t i = 0; i < json_object_array_length(cards); i++) {
-    json_object *card = json_object_array_get_idx(cards, i);
-    const char *kind = json_get_str(card, "kind");
-    if (!kind || !*kind)
-      kind = "note";
+  g_autoptr(sqlite3_stmt) rows = db_query(db,
+      "SELECT " MEMORY_KIND_SQL " AS kind, "
+      "(SELECT payload FROM blocks WHERE memory_id = m.id AND type = 'source' LIMIT 1) AS source, "
+      "(SELECT json_group_array(tag) FROM (SELECT tag FROM tags WHERE memory_id = m.id "
+      "ORDER BY tag LIMIT 4)) AS tags "
+      "FROM memories m WHERE m.status = 'ready' ORDER BY m.created_at DESC",
+      NULL);
+  while (db_step(rows)) {
+    const char *kind = col_str(rows, "kind");
     g_autofree char *kind_id = g_strconcat("kind:", kind, NULL);
     g_autofree char *kind_label = g_str_equal(kind, "screenshot") ? g_strdup("Screenshot")
         : g_str_equal(kind, "note")                               ? g_strdup("Note")
@@ -206,15 +210,17 @@ static json_object *build_facets(json_object *cards) {
                                                                   : capitalize(kind);
     bump(facets, by_id, kind_id, kind_label, "kind");
 
-    const char *domain = json_get_str(card, "domain");
+    const char *payload_text = col_str(rows, "source");
+    g_autoptr(json_object) payload = payload_text ? json_tokener_parse(payload_text) : NULL;
+    const char *domain = json_get_str(payload, "domain");
     if (domain && *domain) {
       g_autofree char *source_id = g_strconcat("source:", domain, NULL);
       g_autofree char *label = domain_label(domain);
       bump(facets, by_id, source_id, label, "source");
     }
 
-    json_object *tags = json_get(card, "tags");
-    for (size_t t = 0; t < json_object_array_length(tags) && t < 4; t++) {
+    g_autoptr(json_object) tags = json_tokener_parse(col_str(rows, "tags"));
+    for (size_t t = 0; t < json_object_array_length(tags); t++) {
       const char *tag = json_object_get_string(json_object_array_get_idx(tags, t));
       g_autofree char *tag_id = g_strconcat("tag:", tag, NULL);
       bump(facets, by_id, tag_id, tag, "tag");
@@ -450,16 +456,7 @@ static int64_t due_today(json_object *entries, const char *key, GDateTime *today
   return count;
 }
 
-static json_object *build_index(sqlite3 *db) {
-  json_object *memories = json_object_new_array();
-  {
-    g_autoptr(sqlite3_stmt) rows = db_query(db,
-        "SELECT * FROM memories WHERE status = 'ready' "
-        "ORDER BY created_at DESC LIMIT 500",
-        NULL);
-    while (db_step(rows))
-      json_object_array_add(memories, memory_card(db, rows));
-  }
+json_object *build_index(sqlite3 *db) {
 
   json_object *events = json_object_new_array();
   {
@@ -506,7 +503,7 @@ static json_object *build_index(sqlite3 *db) {
 
   g_autoptr(sqlite3_stmt) counts = db_query(db,
       "SELECT SUM(ai_status = 'pending') AS pending, "
-      "SUM(ai_status = 'failed') AS failed FROM memories",
+      "SUM(ai_status = 'failed') AS failed, SUM(status = 'ready') AS ready FROM memories",
       NULL);
   db_step(counts);
 
@@ -535,13 +532,11 @@ static json_object *build_index(sqlite3 *db) {
   json_object_object_add(index, "generatedAt", json_object_new_string(generated));
   // The bar menu gates its voice entry on this.
   json_object_object_add(index, "voiceAvailable", json_object_new_boolean(has("voxtype")));
-  json_object_object_add(index, "facets", build_facets(memories));
   json_object_object_add(index, "pendingCount", json_object_new_int64(col_int(counts, "pending")));
   json_object_object_add(index, "failedCount", json_object_new_int64(col_int(counts, "failed")));
-  json_object_object_add(
-      index, "memoryCount", json_object_new_int64((int64_t)json_object_array_length(memories)));
+  // Every ready memory, not the length of the capped card list.
+  json_object_object_add(index, "memoryCount", json_object_new_int64(col_int(counts, "ready")));
   json_object_object_add(index, "digest", digest);
-  json_object_object_add(index, "memories", memories);
   json_object_object_add(index, "events", events);
   json_object_object_add(index, "todos", todos);
   json_object_object_add(index, "suggestions", suggestions);
@@ -550,12 +545,4 @@ static json_object *build_index(sqlite3 *db) {
   // here the shell acts on rather than renders.
   json_object_object_add(index, "alarms", alarms);
   return index;
-}
-
-void write_index(sqlite3 *db) {
-  const Paths *p = paths();
-  g_mkdir_with_parents(p->state_dir, 0777);
-  g_autoptr(json_object) index = build_index(db);
-  if (!write_json_file(p->index_path, index))
-    die(1, "could not write %s", p->index_path);
 }

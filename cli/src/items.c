@@ -2,9 +2,7 @@
 #include "omoide.h"
 
 enum {
-  MAX_REMINDERS = 4,   // per item, and every one interrupts someone
-  MAX_MEMORY_REMINDERS = 12,   // and per capture, which is the number that matters
-  MAX_TITLE = 200,
+  MAX_MEMORY_REMINDERS = 12,   // per capture, which is the number that matters
 };
 
 static int64_t next_position(sqlite3 *db, const char *memory_id) {

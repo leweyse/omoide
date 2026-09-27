@@ -19,15 +19,45 @@ Flickable {
   signal openCollection(string name)
 
   readonly property var index: service ? service.index : ({})
-  readonly property var facets: (index && index.facets) || []
+
+  // The captures on screen, a page at a time. A chip and a search narrow the
+  // query itself, so what is loaded is always what is shown.
+  PagedMemories {
+    id: pages
+    service: root.service
+    args: root.searching ? ["search", "--q", root.appliedQuery] : ["list"]
+    facet: root.facet
+    pageSize: root.pageSize
+  }
+
+  // Enough cards to fill the viewport twice over, so a scroll that is already
+  // moving when a page lands still has cards under it.
+  readonly property int pageSize: {
+    var cardHeight = grid.columnWidth / 1.6 + Style.space(100)
+    var rows = Math.ceil(root.height / Math.max(1, cardHeight))
+    return Math.max(12, Math.min(60, grid.columns * rows * 2))
+  }
+
+  // The next page is asked for while a viewport of cards is still below.
+  function maybeLoadMore() {
+    if (root.contentY + root.height * 2 >= root.contentHeight)
+      pages.loadMore()
+  }
+
+  onContentYChanged: root.maybeLoadMore()
+  onContentHeightChanged: root.maybeLoadMore()
+
+  // The unfiltered size of a search, for the "All" chip, kept while a chip
+  // narrows the results.
+  property int searchTotal: 0
 
   // Search narrows the same grid rather than living on its own page: the
   // library already shows captures well, and a chip on top of a query is a
   // more useful combination than either alone.
   property string query: ""            // what is in the field, right now
-  property string appliedQuery: ""     // what `results` actually belongs to
-  property var results: []
-  property bool awaiting: false
+  property string appliedQuery: ""     // what the grid is showing results for
+  readonly property bool awaiting: root.query.trim() !== root.appliedQuery
+                                   || (pages.loading && !pages.loaded)
   // Hidden until asked for: the grid is the point of this page, and a field
   // sitting above it permanently costs a row of captures for something used
   // occasionally.
@@ -41,27 +71,7 @@ Flickable {
 
   function runSearch() {
     if (!service) return
-    var wanted = root.query.trim()
-    if (!wanted.length) {
-      root.results = []
-      root.appliedQuery = ""
-      root.awaiting = false
-      // Explicit, because assigning a property its existing value emits nothing:
-      // after a search that returned nothing, `results` is already [] and
-      // clearing the field leaves it [], so refreshView would never run and the
-      // grid would keep showing the empty result set.
-      root.refreshView()
-      return
-    }
-    root.awaiting = true
-    service.call(["search", "--q", wanted], function (code, json) {
-      // Drop a stale answer: two searches can overlap, and the slower one
-      // must not overwrite the newer one's results.
-      if (wanted !== root.query.trim()) return
-      root.results = (json && json.results) || []
-      root.appliedQuery = wanted
-      root.awaiting = false
-    })
+    root.appliedQuery = root.query.trim()
   }
 
   function focusInput() {
@@ -74,54 +84,16 @@ Flickable {
     field.text = ""
     root.query = ""
     root.appliedQuery = ""
-    root.results = []
-    root.awaiting = false
   }
 
   // "" means All; otherwise a chip id, which the CLI filters by.
   property string facet: ""
 
-  function matchesFacet(memory) {
-    if (!root.facet.length) return true
-    return root.facetMatches(memory, root.facet)
-  }
-
-  // The set a search has narrowed to, before any chip is applied. Chip counts
-  // are computed over this, not over the fully filtered list -- otherwise
-  // picking one facet would show every other as zero.
-  function baseMemories() {
-    return root.searching ? root.results : (root.index.memories || [])
-  }
-
-  function visibleMemories() {
-    var all = root.baseMemories()
-    if (!root.facet.length) return all
-    var out = []
-    for (var i = 0; i < all.length; i++)
-      if (root.matchesFacet(all[i])) out.push(all[i])
-    return out
-  }
-
-  function facetMatches(memory, facetId) {
-    var parts = facetId.split(":")
-    var group = parts[0]
-    var value = parts.slice(1).join(":")
-    if (group === "kind") return (memory.kind || "note") === value
-    if (group === "source") return (memory.domain || "") === value
-    if (group === "tag") return (memory.tags || []).indexOf(value) !== -1
-    if (group === "collection")
-      return (memory.collections || []).indexOf(value) !== -1
-    return false
-  }
-
-  // Chips carry counts for what is actually on screen. The index supplies the
-  // vocabulary and the labels -- it knows that x.com is "X" -- while the counts
-  // are recomputed here, so a chip can never claim more than the grid holds.
-  // Facets with nothing left in the current set drop out entirely.
-  // Recomputed explicitly whenever anything it depends on moves, and read
-  // directly by the grid and the chips.
-  property var shownMemories: []
+  // Chips carry counts for what the view holds: `facets` counts within the
+  // search, if there is one, and leaves out a chip with nothing in it.
+  readonly property var shownMemories: pages.memories
   property var shownFacets: []
+  property int facetsToken: 0
 
   // --- keyboard ------------------------------------------------------------
   //
@@ -319,61 +291,61 @@ Flickable {
     return false
   }
 
-  function refreshView() {
-    root.shownFacets = root.computeFacets()
-
-    // Drop a filter the chip row no longer offers. It matches nothing, and with
-    // no chip on screen there is nothing left to click to undo it -- the grid
-    // reads as empty and broken. Clearing re-enters through onFacetChanged and
-    // falls straight through this branch the second time.
-    //
-    // Only while NOT searching: a query that narrows the set can legitimately
-    // leave a facet with no matches, and a facet on top of a query is a
-    // combination worth keeping rather than silently discarding.
-    if (!root.searching && root.facet.length > 0
-        && !root.facetOffered(root.facet)) {
-      root.facet = ""
-      return
-    }
-
-    root.shownMemories = root.visibleMemories()
-    // The grid's columns derive from shownMemories, so a first-item focus that
-    // ran before the index landed had no card to sit on. Seed it now.
-    if (root.filterCursor < 0) {
-      if (root.nameOf(root.region) === "captures" && grid.cursorId.length === 0)
-        grid.focusColumn(0)
-      else if (root.nameOf(root.region) === "collections"
-               && root.collectionCursor < 0
-               && (root.index.collections || []).length > 0)
-        root.collectionCursor = 0
-    }
+  function loadFacets() {
+    if (!service) return
+    var mine = ++root.facetsToken
+    var scoped = root.searching
+    var command = scoped ? ["facets", "--q", root.appliedQuery] : ["facets"]
+    service.call(command, function (code, json) {
+      if (!root || mine !== root.facetsToken) return
+      root.shownFacets = (code === 0 && json && json.facets) || []
+      // Drop a filter the chip row does not offer. It matches nothing, and with
+      // no chip on screen there is nothing to click to undo it, so the grid
+      // would read as empty and broken. Not while searching: a query can
+      // legitimately leave a chip with no matches, and a chip on top of a query
+      // is a combination worth keeping.
+      if (!scoped && root.facet.length > 0 && !root.facetOffered(root.facet))
+        root.facet = ""
+    })
   }
 
-  onFacetChanged: refreshView()
-  // `searching` is derived from searchOpen, and it decides whether the grid
-  // reads the index or the result set. Nothing recomputed when it flipped.
-  onSearchOpenChanged: refreshView()
-  onResultsChanged: refreshView()
-  onAppliedQueryChanged: refreshView()
-  Component.onCompleted: refreshView()
+  // The grid's columns derive from what is loaded, so a first-item focus that
+  // ran before the first page arrived had no card to sit on. Seed it here.
+  function seedCursor() {
+    if (root.filterCursor >= 0) return
+    if (root.nameOf(root.region) === "captures" && grid.cursorId.length === 0)
+      grid.focusColumn(0)
+    else if (root.nameOf(root.region) === "collections"
+             && root.collectionCursor < 0
+             && (root.index.collections || []).length > 0)
+      root.collectionCursor = 0
+  }
+
+  // The library changed somewhere: what is on screen again, and the chips.
+  function refreshView() {
+    pages.refreshLoaded()
+    root.loadFacets()
+  }
+
+  // The loader restarts itself when its query changes; the chips follow the
+  // search scope here.
+  onSearchingChanged: root.loadFacets()
+  onAppliedQueryChanged: if (root.searching) root.loadFacets()
+  Component.onCompleted: root.loadFacets()
+
+  Connections {
+    target: pages
+    function onMemoriesChanged() { root.seedCursor() }
+    function onLoadedChanged() {
+      if (pages.loaded && root.searching && root.facet.length === 0)
+        root.searchTotal = pages.total
+      root.maybeLoadMore()
+    }
+  }
 
   Connections {
     target: root.service
     function onIndexChanged() { root.refreshView() }
-  }
-
-  function computeFacets() {
-    var base = root.baseMemories()
-    var out = []
-    for (var i = 0; i < root.facets.length; i++) {
-      var facet = root.facets[i]
-      var n = 0
-      for (var j = 0; j < base.length; j++)
-        if (root.facetMatches(base[j], facet.id)) n++
-      if (n > 0)
-        out.push({ id: facet.id, label: facet.label, group: facet.group, count: n })
-    }
-    return out
   }
 
   // Bottom inset only. The gap above belongs to the window's view
@@ -382,24 +354,9 @@ Flickable {
   clip: true
   boundsBehavior: Flickable.StopAtBounds
 
-  // Flickable's built-in wheel step is tuned for touch flicking and crawls with
-  // a mouse or touchpad, which is painful on a page this tall. One notch moves
-  // a readable chunk instead, clamped so it cannot overscroll.
-  WheelHandler {
-    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-    onWheel: function (event) {
-      if (event.angleDelta.y === 0) return
-      // The filter strip owns the wheel while the pointer is over it.
-      if (stripHover.hovered) return
-      // So does the collections row, but only while it has somewhere to go --
-      // otherwise a pointer resting on it would deaden the page's own scroll.
-      if (collectionsHover.hovered && collectionsRow.overflowing) return
-      var notches = event.angleDelta.y / 120
-      var limit = Math.max(0, root.contentHeight - root.height)
-      root.contentY = Math.max(0, Math.min(limit,
-                                           root.contentY - notches * Style.space(140)))
-    }
-  }
+  // Vertical swipes scroll the page wherever the pointer is; the sideways rows
+  // take only sideways ones.
+  PageWheel { page: root }
 
   Column {
     id: layout
@@ -417,6 +374,11 @@ Flickable {
     Item { id: focusSink }
 
   // Wraps the shared card so the grid can hand it a memory and hear the click.
+  Component {
+    id: skeletonDelegate
+    SkeletonCard {}
+  }
+
   Component {
     id: cardDelegate
 
@@ -450,143 +412,119 @@ Flickable {
       // wrapper holds the row's own height, so the layout does not grow. The row
       // itself keeps its position, so the tiles line up with the captures below.
       Item {
-        id: collectionsClip
-        readonly property real bleed: Math.max(1, Style.space(1))
-        x: -bleed
-        width: parent.width + bleed * 2
+        width: parent.width
         height: Style.space(112)
-        clip: true
 
-        // Tiles are sized from the row, the same way the captures grid derives its
-        // columns: a whole number fits exactly and the remainder scrolls.
-        //
-        // Fixed-width tiles ended the row mid-card at every width that was not a
-        // multiple of the tile pitch -- which is most of them, since the dialog
-        // is a fraction of whatever screen it opens on. A sliced card reads as a
-        // rendering fault, not as "there is more this way".
-        ListView {
-          id: collectionsRow
-          x: collectionsClip.bleed
-          width: collectionsClip.width - collectionsClip.bleed * 2
-          // A horizontal ListView forces its delegates' height, so this IS the
-          // tile height -- CollectionTile's own is only a fallback.
-          height: parent.height
-          orientation: ListView.Horizontal
-          spacing: Style.spacing.lg
-          model: root.index.collections || []
+        Item {
+          id: collectionsClip
+          readonly property real bleed: Math.max(1, Style.space(1))
+          x: -bleed
+          y: -bleed
+          width: parent.width + bleed * 2
+          height: parent.height + bleed * 2
+          clip: true
 
-          // The narrowest a tile may be. Above it tiles stretch to close the
-          // remainder; below it one fewer fits.
-          readonly property real tileMin: Style.space(216)
-          readonly property int tileColumns:
-            Math.max(1, Math.floor((width + spacing) / (tileMin + spacing)))
-          // Floored, not rounded: rounding up overshoots the row by a pixel per
-          // tile and slices the last one again, which is the whole bug.
-          //
-          // Fewer collections than columns just leaves the remainder empty. Two
-          // tiles do not stretch to half the dialog each -- a column width is a
-          // rule about the row, not about how many things happen to be in it.
-          readonly property real tileWidth:
-            Math.floor((width - spacing * (tileColumns - 1)) / tileColumns)
+          // Tiles are sized from the row, the same way the captures grid derives its
+          // columns: a whole number fits exactly and the remainder scrolls. A fixed
+          // tile width would end the row mid-card at most widths, and a sliced card
+          // reads as a rendering fault, not as "there is more this way".
+          ListView {
+            id: collectionsRow
+            x: collectionsClip.bleed
+            y: collectionsClip.bleed
+            width: collectionsClip.width - collectionsClip.bleed * 2
+            // A horizontal ListView forces its delegates' height, so this IS the
+            // tile height. CollectionTile's own is only a fallback.
+            height: parent.height - collectionsClip.bleed * 2
+            orientation: ListView.Horizontal
+            spacing: Style.spacing.lg
+            // No tiles until their width is known. Created at width 0, they grow
+            // when it arrives, and a ListView answers that by shifting its content
+            // origin, which leaves the row a tile off its start.
+            model: collectionsRow.tileWidth > 0 ? (root.index.collections || []) : []
 
-          // The scroll, in the view's own coordinates. originX is NOT 0 here --
-          // followCursor explains why -- so every bound is measured from it, and
-          // the span is computed from the tiles rather than read off contentWidth,
-          // which is stale in the frame right after a resize.
-          readonly property real stride: tileWidth + spacing
-          readonly property real span: count > 0 ? count * stride - spacing : 0
-          // Functions, not bindings: followCursor runs from onOriginXChanged, and
-          // whether a binding ON originX has re-evaluated by the time that
-          // property's own change handler runs is undefined. Read as bindings
-          // there, both bounds came from the PREVIOUS origin and clamped the row
-          // straight back onto the second tile.
-          function minX() { return originX }
-          function maxX() { return originX + Math.max(0, span - width) }
-          readonly property bool overflowing: span > width + 0.5
+            // The narrowest a tile may be. Above it tiles stretch to close the
+            // remainder; below it one fewer fits.
+            readonly property real tileMin: Style.space(216)
+            readonly property int tileColumns:
+              Math.max(1, Math.floor((width + spacing) / (tileMin + spacing)))
+            // Floored, not rounded: rounding up overshoots the row by a pixel per
+            // tile and slices the last one.
+            //
+            // Fewer collections than columns leaves the remainder empty. Two tiles
+            // do not stretch to half the dialog each: a column width is a rule
+            // about the row, not about how many things happen to be in it.
+            readonly property real tileWidth:
+              Math.floor((width - spacing * (tileColumns - 1)) / tileColumns)
 
-          // Keep the keyboard cursor on screen, and keep the row anchored to its
-          // own start otherwise. Every tile is the same width, so where a given
-          // index sits is arithmetic -- which is worth doing by hand here, because
-          // neither of the mechanisms that would normally do it survives this
-          // row's startup:
-          //
-          // Delegates are created before the row has its width, at tileWidth 0,
-          // and grow when it arrives. A ListView answers that resize by shifting
-          // its content ORIGIN rather than its items -- originX ended up at -864 --
-          // and left contentX one whole tile past it, so the row opened on the
-          // second collection with the cursor on the first. positionViewAtIndex
-          // during construction lands somewhere equally arbitrary, and
-          // ApplyRange never re-applied once the origin had moved.
-          //
-          // So: everything is measured FROM originX, and clamped to it.
-          function followCursor() {
-            if (count === 0 || width <= 0 || tileWidth <= 0) return
-            var x = Math.max(minX(), Math.min(maxX(), contentX))
-            var left = originX + Math.max(0, root.collectionCursor) * stride
-            if (left < x) x = left
-            else if (left + tileWidth > x + width) x = left + tileWidth - width
-            contentX = Math.max(minX(), Math.min(maxX(), x))
-          }
+            // The scroll, in the view's own coordinates. originX can move off 0
+            // (the model says why), so every bound is measured from it, and
+            // the span is computed from the tiles rather than read off contentWidth,
+            // which is stale in the frame right after a resize.
+            readonly property real stride: tileWidth + spacing
+            readonly property real span: count > 0 ? count * stride - spacing : 0
+            // Functions, not bindings: followCursor runs from onOriginXChanged, and
+            // whether a binding ON originX has re-evaluated by the time that
+            // property's own change handler runs is undefined. As bindings, both
+            // bounds can still hold the PREVIOUS origin and clamp the row back onto
+            // the wrong tile.
+            function minX() { return originX }
+            function maxX() { return originX + Math.max(0, span - width) }
+            readonly property bool overflowing: span > width + 0.5
 
-          onWidthChanged: collectionsRow.followCursor()
-          onCountChanged: collectionsRow.followCursor()
-          // The shift itself, caught directly: it is what leaves contentX
-          // pointing at the wrong tile, and it happens after both of the above.
-          onOriginXChanged: collectionsRow.followCursor()
+            // Bring the cursor's tile on screen when `chase` is set and the row
+            // holds the keyboard; otherwise only keep the row inside its bounds.
+            // Every tile is the same width, so where a given index sits is
+            // arithmetic, done by hand because neither positionViewAtIndex nor
+            // ApplyRange survives this row's startup. Only a keyboard move chases:
+            // a row scrolled by the wheel stays where the wheel left it.
+            function followCursor(chase) {
+              if (count === 0 || width <= 0 || tileWidth <= 0) return
+              var x = Math.max(minX(), Math.min(maxX(), contentX))
+              if (chase && root.hasKeyboard && root.regionName === "collections") {
+                var left = originX + Math.max(0, root.collectionCursor) * stride
+                if (left < x) x = left
+                else if (left + tileWidth > x + width) x = left + tileWidth - width
+              }
+              contentX = Math.max(minX(), Math.min(maxX(), x))
+            }
 
-          Connections {
-            target: root
-            function onCollectionCursorChanged() { collectionsRow.followCursor() }
-            // Coming back to the row after the wheel left it somewhere else: the
-            // cursor has not moved, so nothing else here would fire.
-            function onRegionNameChanged() { collectionsRow.followCursor() }
-          }
+            onWidthChanged: collectionsRow.followCursor(true)
+            onCountChanged: collectionsRow.followCursor(false)
+            onOriginXChanged: collectionsRow.followCursor(false)
 
-          // Wrapped so the exclusion ring is a SIBLING of the tile: a
-          // ShaderEffectSource pointing at an ancestor recurses.
-          delegate: CollectionTile {
-            required property var modelData
-            required property int index
-            width: collectionsRow.tileWidth
-            collection: modelData
-            hasCursor: root.hasKeyboard && root.regionName === "collections"
-                       && root.filterCursor < 0
-                       && root.collectionCursor === index
-            // Opens the collection as its own page. It used to toggle a facet on
-            // this grid, which meant a collection had no place of its own and no
-            // way to be renamed or removed.
-            onActivated: root.openCollection(modelData.name)
-          }
+            Connections {
+              target: root
+              function onCollectionCursorChanged() { collectionsRow.followCursor(true) }
+              // Coming back to the row after the wheel left it somewhere else: the
+              // cursor has not moved, so nothing else here would fire.
+              function onRegionNameChanged() { collectionsRow.followCursor(true) }
+            }
 
-          // A vertical wheel over the row scrolls it sideways, the same bargain
-          // the chip strip makes. Now that the tiles fit the width there is no
-          // half-card left hinting at an overflow, so reaching it must not depend
-          // on owning a horizontal wheel.
-          WheelHandler {
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            onWheel: function (event) {
-              // Nothing to scroll: leave the event alone so the page still moves
-              // under a pointer that happens to be resting here.
-              if (!collectionsRow.overflowing) return
-              var delta = event.angleDelta.y !== 0 ? event.angleDelta.y
-                                                   : event.angleDelta.x
-              if (delta === 0) return
-              // One whole tile per notch, so the row lands on tile boundaries
-              // rather than part-way across one. Clamped to the row's own bounds,
-              // which start at originX -- clamping to 0 would throw the row past
-              // its end, since the origin here is a long way negative.
-              collectionsRow.contentX =
-                Math.max(collectionsRow.minX(),
-                         Math.min(collectionsRow.maxX(),
-                                  collectionsRow.contentX
-                                  - delta / 120 * collectionsRow.stride))
-              event.accepted = true
+            // Wrapped so the exclusion ring is a SIBLING of the tile: a
+            // ShaderEffectSource pointing at an ancestor recurses.
+            delegate: CollectionTile {
+              required property var modelData
+              required property int index
+              width: collectionsRow.tileWidth
+              collection: modelData
+              hasCursor: root.hasKeyboard && root.regionName === "collections"
+                         && root.filterCursor < 0
+                         && root.collectionCursor === index
+              // Opens the collection as its own page, where it is renamed or
+              // removed.
+              onActivated: root.openCollection(modelData.name)
+            }
+
+            // A sideways swipe scrolls the row; a vertical one passes to the page.
+            PageWheel {
+              page: collectionsRow
+              horizontal: true
+              outer: root
+              minPos: collectionsRow.minX()
+              maxPos: collectionsRow.maxX()
             }
           }
-
-          // Which handler gets a wheel is decided by hover, not by hoping the
-          // accepted flag propagates between two independent handlers.
-          HoverHandler { id: collectionsHover }
         }
       }
     }
@@ -596,12 +534,11 @@ Flickable {
       spacing: Style.spacing.md
 
       PanelSectionHeader {
-        text: root.awaiting
-              ? "SEARCHING…"
-              : (root.searching
-                 ? root.shownMemories.length + (root.shownMemories.length === 1
-                                                ? " RESULT" : " RESULTS")
-                 : "CAPTURES")
+        // A label, not a progress indicator: the count joins it once the
+        // results are in, and the grid below shows what is still loading.
+        text: !root.searching ? "CAPTURES"
+              : (pages.loaded ? pages.total + (pages.total === 1 ? " RESULT" : " RESULTS")
+                              : "RESULTS")
         foreground: Color.muted
         fontFamily: Style.font.resolvedFamily
       }
@@ -655,8 +592,7 @@ Flickable {
             FilterChip {
               hasCursor: root.hasKeyboard && root.filterCursor === 0
               label: "All"
-              count: root.searching ? root.results.length
-                                    : ((root.index.memories || []).length)
+              count: root.searching ? root.searchTotal : (root.index.memoryCount || 0)
               selected: root.facet.length === 0
               onPicked: root.facet = ""
             }
@@ -679,32 +615,14 @@ Flickable {
             }
           }
 
-          // A vertical wheel over the strip scrolls it sideways: nobody expects
-          // to hunt for a horizontal wheel.
-          //
-          // The step is a fraction of the visible width rather than a fixed
-          // pixel count, so it covers the same proportion of the strip on any
-          // dialog size -- roughly two thirds of a screenful per notch.
-          WheelHandler {
-            id: stripWheel
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            onWheel: function (event) {
-              var delta = event.angleDelta.y !== 0 ? event.angleDelta.y
-                                                   : event.angleDelta.x
-              if (delta === 0) return
-              var limit = Math.max(0, strip.contentWidth - strip.width)
-              var step = Math.max(Style.space(240), strip.width * 0.66)
-              strip.contentX = Math.max(0, Math.min(limit,
-                                        strip.contentX - delta / 120 * step))
-              // Claim it, or the page's own handler scrolls vertically at the
-              // same time and the sideways movement is hard to even see.
-              event.accepted = true
-            }
+          // A sideways swipe scrolls the strip; a vertical one passes to the page.
+          PageWheel {
+            page: strip
+            horizontal: true
+            outer: root
+            minPos: 0
+            maxPos: Math.max(0, strip.contentWidth - strip.width)
           }
-
-          // Which handler gets a wheel is decided by hover, not by hoping the
-          // accepted flag propagates between two independent handlers.
-          HoverHandler { id: stripHover }
         }
       }
 
@@ -772,11 +690,15 @@ Flickable {
         onCursorMoved: root.ensureVisible()
         columns: Math.max(2, Math.floor(width / Style.space(230)))
         delegate: cardDelegate
+        // Cards on their way: two rows for an empty grid, one while the next
+        // page loads.
+        placeholderRows: pages.fetchingNew ? (root.shownMemories.length ? 1 : 2) : 0
+        placeholder: skeletonDelegate
       }
 
       Text {
-        visible: root.shownMemories.length === 0 && !root.awaiting
-        text: (root.index.memories || []).length === 0
+        visible: pages.loaded && root.shownMemories.length === 0 && !root.awaiting
+        text: (root.index.memoryCount || 0) === 0
               ? "Nothing captured yet. Press the bar icon to make your first memory."
               : (root.searching ? "No memories match that search."
                                 : "Nothing matches this filter.")

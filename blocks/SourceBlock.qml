@@ -1,7 +1,6 @@
 import QtQuick
 import Quickshell
 import qs.Commons
-import qs.Ui
 import "../MemoryModel.js" as Model
 
 // Category chip, domain and byline. No favicon: fetching one needs the
@@ -23,7 +22,7 @@ BlockCard {
         visible: !!root.payload.chip
         height: Style.space(18)
         width: chipText.implicitWidth + Style.spacing.lg
-        radius: Style.space(3)
+        radius: Style.cornerRadius
         color: Style.selectedFillFor(Color.popups.text, Color.accent, Color.urgent)
         Text {
           id: chipText

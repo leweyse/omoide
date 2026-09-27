@@ -17,6 +17,10 @@ static const char migration_002[] = {
 #embed "../../sql/migrations/002-drop-reminder-unit.sql"
   , 0
 };
+static const char migration_003[] = {
+#embed "../../sql/migrations/003-index-open-todos-by-memory.sql"
+  , 0
+};
 
 static const struct {
   int number;
@@ -24,6 +28,7 @@ static const struct {
 } MIGRATIONS[] = {
   { 1, migration_001 },
   { 2, migration_002 },
+  { 3, migration_003 },
 };
 
 static_assert(G_N_ELEMENTS(MIGRATIONS) == SCHEMA_VERSION, "SCHEMA_VERSION must match the last migration");

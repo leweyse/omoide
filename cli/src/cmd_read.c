@@ -3,13 +3,6 @@
 
 #include <string.h>
 
-static json_object *cards_from(sqlite3 *db, sqlite3_stmt *rows) {
-  json_object *cards = json_object_new_array();
-  while (db_step(rows))
-    json_object_array_add(cards, memory_card(db, rows));
-  return cards;
-}
-
 // The card for `id` if it is a ready memory, else NULL.
 static json_object *ready_card(sqlite3 *db, const char *id) {
   g_autoptr(sqlite3_stmt) memory =
@@ -68,28 +61,164 @@ int cmd_state(int argc, char **argv) {
   return 0;
 }
 
+// The snapshot the shell renders: the library, the day's counts and the alarms
+// it arms. Service.qml pulls it at load and again on every `refresh`, so this
+// is the only way the shell learns what changed.
+int cmd_index(int argc, char **argv) {
+  parse_options("index", NULL, 0, &argc, &argv);
+  sqlite3 *db = db_open(false);
+  emit(build_index(db));
+  return 0;
+}
+
+// Which ready memories a library view is looking at. The parameters are
+// numbered so one statement serves every combination, each NULL when unused:
+//   ?1 collection name, ?2 facet group, ?3 facet value, ?4 FTS match.
+#define IN_SCOPE \
+  "m.status = 'ready' " \
+  "AND (?1 IS NULL OR m.id IN (SELECT mc.memory_id FROM memory_collections mc " \
+  "JOIN collections c ON c.id = mc.collection_id WHERE c.name = ?1)) " \
+  "AND (?2 IS NULL " \
+  "OR (?2 = 'kind' AND " MEMORY_KIND_SQL " = ?3) " \
+  "OR (?2 = 'source' AND (SELECT CASE WHEN json_valid(payload) " \
+  "THEN json_extract(payload, '$.domain') END FROM blocks " \
+  "WHERE memory_id = m.id AND type = 'source' LIMIT 1) = ?3) " \
+  "OR (?2 = 'tag' AND EXISTS (SELECT 1 FROM tags WHERE memory_id = m.id AND tag = ?3))) " \
+  "AND (?4 IS NULL OR m.id IN (SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ?4)) "
+
+typedef struct {
+  char *group;
+  char *value;
+} FacetFilter;
+
+// `--facet group:value`, as the chips name them. The value may itself hold a
+// colon; the group may not.
+static FacetFilter parse_facet(const char *command, const char *text) {
+  FacetFilter facet = { NULL, NULL };
+  if (!text)
+    return facet;
+  const char *colon = strchr(text, ':');
+  if (!colon || colon == text || !colon[1])
+    die(2, "%s: argument --facet: not a facet: '%s'", command, text);
+  facet.group = g_strndup(text, (gsize)(colon - text));
+  facet.value = g_strdup(colon + 1);
+  if (!g_str_equal(facet.group, "kind") && !g_str_equal(facet.group, "source")
+      && !g_str_equal(facet.group, "tag"))
+    die(2, "%s: argument --facet: unknown group '%s' (choose from 'kind', 'source', 'tag')", command,
+        facet.group);
+  return facet;
+}
+
+static int64_t count_in_scope(
+    sqlite3 *db, const char *collection, const FacetFilter *facet, const char *match) {
+  g_autoptr(sqlite3_stmt) row = db_query(db, "SELECT COUNT(*) AS n FROM memories m WHERE " IN_SCOPE, "ssss",
+      collection, facet->group, facet->value, match);
+  db_step(row);
+  return col_int(row, "n");
+}
+
+static json_object *page_info(int64_t total, json_object *start, json_object *end, bool more) {
+  json_object *info = json_object_new_object();
+  json_object_object_add(info, "total", json_object_new_int64(total));
+  json_object_object_add(info, "startCursor", start);
+  json_object_object_add(info, "endCursor", end);
+  json_object_object_add(info, "hasNextPage", json_object_new_boolean(more));
+  return info;
+}
+
+// Newest first, a page at a time. The cursor is where the previous page
+// ended: a (created_at, id) pair that stays valid when memories arrive in
+// between, where an offset would shift and repeat or skip a card.
 int cmd_list(int argc, char **argv) {
   int limit = 50;
-  g_autofree char *collection = NULL;
+  g_autofree char *collection = NULL, *after = NULL, *facet_text = NULL;
   const GOptionEntry entries[] = { { "limit", 0, 0, G_OPTION_ARG_INT, &limit, "at most this many", "N" },
     { "collection", 0, 0, G_OPTION_ARG_STRING, &collection, "only this collection", "NAME" },
+    { "after", 0, 0, G_OPTION_ARG_STRING, &after, "the page after this cursor", "CURSOR" },
+    { "facet", 0, 0, G_OPTION_ARG_STRING, &facet_text, "only memories with this facet", "GROUP:VALUE" },
     G_OPTION_ENTRY_NULL };
   parse_options("list", entries, 0, &argc, &argv);
+  FacetFilter facet = parse_facet("list", facet_text);
+  g_autofree char *after_at = NULL, *after_id = NULL;
+  if (after) {
+    const char *comma = strchr(after, ',');
+    if (!comma || comma == after || !comma[1])
+      die(2, "list: argument --after: not a cursor: '%s'", after);
+    after_at = g_strndup(after, (gsize)(comma - after));
+    after_id = g_strdup(comma + 1);
+  }
   sqlite3 *db = db_open(false);
 
-  g_autoptr(sqlite3_stmt) rows = collection
-      ? db_query(db,
-            "SELECT * FROM memories WHERE status = 'ready' AND id IN "
-            "(SELECT mc.memory_id FROM memory_collections mc "
-            "JOIN collections c ON c.id = mc.collection_id WHERE c.name = ?) "
-            "ORDER BY created_at DESC LIMIT ?",
-            "si", collection, (int64_t)limit)
-      : db_query(db,
-            "SELECT * FROM memories WHERE status = 'ready' "
-            "ORDER BY created_at DESC LIMIT ?",
-            "i", (int64_t)limit);
+  // One row past the page says whether another page follows. A negative limit
+  // means no limit, as it always has.
+  const int64_t fetch = limit < 0 ? -1 : (int64_t)limit + 1;
+  g_autoptr(sqlite3_stmt) rows = db_query(db,
+      "WITH page AS (SELECT m.id, m.created_at FROM memories m WHERE " IN_SCOPE
+      "AND (?5 IS NULL OR (m.created_at, m.id) < (?5, ?6)) "
+      "ORDER BY m.created_at DESC, m.id DESC LIMIT ?7) "
+      "SELECT m.* FROM page JOIN memories m ON m.id = page.id "
+      "ORDER BY page.created_at DESC, page.id DESC",
+      "ssssssi", collection, facet.group, facet.value, NULL, after_at, after_id, fetch);
+  json_object *cards = json_object_new_array();
+  bool more = false;
+  g_autofree char *first = NULL, *last = NULL;
+  while (db_step(rows)) {
+    if (limit >= 0 && (int64_t)json_object_array_length(cards) == limit) {
+      more = true;
+      break;
+    }
+    g_autofree char *cursor = g_strdup_printf("%s,%s", col_str(rows, "created_at"), col_str(rows, "id"));
+    if (!first)
+      first = g_strdup(cursor);
+    g_free(last);
+    last = g_steal_pointer(&cursor);
+    json_object_array_add(cards, memory_card(db, rows));
+  }
+
   json_object *out = json_object_new_object();
-  json_object_object_add(out, "memories", cards_from(db, rows));
+  json_object_object_add(out, "memories", cards);
+  json_object_object_add(out, "pageInfo",
+      page_info(count_in_scope(db, collection, &facet, NULL), json_str(first), json_str(last), more));
+  g_free(facet.group);
+  g_free(facet.value);
+  emit(out);
+  return 0;
+}
+
+// The chips a view offers, counted within what it shows: the vocabulary comes
+// from the whole library, each count from the scope, and a chip with nothing
+// in the scope is left out. A tag chip counts every memory carrying the tag.
+int cmd_facets(int argc, char **argv) {
+  g_autofree char *collection = NULL, *q = NULL;
+  const GOptionEntry entries[] = { { "collection", 0, 0, G_OPTION_ARG_STRING, &collection,
+                                       "count within this collection", "NAME" },
+    { "q", 0, 0, G_OPTION_ARG_STRING, &q, "count within this search", "TEXT" }, G_OPTION_ENTRY_NULL };
+  parse_options("facets", entries, 0, &argc, &argv);
+  sqlite3 *db = db_open(false);
+
+  g_autofree char *match = q ? fts_escape(q) : NULL;
+  json_object *shown = json_object_new_array();
+  // A search with no usable term matches nothing, so it offers no chips.
+  if (!match || *match) {
+    g_autoptr(json_object) vocabulary = facet_vocabulary(db);
+    for (size_t i = 0; i < json_object_array_length(vocabulary); i++) {
+      json_object *entry = json_object_array_get_idx(vocabulary, i);
+      FacetFilter facet = parse_facet("facets", json_get_str(entry, "id"));
+      const int64_t n = count_in_scope(db, collection, &facet, match);
+      g_free(facet.group);
+      g_free(facet.value);
+      if (n == 0)
+        continue;
+      json_object *chip = json_object_new_object();
+      json_object_object_add(chip, "id", json_object_get(json_get(entry, "id")));
+      json_object_object_add(chip, "label", json_object_get(json_get(entry, "label")));
+      json_object_object_add(chip, "group", json_object_get(json_get(entry, "group")));
+      json_object_object_add(chip, "count", json_object_new_int64(n));
+      json_object_array_add(shown, chip);
+    }
+  }
+  json_object *out = json_object_new_object();
+  json_object_object_add(out, "facets", shown);
   emit(out);
   return 0;
 }
@@ -212,30 +341,51 @@ int cmd_show(int argc, char **argv) {
   return 0;
 }
 
+// Best match first, a page at a time. Rank has no stable key to resume from,
+// so the cursor is an offset into the ranking.
 int cmd_search(int argc, char **argv) {
-  g_autofree char *q = NULL;
+  g_autofree char *q = NULL, *after = NULL, *facet_text = NULL;
   int limit = 50;
   const GOptionEntry entries[] = { { "q", 0, 0, G_OPTION_ARG_STRING, &q, "what to look for", "TEXT" },
-    { "limit", 0, 0, G_OPTION_ARG_INT, &limit, "at most this many", "N" }, G_OPTION_ENTRY_NULL };
+    { "limit", 0, 0, G_OPTION_ARG_INT, &limit, "at most this many", "N" },
+    { "after", 0, 0, G_OPTION_ARG_STRING, &after, "the page after this cursor", "CURSOR" },
+    { "facet", 0, 0, G_OPTION_ARG_STRING, &facet_text, "only results with this facet", "GROUP:VALUE" },
+    G_OPTION_ENTRY_NULL };
   parse_options("search", entries, 0, &argc, &argv);
   require_option("search", "--q", q);
+  FacetFilter facet = parse_facet("search", facet_text);
+  int64_t offset = 0;
+  if (after && !g_ascii_string_to_signed(after, 10, 0, G_MAXINT32, &offset, NULL))
+    die(2, "search: argument --after: not a cursor: '%s'", after);
   sqlite3 *db = db_open(false);
 
   json_object *results = json_object_new_array();
+  bool more = false;
+  int64_t total = 0;
   g_autofree char *match = fts_escape(q);
   if (*match) {
+    const int64_t fetch = limit < 0 ? -1 : (int64_t)limit + 1;
     g_autoptr(sqlite3_stmt) rows = db_query(db,
-        "SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ? "
-        "ORDER BY rank LIMIT ?",
-        "si", match, (int64_t)limit);
+        "SELECT m.* FROM memories_fts JOIN memories m ON m.id = memories_fts.memory_id "
+        "WHERE memories_fts MATCH ?5 AND " IN_SCOPE "ORDER BY rank LIMIT ?6 OFFSET ?7",
+        "sssssii", NULL, facet.group, facet.value, NULL, match, fetch, offset);
     while (db_step(rows)) {
-      json_object *card = ready_card(db, col_str(rows, "memory_id"));
-      if (card)
-        json_object_array_add(results, card);
+      if (limit >= 0 && (int64_t)json_object_array_length(results) == limit) {
+        more = true;
+        break;
+      }
+      json_object_array_add(results, memory_card(db, rows));
     }
+    total = count_in_scope(db, NULL, &facet, match);
   }
+  const size_t shown = json_object_array_length(results);
+  g_autofree char *start = shown ? g_strdup_printf("%" G_GINT64_FORMAT, offset) : NULL;
+  g_autofree char *end = shown ? g_strdup_printf("%" G_GINT64_FORMAT, offset + (int64_t)shown) : NULL;
   json_object *out = json_object_new_object();
   json_object_object_add(out, "results", results);
+  json_object_object_add(out, "pageInfo", page_info(total, json_str(start), json_str(end), more));
+  g_free(facet.group);
+  g_free(facet.value);
   emit(out);
   return 0;
 }

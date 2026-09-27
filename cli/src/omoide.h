@@ -25,8 +25,14 @@
 #define GLYPH "\U000f0a37"   // nf-md-lightbulb_on_outline
 
 enum {
-  SCHEMA_VERSION = 2,   // what this code understands
-  INDEX_VERSION = 4,   // bump when index.json's shape changes
+  SCHEMA_VERSION = 3,   // what this code understands
+  INDEX_VERSION = 5,   // bump when the shape of what `index` prints changes
+};
+
+// Limits that more than one file enforces.
+enum {
+  MAX_TITLE = 200,   // the library truncates at 80
+  MAX_REMINDERS = 4,   // per item, and every one interrupts someone
 };
 
 // Stamped in by the build driver in Service.qml; "local" for a hand build.
@@ -61,7 +67,7 @@ char *one_line(const char *text, long limit);
 char *new_id(const char *prefix);   // sortable and filesystem-safe
 char *truncate_chars(const char *text, long limit);   // by character, not byte
 char *strip_space(const char *text);   // Unicode whitespace, both ends
-char *py_float(double value);   // how Python prints a float: 45.0, 12.5
+char *py_float(double value);   // shortest round trip, whole numbers as 45.0
 char *first_line(const char *text);
 json_object *settings(void);   // the bar widget's inline settings
 
@@ -69,8 +75,8 @@ json_object *settings(void);   // the bar widget's inline settings
 // any type. Their exact results, down to how a boolean is spelled, reach stored
 // rows and the log, and dev/parity pins them.
 bool truthy(json_object *value);
-char *as_text(json_object *value);   // str(value); "" for NULL
-bool as_int(json_object *value, int64_t *out);   // int(value), when it has one
+char *as_text(json_object *value);   // any value as text; "" for NULL
+bool as_int(json_object *value, int64_t *out);   // the integer it holds, truncated; false for none
 
 // --- regex.c
 // Compiled once per process and cached. Every pattern is UTF-8 with Unicode
@@ -84,7 +90,6 @@ typedef struct {
   char *state_dir;
   char *db_path;
   char *blob_dir;
-  char *index_path;
   char *config_path;
   char *log_path;
 } Paths;
@@ -104,8 +109,7 @@ void log_event(const char *event, ...) G_GNUC_NULL_TERMINATED;
 void emit(json_object *payload);
 json_object *json_str(const char *value);   // NULL becomes JSON null
 json_object *json_str_or_empty(const char *value);
-json_object *json_round4(double value);   // what Python's round(x, 4) prints
-bool write_json_file(const char *path, json_object *payload);   // atomic
+json_object *json_round4(double value);   // four decimals, trailing zeros dropped
 json_object *json_get(json_object *object, const char *key);   // NULL if absent
 const char *json_get_str(json_object *object, const char *key);   // NULL unless a string
 
@@ -172,7 +176,14 @@ void shell_ipc(const char *target, const char *method, const char *argument);
 json_object *memory_card(sqlite3 *db, sqlite3_stmt *memory);
 json_object *aspect_of(sqlite3_stmt *attachment);
 void refresh_fts(sqlite3 *db, const char *memory_id);   // NULL: all of them
-void write_index(sqlite3 *db);
+json_object *build_index(sqlite3 *db);
+// The filter chips over the whole library: id, label, group and count.
+json_object *facet_vocabulary(sqlite3 *db);
+// What a memory is, from what it holds, for a row aliased `m`. memory_kind()
+// in index.c is the same rule for one memory; the two must agree.
+#define MEMORY_KIND_SQL \
+  "(SELECT CASE WHEN SUM(kind = 'audio') THEN 'voice' WHEN SUM(kind = 'image') " \
+  "THEN 'screenshot' ELSE 'note' END FROM attachments WHERE memory_id = m.id)"   // what `index` prints and the shell renders
 int backfill_dimensions(sqlite3 *db);
 
 // --- enrich.c
@@ -185,6 +196,7 @@ json_object *todo_from_note(const char *note);   // "remind me to ..." or NULL
 // saying why not.
 json_object *run_ai(
     const char *note, const char *ocr_text, const char *image_path, json_object *ai, char **reason);
+// Returns how many to-dos it created, which decides whether the note fallback runs.
 int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enriched);
 // The command line each preset runs with, hardening included; `env` gets the
 // variables it adds. For the settings dialog as well as for run_ai.
@@ -224,12 +236,21 @@ size_t ai_preset_count(void);
 const char *ai_preset_name(size_t i);
 const char *const *ai_preset_argv(size_t i);
 bool is_ai_preset(const char *name);
+bool provider_takes_image(const char *name);   // attaches a local screenshot itself
+bool provider_is_plain_model(const char *name);   // has no tools to switch off
 void write_ai_settings(json_object *ai);   // borrowed; atomic
 char *cache_bin_path(void);   // the stable path Service.qml builds the CLI to
+
+// --- capture.c
+// Present while a commit's enrichment is running; sweep reads it to tell a
+// stalled enrichment from a live one.
+char *commit_pidfile(const char *memory_id);
 
 // --- commands
 int cmd_migrate(int argc, char **argv);
 int cmd_state(int argc, char **argv);
+int cmd_index(int argc, char **argv);
+int cmd_facets(int argc, char **argv);
 int cmd_list(int argc, char **argv);
 int cmd_show(int argc, char **argv);
 int cmd_search(int argc, char **argv);

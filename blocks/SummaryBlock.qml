@@ -23,7 +23,6 @@ BlockCard {
   }
   property var payload: ({})
   property var service: null
-  property string blockId: ""
   heading: "Summary"
 
   Text {

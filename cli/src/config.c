@@ -132,3 +132,13 @@ char *cache_bin_path(void) {
       cache && cache[0] == '/' ? g_strdup(cache) : g_build_filename(g_get_home_dir(), ".cache", NULL);
   return g_build_filename(base, "omoide", "bin", "omoide", NULL);
 }
+
+bool provider_takes_image(const char *name) {
+  static const char *const TAKES_IMAGE[] = { "claude", "codex", "gemini", "opencode", NULL };
+  return name && g_strv_contains(TAKES_IMAGE, name);
+}
+
+bool provider_is_plain_model(const char *name) {
+  static const char *const PLAIN_MODEL[] = { "ollama", "aichat", NULL };
+  return name && g_strv_contains(PLAIN_MODEL, name);
+}

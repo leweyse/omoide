@@ -1,0 +1,39 @@
+{
+ "calls": {},
+ "config": null,
+ "db": {
+  "attachments": [],
+  "blocks": [],
+  "collections": [],
+  "items": [],
+  "links": [],
+  "memories": [],
+  "memories_fts": [],
+  "memory_collections": [],
+  "reminders": [],
+  "schema": "sha256:6fc49b003e4cea4cb6a2dd640f353a46a7d4cff78e1fc275e196b2ae29ad4a0d",
+  "tags": [],
+  "user_version": 3
+ },
+ "exit": 1,
+ "files": [],
+ "index": {
+  "alarms": [],
+  "collections": [],
+  "digest": {
+   "events": 0,
+   "todos": 0
+  },
+  "events": [],
+  "failedCount": 0,
+  "generatedAt": "2026-09-26T10:00:00Z",
+  "memoryCount": 0,
+  "pendingCount": 0,
+  "suggestions": [],
+  "todos": [],
+  "version": 5,
+  "voiceAvailable": true
+ },
+ "log": [],
+ "stdout": []
+}

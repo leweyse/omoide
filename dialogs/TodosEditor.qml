@@ -2,7 +2,6 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../common"
-import "../MemoryModel.js" as Model
 
 // The whole to-do list of one memory, edited as a list.
 //

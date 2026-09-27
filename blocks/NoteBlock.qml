@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import qs.Ui
 
 // The user's own words, verbatim, and never rewritten by the model.
 //

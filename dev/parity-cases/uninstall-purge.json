@@ -1,0 +1,36 @@
+{
+ "calls": {
+  "omarchy": [
+   {
+    "argv": [
+     "plugin",
+     "disable",
+     "leweyse.omoide"
+    ]
+   }
+  ],
+  "omarchy-shell": [
+   {
+    "argv": [
+     "-q",
+     "shell",
+     "rescanPlugins"
+    ]
+   }
+  ]
+ },
+ "config": null,
+ "db": null,
+ "exit": 0,
+ "files": [],
+ "index": null,
+ "log": [],
+ "stdout": [
+  {
+   "configFile": null,
+   "dataDir": null,
+   "dataRemoved": true,
+   "uninstalled": true
+  }
+ ]
+}

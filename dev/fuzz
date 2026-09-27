@@ -54,9 +54,10 @@ def main() -> int:
         corpus.mkdir()
         for i, seed in enumerate(SEEDS):
             (corpus / f"seed-{i}").write_text(seed)
-        # validate_blocks can log; keep that out of the real state directory.
-        env = dict(os.environ, HOME=str(tmp), TZ="Europe/Madrid",
-                   OMOIDE_NOW="2026-09-26T10:00:00Z")
+        # validate_blocks can log. With every XDG_* dropped and HOME at the temp
+        # dir, the log can only land there.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
+        env.update(HOME=str(tmp), TZ="Europe/Madrid", OMOIDE_NOW="2026-09-26T10:00:00Z")
         dictionary = tmp / "json.dict"
         dictionary.write_text("\n".join(json.dumps(t) for t in [
             "{", "}", "[", "]", ":", ",", '"', '"blocks"', '"type"', '"todos"', '"event"',

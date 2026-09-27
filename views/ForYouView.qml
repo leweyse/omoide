@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../MemoryModel.js" as Model
+import "../common"
 import "../components"
 
 // A digest of what is live, not a list of everything.
@@ -119,23 +120,9 @@ Flickable {
   clip: true
   boundsBehavior: Flickable.StopAtBounds
 
-  // Flickable's built-in wheel step is tuned for touch flicking and crawls with
-  // a mouse or touchpad, which is painful on a page this tall. One notch moves
-  // a readable chunk instead, clamped so it cannot overscroll.
-  WheelHandler {
-    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-    onWheel: function (event) {
-      if (event.angleDelta.y === 0) return
-      // The carousel owns the wheel while the pointer is over it, but only
-      // while it has somewhere to go -- otherwise a pointer resting on it
-      // would deaden the page's own scroll.
-      if (eventsHover.hovered && eventsRow.overflowing) return
-      var notches = event.angleDelta.y / 120
-      var limit = Math.max(0, root.contentHeight - root.height)
-      root.contentY = Math.max(0, Math.min(limit,
-                                           root.contentY - notches * Style.space(140)))
-    }
-  }
+  // Vertical swipes scroll the page wherever the pointer is; the carousel takes
+  // only sideways ones.
+  PageWheel { page: root }
 
   Column {
     id: layout
@@ -167,128 +154,116 @@ Flickable {
       // row's own height, so the layout does not grow. The row itself keeps its
       // position.
       Item {
-        id: eventsClip
-        readonly property real bleed: Math.max(1, Style.space(1))
-        x: -bleed
-        width: parent.width + bleed * 2
+        width: parent.width
         height: Style.space(96)
-        clip: true
 
-        // Cards are sized from the row rather than pinned, so a whole number of
-        // them fits whatever width the dialog opens at and the rest scroll. A
-        // fixed card width ended the carousel mid-card at most widths, which
-        // reads as a clipping fault rather than as an overflow.
-        ListView {
-          id: eventsRow
-          x: eventsClip.bleed
-          width: eventsClip.width - eventsClip.bleed * 2
-          // A ListView sizes its delegates across the scroll axis, so THIS is the
-          // card height -- EventCard's own content-driven height never applies in
-          // here. 158 was sized for the old fixed-height card and left a band of
-          // nothing between the carousel and Tasks.
-          //
-          // 96 is the worst case a card needs: a two-line title, the time range,
-          // the place, and the card's padding. Cards in a carousel want to be
-          // uniform anyway, and each one centres its own content vertically.
-          height: parent.height
-          orientation: ListView.Horizontal
-          spacing: Style.spacing.lg
-          model: root.events
+        Item {
+          id: eventsClip
+          readonly property real bleed: Math.max(1, Style.space(1))
+          x: -bleed
+          y: -bleed
+          width: parent.width + bleed * 2
+          height: parent.height + bleed * 2
+          clip: true
 
-          // The narrowest a card may be: below it the title has no room beside
-          // the date badge and the artwork. Above it cards stretch to close the
-          // remainder, which the extra width spends on the title.
-          readonly property real cardMin: Style.space(300)
-          readonly property int cardColumns:
-            Math.max(1, Math.floor((width + spacing) / (cardMin + spacing)))
-          // Floored, not rounded: rounding up overshoots the row by a pixel per
-          // card and slices the last one again.
-          readonly property real cardWidth:
-            Math.floor((width - spacing * (cardColumns - 1)) / cardColumns)
+          // Cards are sized from the row rather than pinned, so a whole number of
+          // them fits whatever width the dialog opens at and the rest scroll. A
+          // fixed card width would end the carousel mid-card at most widths, which
+          // reads as a clipping fault rather than as an overflow.
+          ListView {
+            id: eventsRow
+            x: eventsClip.bleed
+            y: eventsClip.bleed
+            width: eventsClip.width - eventsClip.bleed * 2
+            // A ListView sizes its delegates across the scroll axis, so THIS is the
+            // card height. EventCard's own content-driven height never applies in
+            // here.
+            //
+            // The clip's 96 is the worst case a card needs: a two-line title, the
+            // time range, the place, and the card's padding. Cards in a carousel
+            // want to be uniform anyway, and each one centres its own content
+            // vertically.
+            height: parent.height - eventsClip.bleed * 2
+            orientation: ListView.Horizontal
+            spacing: Style.spacing.lg
+            // No cards until their width is known. Created at width 0, they grow
+            // when it arrives, and a ListView answers that by shifting its content
+            // origin, which leaves the row a card off its start.
+            model: eventsRow.cardWidth > 0 ? root.events : []
 
-          // The scroll, in the view's own coordinates. originX is NOT 0 here --
-          // followCursor explains why -- so every bound is measured from it.
-          readonly property real stride: cardWidth + spacing
-          readonly property real span: count > 0 ? count * stride - spacing : 0
-          // Functions, not bindings: followCursor runs from onOriginXChanged, and
-          // whether a binding ON originX has re-evaluated by the time that
-          // property's own change handler runs is undefined. Read as bindings
-          // there, both bounds came from the PREVIOUS origin and clamped the row
-          // straight back onto the wrong card.
-          function minX() { return originX }
-          function maxX() { return originX + Math.max(0, span - width) }
-          readonly property bool overflowing: span > width + 0.5
+            // The narrowest a card may be: below it the title has no room beside
+            // the date badge and the artwork. Above it cards stretch to close the
+            // remainder, which the extra width spends on the title.
+            readonly property real cardMin: Style.space(300)
+            readonly property int cardColumns:
+              Math.max(1, Math.floor((width + spacing) / (cardMin + spacing)))
+            // Floored, not rounded: rounding up overshoots the row by a pixel per
+            // card and slices the last one again.
+            readonly property real cardWidth:
+              Math.floor((width - spacing * (cardColumns - 1)) / cardColumns)
 
-          // Keep the keyboard cursor on screen, and the row anchored to its own
-          // start otherwise. Measured from originX for the reason the library's
-          // collections row documents at length: delegates are created before the
-          // row has a width, and the ListView answers their resize by shifting
-          // the content origin, which leaves contentX pointing at the wrong card.
-          //
-          // The cursor means a task while the region is Tasks, so the card it
-          // follows is only this row's while the region is Events -- otherwise
-          // arrowing down the task list would drag the carousel along with it.
-          function followCursor() {
-            if (count === 0 || width <= 0 || cardWidth <= 0) return
-            var x = Math.max(minX(), Math.min(maxX(), contentX))
-            if (root.region !== 0) { contentX = x; return }
-            var left = originX + Math.max(0, root.cursor) * stride
-            if (left < x) x = left
-            else if (left + cardWidth > x + width) x = left + cardWidth - width
-            contentX = Math.max(minX(), Math.min(maxX(), x))
-          }
+            // The scroll, in the view's own coordinates. originX can move off 0
+            // (the model says why), so every bound is measured from it.
+            readonly property real stride: cardWidth + spacing
+            readonly property real span: count > 0 ? count * stride - spacing : 0
+            // Functions, not bindings: followCursor runs from onOriginXChanged, and
+            // whether a binding ON originX has re-evaluated by the time that
+            // property's own change handler runs is undefined. As bindings, both
+            // bounds can still hold the PREVIOUS origin and clamp the row back onto
+            // the wrong card.
+            function minX() { return originX }
+            function maxX() { return originX + Math.max(0, span - width) }
+            readonly property bool overflowing: span > width + 0.5
 
-          onWidthChanged: eventsRow.followCursor()
-          onCountChanged: eventsRow.followCursor()
-          onOriginXChanged: eventsRow.followCursor()
+            // Bring the cursor's card on screen when `chase` is set and the
+            // carousel holds the keyboard; otherwise only keep the row inside its
+            // bounds. The cursor means a task while the region is Tasks, so
+            // arrowing down the task list never drags the carousel along, and a
+            // row scrolled by the wheel stays where the wheel left it.
+            function followCursor(chase) {
+              if (count === 0 || width <= 0 || cardWidth <= 0) return
+              var x = Math.max(minX(), Math.min(maxX(), contentX))
+              if (chase && root.hasKeyboard && root.region === 0) {
+                var left = originX + Math.max(0, root.cursor) * stride
+                if (left < x) x = left
+                else if (left + cardWidth > x + width) x = left + cardWidth - width
+              }
+              contentX = Math.max(minX(), Math.min(maxX(), x))
+            }
 
-          Connections {
-            target: root
-            function onCursorChanged() { eventsRow.followCursor() }
-            function onRegionChanged() { eventsRow.followCursor() }
-          }
+            onWidthChanged: eventsRow.followCursor(true)
+            onCountChanged: eventsRow.followCursor(false)
+            onOriginXChanged: eventsRow.followCursor(false)
 
-          delegate: EventCard {
-            required property var modelData
-            required property int index
-            width: eventsRow.cardWidth
-            event: modelData
-            hasCursor: root.hasKeyboard && root.region === 0 && root.cursor === index
-            // Straight to the capture, not to the item editor. An event's own
-            // fields are on its memory page anyway, and the reason you tap one
-            // here is to see what you saved -- the ticket, the poster, the page.
-            // Tasks below still open their editor, because a to-do is a thing you
-            // act on rather than something you read.
-            onActivated: root.openMemory(modelData.memoryId)
-          }
+            Connections {
+              target: root
+              function onCursorChanged() { eventsRow.followCursor(true) }
+              function onRegionChanged() { eventsRow.followCursor(true) }
+            }
 
-          // A vertical wheel over the carousel scrolls it sideways. With the
-          // cards fitted to the width there is no half-card hinting at an
-          // overflow, so reaching it must not depend on owning a horizontal wheel.
-          WheelHandler {
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            onWheel: function (event) {
-              // Nothing to scroll: leave the event alone so the page still moves
-              // under a pointer that happens to be resting here.
-              if (!eventsRow.overflowing) return
-              var delta = event.angleDelta.y !== 0 ? event.angleDelta.y
-                                                   : event.angleDelta.x
-              if (delta === 0) return
-              // One whole card per notch, so the row lands on card boundaries
-              // rather than part-way across one. Clamped to the row's own bounds,
-              // which start at originX rather than at 0.
-              eventsRow.contentX =
-                Math.max(eventsRow.minX(),
-                         Math.min(eventsRow.maxX(),
-                                  eventsRow.contentX
-                                  - delta / 120 * eventsRow.stride))
-              event.accepted = true
+            delegate: EventCard {
+              required property var modelData
+              required property int index
+              width: eventsRow.cardWidth
+              event: modelData
+              hasCursor: root.hasKeyboard && root.region === 0 && root.cursor === index
+              // Straight to the capture, not to the item editor. An event's own
+              // fields are on its memory page anyway, and tapping one here is for
+              // seeing what was saved: the ticket, the poster, the page. Tasks below
+              // open their editor, because a to-do is acted on rather than read.
+              onActivated: root.openMemory(modelData.memoryId)
+            }
+
+            // A sideways swipe scrolls the carousel; a vertical one passes to the
+            // page.
+            PageWheel {
+              page: eventsRow
+              horizontal: true
+              outer: root
+              minPos: eventsRow.minX()
+              maxPos: eventsRow.maxX()
             }
           }
-
-          // Which handler gets a wheel is decided by hover, not by hoping the
-          // accepted flag propagates between two independent handlers.
-          HoverHandler { id: eventsHover }
         }
       }
     }

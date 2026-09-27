@@ -2,7 +2,6 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../common"
-import "../MemoryModel.js" as Model
 
 // Related captures: only what the user linked, plus a chip that opens the
 // link picker. The picker itself is a dialog owned by SpaceWindow.
@@ -43,7 +42,11 @@ Column {
                  function () { root.reload() })
   }
 
-  onMemoryIdChanged: reload()
+  // The previous memory's links never show under the next one.
+  onMemoryIdChanged: {
+    root.linked = []
+    reload()
+  }
 
   PanelSectionHeader {
     text: "Related captures"

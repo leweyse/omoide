@@ -1,43 +1,42 @@
 #!/usr/bin/env python3
-"""Run the C CLI and the Python one side by side and compare what they do.
+"""Pin what the CLI does, case by case, against recorded fixtures.
 
-Development only; nothing in the plugin runs this. The Python CLI is the
-reference: it is taken with `git archive` from REFERENCE, the last commit that
-shipped it, so the tree being tested never needs to contain it -- and it keeps
-working after the Python CLI is gone from main.
+Development only; nothing in the plugin runs this. Each case in CASES builds a
+home from its seeds, runs one invocation of the C CLI in it, and compares what
+happened against dev/parity-cases/<name>.json, which records the behavior this
+repository has agreed to keep.
 
-Each case starts from a home seeded by the reference, copied twice, so both
-sides begin from byte-identical state. Every external program either CLI can
-run -- the notifier, the shell, hyprctl, the picker, OCR, ffmpeg, the agents --
-is a stub that records how it was called, so a case never touches the real
-desktop and the calls themselves are compared.
+Every external program the CLI can run -- the notifier, the shell, hyprctl, the
+picker, OCR, ffmpeg, the agents -- is a stub that records how it was called, so
+a case never touches the real desktop and the calls themselves are compared.
 
-Compared: exit code; stdout, index.json and config.json parsed as JSON (so
-spacing and key order are not differences); the database, schema and every
+Compared: exit code; stdout, config.json, and the index `omoide index` hands
+the shell afterwards, parsed as JSON (so spacing and key order are not
+differences); the database, schema and every
 row; the log; the files left in the data and state directories; and every
 recorded call, including the prompt an agent was sent. stderr is not compared:
 the wording of errors is allowed to change.
 
-Where the C side differs on purpose, the case says so in EXPECTED, with a
-normaliser that has to make the two agree -- so a declared difference is still
-a checked one.
+A behavior change is made by changing the code, re-recording the cases it
+touches, and reviewing the fixture diff in the same change. A case with no
+fixture fails, and so does a fixture with no case.
 
-    dev/parity                 all cases
-    dev/parity commit          cases whose name contains "commit"
-    dev/parity --ref <commit>  a different reference
-    dev/parity --cc gcc        a different compiler
-    dev/parity --sanitize      the C side under ASan and UBSan
-    dev/parity --dump item     print what the C side did, to check a case tests something
+    dev/parity                  all cases
+    dev/parity commit           cases whose name contains "commit"
+    dev/parity --record commit  rewrite those fixtures from what the CLI does now
+    dev/parity --cc gcc         a different compiler
+    dev/parity --sanitize       the CLI under ASan and UBSan
+    dev/parity --dump item      print what the CLI did, to check a case tests something
 """
 
 from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import sqlite3
 import struct
@@ -49,46 +48,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NOW = "2026-09-26T10:00:00Z"     # both sides see this as "now"
+FIXTURES = ROOT / "dev" / "parity-cases"
+NOW = "2026-09-26T10:00:00Z"     # what the CLI sees as "now"
 TZ = "Europe/Madrid"             # DST ends 25 October, which is where dates break
-REFERENCE = "0f81e615449643e3303da749afd6269f9eab8d02"   # the last Python CLI
-
-# --- the reference -----------------------------------------------------------
-#
-# Patched in two places so both sides are deterministic: a clock override, and
-# ids from a counter instead of uuid4. Each patch is asserted, so a reference
-# whose code has moved fails loudly instead of leaving the sides out of step.
-
-PATCHES = [
-    ("def now() -> datetime:\n    return datetime.now(timezone.utc)\n",
-     "def now() -> datetime:\n"
-     "    pinned = os.environ.get('OMOIDE_NOW')\n"
-     "    if pinned:\n"
-     "        return datetime.fromisoformat(pinned.replace('Z', '+00:00'))\n"
-     "    return datetime.now(timezone.utc)\n"),
-    ('    stamp = now().strftime("%Y%m%dT%H%M%S")\n'
-     '    return f"{prefix}{stamp}-{uuid.uuid4().hex[:12]}"\n',
-     '    stamp = now().strftime("%Y%m%dT%H%M%S")\n'
-     '    global _TEST_ID\n'
-     '    _TEST_ID = globals().get("_TEST_ID", 0) + 1\n'
-     '    return f"{prefix}{stamp}-{_TEST_ID:012x}"\n'),
-]
-
-
-def export_reference(ref: str, out: Path) -> Path:
-    tree = out / "reference"
-    tree.mkdir()
-    archive = subprocess.run(["git", "archive", ref, "bin", "sql", "prompts"],
-                             cwd=ROOT, check=True, capture_output=True).stdout
-    subprocess.run(["tar", "-x", "-C", str(tree)], input=archive, check=True)
-    script = tree / "bin/omoide"
-    source = script.read_text()
-    for original, patched in PATCHES:
-        if original not in source:
-            sys.exit(f"parity: {ref}:bin/omoide changed shape; update PATCHES:\n{original}")
-        source = source.replace(original, patched)
-    script.write_text(source)
-    return script
 
 
 # Later flags win, so these override build.rsp's -Os and -s. Fortify is off
@@ -198,35 +160,7 @@ STUBBED = ["omarchy-notification-send", "omarchy-shell", "omarchy", "hyprctl", "
            "slurp", "grim", "tesseract", "ffmpeg", "gum",
            "agent", "claude", "codex", "opencode", "gemini"]
 STUB_DIR: Path | None = None   # set in main()
-
-
-def normalize_toast(argv: list[str]) -> dict:
-    """One notification, independent of argument order.
-
-    The reference passed --exec first, as one quoted string, which the current
-    omarchy-notification-send rejects; the C side passes it last, as words.
-    Both are read back into the same shape so the rest still has to match.
-    """
-    out: dict = {"options": {}, "text": [], "exec": None}
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg == "--exec":
-            rest = argv[i + 1:]
-            if rest and " " in rest[0]:
-                out["exec"], out["text"] = shlex.split(rest[0]), out["text"] + rest[1:]
-            else:
-                out["exec"] = rest
-            break
-        if arg in ("-g", "-u", "-i", "-t", "-r", "--image", "--app-name"):
-            out["options"][arg] = argv[i + 1]
-            i += 2
-            continue
-        out["text"].append(arg)
-        i += 1
-    if out["exec"]:
-        out["exec"] = [json_or_text(a) for a in out["exec"]]
-    return out
+DUMPING = False                # set in main()
 
 
 def json_or_text(value):
@@ -240,8 +174,6 @@ def json_or_text(value):
 
 
 def normalize_call(name: str, call: dict) -> dict:
-    if name == "omarchy-notification-send":
-        return normalize_toast(call["argv"])
     call = dict(call, argv=[json_or_text(a) for a in call["argv"]])
     if "stdin" in call and "\n\nINPUT:\n" in call["stdin"]:
         template, context = call["stdin"].split("\n\nINPUT:\n", 1)
@@ -286,10 +218,21 @@ def seed_v1(home: Path) -> None:
     conn.close()
 
 
+def seed_v2(home: Path) -> None:
+    """A database left at schema v2, as an install from before 003 has."""
+    db = home / ".local/share/omoide/memories.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db)
+    conn.executescript(migrations_upto(2))
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+
 def seed_library(home: Path) -> None:
     """A library with one of everything the commands look at.
 
-    Run after the reference's `migrate`, so the schema is the reference's own.
+    Run after `migrate`, so the schema is the CLI's own.
     """
     data = home / ".local/share/omoide"
     conn = sqlite3.connect(data / "memories.db")
@@ -393,6 +336,15 @@ def seed_library(home: Path) -> None:
     conn.close()
 
 
+def memory_arrives(home: Path) -> None:
+    """A capture saved after a first page was read, newer than everything."""
+    conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
+    conn.execute("INSERT INTO memories (id, created_at, updated_at, title, status, ai_status) "
+                 "VALUES ('m-arrived', ?, ?, 'Arrived later', 'ready', 'ok')", (at(1), at(1)))
+    conn.commit()
+    conn.close()
+
+
 def write_config(ai: dict):
     def apply(home: Path) -> None:
         path = home / ".config/omoide/config.json"
@@ -432,7 +384,7 @@ def bad_config(home: Path) -> None:
 
 
 LIBRARY = [["migrate"], seed_library]            # search index not built yet
-INDEXED = LIBRARY + [["reindex"]]                # built by the reference
+INDEXED = LIBRARY + [["reindex"]]
 AGENT = write_config({"enabled": True, "command": ["agent", "--json"], "timeoutMs": 45000})
 
 RICH_REPLY = json.dumps({
@@ -469,6 +421,7 @@ CASES = [
     ("migrate-fresh", [], ["migrate"]),
     ("migrate-again", [["migrate"]], ["migrate"]),
     ("migrate-from-v1", [seed_v1], ["migrate"]),
+    ("migrate-from-v2", [seed_v2], ["migrate"]),
     ("migrate-schema-newer", [["migrate"], set_version(9)], ["migrate"]),
     ("migrate-extra-argument", [], ["migrate", "extra"]),
     ("unknown-command", [], ["no-such-command"]),
@@ -481,10 +434,22 @@ CASES = [
     ("state-ai-preset-missing", INDEXED + [write_config({"enabled": True, "provider": "ollama"})], ["state"]),
     ("state-bad-config", INDEXED + [bad_config], ["state"]),
 
+    ("index", INDEXED, ["index"]),
+    ("index-schema-newer", [["migrate"], set_version(9)], ["index"]),
     ("list", INDEXED, ["list"]),
     ("list-limit", INDEXED, ["list", "--limit", "2"]),
     ("list-collection", INDEXED, ["list", "--collection", "Reading"]),
     ("list-collection-missing", INDEXED, ["list", "--collection", "Nope"]),
+    ("list-after", INDEXED, ["list", "--limit", "2", "--after", "2026-09-26T08:20:00Z,m-stalled"]),
+    ("list-last-page", INDEXED, ["list", "--limit", "2", "--after", "2026-09-26T06:40:00Z,m-voice"]),
+    ("list-after-arrival", INDEXED + [memory_arrives],
+     ["list", "--limit", "2", "--after", "2026-09-26T08:20:00Z,m-stalled"]),
+    ("list-facet-kind", INDEXED, ["list", "--facet", "kind:screenshot"]),
+    ("list-facet-source", INDEXED, ["list", "--facet", "source:github.com"]),
+    ("list-facet-tag", INDEXED, ["list", "--facet", "tag:release", "--limit", "1"]),
+    ("list-facet-in-collection", INDEXED, ["list", "--collection", "Reading", "--facet", "tag:zeta"]),
+    ("list-bad-cursor", INDEXED, ["list", "--after", "not-a-cursor"]),
+    ("list-bad-facet", INDEXED, ["list", "--facet", "colour:red"]),
     ("show-screenshot", INDEXED, ["show", "--id", "m-shot"]),
     ("show-note", INDEXED, ["show", "--id", "m-note"]),
     ("show-missing", INDEXED, ["show", "--id", "nope"]),
@@ -494,6 +459,14 @@ CASES = [
     ("search-terms", INDEXED, ["search", "--q", "groceries release"]),
     ("search-punctuation-only", INDEXED, ["search", "--q", "!!"]),
     ("search-limit", INDEXED, ["search", "--q", "release", "--limit", "1"]),
+    ("search-after", INDEXED, ["search", "--q", "release", "--limit", "1", "--after", "1"]),
+    ("search-facet", INDEXED, ["search", "--q", "release", "--facet", "tag:work"]),
+    ("search-bad-cursor", INDEXED, ["search", "--q", "release", "--after", "-3"]),
+    ("facets", INDEXED, ["facets"]),
+    ("facets-collection", INDEXED, ["facets", "--collection", "Reading"]),
+    ("facets-search", INDEXED, ["facets", "--q", "release"]),
+    ("facets-search-punctuation-only", INDEXED, ["facets", "--q", "!!"]),
+    ("facets-collection-missing", INDEXED, ["facets", "--collection", "Nope"]),
     ("archive", INDEXED, ["archive"]),
     ("related", INDEXED, ["related", "--id", "m-shot"]),
     ("candidates", INDEXED, ["candidates", "--id", "m-shot"]),
@@ -610,6 +583,10 @@ CASES = [
     ("commit-ai-prose", INDEXED + [AGENT, home_file(".agent-reply",
         'Sure! {"title": "In prose", "blocks": [{"type": "summary", "text": "S"}]} hope that helps')],
      ["commit", "--id", "m-new-draft", "--note", "prose"]),
+    ("commit-ai-event-only-reminder", INDEXED + [AGENT, home_file(".agent-reply", json.dumps(
+        {"title": "Vet", "blocks": [{"type": "event", "title": "Clinic open day",
+                                     "starts_at": "2026-10-03T09:00:00Z"}]}))],
+     ["commit", "--id", "m-new-draft", "--note", "remind me to call the vet tomorrow at 3pm"]),
     ("commit-ai-unparsed", INDEXED + [AGENT, home_file(".agent-reply", "no json here")],
      ["commit", "--id", "m-new-draft", "--note", "remind me to water plants tonight"]),
     ("commit-ai-exit", INDEXED + [AGENT, home_file(".agent-exit", "3"),
@@ -681,59 +658,6 @@ CASES = [
 ]
 
 
-# --- declared differences -----------------------------------------------------
-
-def unwrap_sh(side: dict) -> None:
-    """`sh -c "a b c"` read back as the argv the reference stored."""
-    def fix(command):
-        if isinstance(command, list) and command[:2] == ["sh", "-c"] and len(command) == 3:
-            return shlex.split(command[2])
-        return command
-    for out in side["stdout"] if isinstance(side["stdout"], list) else []:
-        if "command" in out:
-            out["command"] = fix(out["command"])
-    if side["config"] and "ai" in side["config"]:
-        side["config"]["ai"]["command"] = fix(side["config"]["ai"].get("command"))
-
-
-def drop_install_command(side: dict) -> None:
-    for out in side["stdout"] if isinstance(side["stdout"], list) else []:
-        out.pop("command", None)
-
-
-def dst_shift(py: dict, c: dict) -> str | None:
-    """'in 30 days' crosses the end of DST. The reference added 720 hours to a
-    fixed offset, landing an hour off the wall-clock time; C keeps the time."""
-    def due(side):
-        rows = [json.loads(r) for r in side["db"]["items"]]
-        return [r for r in rows if r[4] == "DST check"][0][6]
-    py_due = datetime.fromisoformat(due(py).replace("Z", "+00:00"))
-    c_due = datetime.fromisoformat(due(c).replace("Z", "+00:00"))
-    if c_due - py_due != timedelta(hours=1):
-        return f"expected C one hour after Python, got {py_due} vs {c_due}"
-    return None
-
-
-def flood_stopped(side: dict) -> None:
-    """The reference only stopped a flooding agent if it was still running when
-    it looked, so an agent that printed its megabyte and exited was logged as
-    exiting 0. C stops the whole group every time, and says so."""
-    side["log"] = [re.sub(r"ai\.exit rc=-9 ", "ai.exit rc=0 ", line) for line in side["log"]
-                   if " ai.capped " not in line]
-
-
-# name: (why, normaliser applied to the C side) or (why, check(py, c) -> error)
-EXPECTED = {
-    "setup-ai-custom": ("a custom command is stored as sh -c", ("c", unwrap_sh)),
-    "install": ("install also links ~/.local/bin/omoide", ("c", drop_install_command)),
-    "install-enable-fails": ("install also links ~/.local/bin/omoide", ("c", drop_install_command)),
-    "item-add-dst": ("calendar steps keep the wall-clock time across DST", ("check", dst_shift)),
-    "commit-ai-flood": ("a flooding agent is always stopped, as a group", ("c", flood_stopped)),
-}
-
-
-# --- running a case -----------------------------------------------------------
-
 def become_subreaper() -> None:
     """Adopt whatever a command leaves running.
 
@@ -778,7 +702,7 @@ def parse_stdout(text: str):
 
 
 def cell(value):
-    """A JSON column compared as JSON: the reference wrote ', ' and ': '."""
+    """A JSON column compared as JSON, so spacing is not a difference."""
     return json_or_text(value) if isinstance(value, str) else value
 
 
@@ -790,7 +714,10 @@ def dump_db(home: Path):
     out = {"user_version": conn.execute("PRAGMA user_version").fetchone()[0]}
     tables = conn.execute(
         "SELECT name, type, sql FROM sqlite_master ORDER BY type, name").fetchall()
-    out["schema"] = [list(t) for t in tables]
+    # The schema is the same in almost every case, so a fixture holds its digest;
+    # --dump shows the text when a digest changes.
+    schema = json.dumps([list(t) for t in tables], ensure_ascii=False)
+    out["schema"] = schema if DUMPING else "sha256:" + hashlib.sha256(schema.encode()).hexdigest()
     for name, kind, _ in tables:
         # FTS5's shadow tables hold its internal b-tree; the rows that matter
         # are compared through the tables they index.
@@ -826,7 +753,21 @@ def read_json(path: Path):
 SECONDS = re.compile(r"seconds=[0-9.]+")
 
 
-def side_effects(home: Path) -> dict:
+def pulled_index(cli: list[str], home: Path):
+    """What the shell would render after this command: `omoide index`, run in a
+    copy of the home so the pull itself leaves nothing in the case."""
+    if not (home / ".local/share/omoide/memories.db").exists():
+        return None
+    copy = home.parent / f"{home.name}.pull"
+    shutil.copytree(home, copy, symlinks=True)
+    try:
+        code, stdout = run(cli + ["index"], copy)
+        return scrub(json.loads(stdout), copy) if code == 0 else None
+    finally:
+        shutil.rmtree(copy)
+
+
+def side_effects(cli: list[str], home: Path) -> dict:
     """Everything a command leaves behind besides the database."""
     data = home / ".local/share/omoide"
     state = home / ".local/state/omoide"
@@ -835,7 +776,7 @@ def side_effects(home: Path) -> dict:
         if root.exists():
             files += sorted(str(p.relative_to(home)) for p in root.rglob("*")
                             if p.is_file() and not p.name.startswith("memories.db")
-                            and p.name not in ("index.json", "omoide.log"))
+                            and p.name != "omoide.log")
     calls = {}
     for name in STUBBED:
         log = home / f".stub-{name}.log"
@@ -848,7 +789,7 @@ def side_effects(home: Path) -> dict:
                 calls[name].sort(key=lambda c: json.dumps(c, ensure_ascii=False))
     log = state / "omoide.log"
     return {
-        "index": read_json(state / "index.json"),
+        "index": pulled_index(cli, home),
         "config": read_json(home / ".config/omoide/config.json"),
         "log": [SECONDS.sub("seconds=N", line) for line in log.read_text().splitlines()]
                if log.exists() else [],
@@ -857,20 +798,39 @@ def side_effects(home: Path) -> dict:
     }
 
 
+def fixture_path(name: str) -> Path:
+    return FIXTURES / f"{name}.json"
+
+
+def encode(result: dict) -> str:
+    return json.dumps(result, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="C vs Python CLI parity")
+    parser = argparse.ArgumentParser(description="CLI behavior against recorded fixtures")
     parser.add_argument("filter", nargs="?", default="")
-    parser.add_argument("--ref", default=REFERENCE)
     parser.add_argument("--cc", default="clang")
     parser.add_argument("--sanitize", action="store_true",
-                        help="build the C side with ASan and UBSan")
+                        help="build the CLI with ASan and UBSan")
+    parser.add_argument("--record", action="store_true",
+                        help="rewrite the selected fixtures from what the CLI does now")
     parser.add_argument("--dump", action="store_true",
-                        help="print what the C side did, to check a case tests something")
+                        help="print what the CLI did, to check a case tests something")
     args = parser.parse_args()
 
-    global STUB_DIR
+    global STUB_DIR, DUMPING
+    DUMPING = args.dump and not args.record
     become_subreaper()
     failed = 0
+    names = [name for name, _, _ in CASES]
+    if len(names) != len(set(names)):
+        sys.exit("parity: two cases share a name")
+    if not args.filter and not args.record:
+        known = {fixture_path(name) for name in names}
+        for orphan in sorted(set(FIXTURES.glob("*.json")) - known):
+            failed += 1
+            print(f"FAIL {orphan.stem}: a fixture with no case; delete it or restore the case")
+
     with tempfile.TemporaryDirectory(prefix="omoide-parity-") as tmp:
         tmp = Path(tmp)
         STUB_DIR = tmp / "stubs"
@@ -879,62 +839,54 @@ def main() -> int:
         (STUB_DIR / "stub").chmod(0o755)
         for name in STUBBED:
             (STUB_DIR / name).symlink_to("stub")
-        c_bin = build_c(args.cc, tmp, args.sanitize)
-        py_bin = export_reference(args.ref, tmp)
-        py = [sys.executable, str(py_bin)]
+        cli = [str(build_c(args.cc, tmp, args.sanitize))]
 
         for name, seeds, argv in CASES:
             if args.filter not in name:
                 continue
-            base = tmp / name / "base"
-            base.mkdir(parents=True)
-            (base / ".fixture.png").write_bytes(png(20, 10))
+            home = tmp / name
+            home.mkdir(parents=True)
+            (home / ".fixture.png").write_bytes(png(20, 10))
             for step in seeds:
                 if callable(step):
-                    step(base)
+                    step(home)
                 else:
-                    run(py + step, base)
-            sides = {}
-            for side, command in (("python", py), ("c", [str(c_bin)])):
-                home = tmp / name / side
-                shutil.copytree(base, home, symlinks=True)
-                # The seed's own calls and log lines are not this case's.
-                for leftover in home.glob(".stub-*.log"):
-                    leftover.unlink()
-                (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
-                code, stdout = run(command + argv, home)
-                sides[side] = scrub({"exit": code, "stdout": parse_stdout(stdout),
-                                     "db": dump_db(home), **side_effects(home)}, home)
+                    run(cli + step, home)
+            # The seed's own calls and log lines are not this case's.
+            for leftover in home.glob(".stub-*.log"):
+                leftover.unlink()
+            (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
+            code, stdout = run(cli + argv, home)
+            result = scrub({"exit": code, "stdout": parse_stdout(stdout),
+                            "db": dump_db(home), **side_effects(cli, home)}, home)
 
             if args.dump:
-                shown = {k: v for k, v in sides["c"].items() if k not in ("db", "index")}
+                shown = {k: v for k, v in result.items() if k not in ("db", "index")}
                 print(json.dumps(shown, ensure_ascii=False, indent=1))
 
-            note = ""
-            if name in EXPECTED:
-                why, (kind, action) = EXPECTED[name]
-                note = f"  (expected: {why})"
-                if kind == "check":
-                    problem = action(sides["python"], sides["c"])
-                    if problem:
-                        failed += 1
-                        print(f"FAIL {name}: {problem}")
-                    else:
-                        print(f"ok   {name}{note}")
-                    continue
-                action(sides["c"])
-
-            diffs = [key for key in sides["python"]
-                     if sides["python"][key] != sides["c"][key]]
+            path = fixture_path(name)
+            if args.record:
+                FIXTURES.mkdir(exist_ok=True)
+                before = path.read_text() if path.exists() else None
+                path.write_text(encode(result))
+                print(f"{'same' if before == encode(result) else 'rec '} {name}")
+                continue
+            if not path.exists():
+                failed += 1
+                print(f"FAIL {name}: no fixture; review --dump, then --record {name}")
+                continue
+            expected = json.loads(path.read_text())
+            diffs = [key for key in sorted(set(expected) | set(result))
+                     if expected.get(key) != result.get(key)]
             if diffs:
                 failed += 1
-                print(f"FAIL {name}: {', '.join(diffs)} differ{note}")
+                print(f"FAIL {name}: {', '.join(diffs)} differ")
                 for key in diffs:
-                    for side in ("python", "c"):
-                        shown = json.dumps(sides[side][key], ensure_ascii=False)
-                        print(f"  {side:>6} {key}: {shown[:900]}")
+                    for label, side in (("fixture", expected), ("now", result)):
+                        shown = json.dumps(side.get(key), ensure_ascii=False)
+                        print(f"  {label:>7} {key}: {shown[:900]}")
             else:
-                print(f"ok   {name}{note}")
+                print(f"ok   {name}")
 
     print(f"\n{failed} failed" if failed else "\nall passed")
     return 1 if failed else 0

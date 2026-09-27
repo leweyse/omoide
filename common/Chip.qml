@@ -40,7 +40,7 @@ BorderSurface {
 
   height: chipLabel.implicitHeight + root.verticalPadding * 2
   width: chipLabel.implicitWidth + root.horizontalPadding * 2
-  radius: Style.space(4)
+  radius: Style.cornerRadius
 
   // Hover only, never focus. A focus fill lowers contrast against the label,
   // and the accent border and inner ring already show focus.

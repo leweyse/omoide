@@ -16,8 +16,7 @@ enum {
   MAX_LIST_ITEMS = 20,
   MAX_TODOS = 20,
   MAX_EVENTS = 8,
-  MAX_REMINDERS = 4,
-  MAX_TITLE = 200,   // the library truncates at 80
+  MAX_TAGS = 8,
   MAX_LEDE = 400,
   MAX_BODY = 4000,   // summary, text, quote, code
   MAX_TAG = 40,
@@ -25,8 +24,6 @@ enum {
   AGENT_OUTPUT_CAP = 1024 * 1024,   // a JSON answer that needs a megabyte is not one
 };
 
-static const char *const VISION_CAPABLE[] = { "claude", "codex", "gemini", "opencode", NULL };
-static const char *const PLAIN_MODEL[] = { "ollama", "aichat", NULL };
 // Renderer-owned labels. If a model sends one as a list heading it is dropped,
 // so headings cannot drift in wording or language between captures.
 static const char *const CANONICAL_LABELS[] = { "summary", "event date", "to-dos", "todos", "to dos", NULL };
@@ -472,8 +469,8 @@ json_object *run_ai(
   const bool custom = truthy(json_get(ai, "command"));
   g_autofree char *vision_mode = as_text(json_get(ai, "visionMode"));
   const bool vision = g_str_equal(vision_mode, "image") && image_path && *image_path
-      && (in_list(provider, VISION_CAPABLE) || custom);
-  const bool hardened = !custom && !in_list(provider, PLAIN_MODEL);
+      && (provider_takes_image(provider) || custom);
+  const bool hardened = !custom && !provider_is_plain_model(provider);
 
   g_autoptr(GHashTable) env = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
   g_auto(GStrv) argv = hardened ? harden((const char *const *)resolved, provider, vision, image_path, env)
@@ -491,11 +488,11 @@ json_object *run_ai(
   const double timeout =
       MAX(5.0, (truthy(timeout_ms) ? json_object_get_double(timeout_ms) : 45000.0) / 1000.0);
   const gint64 started = g_get_monotonic_time();
-  g_autofree char *joined = g_strjoinv(" ", argv);
+  g_autofree char *program = g_path_get_basename(argv[0]);
   g_autofree char *timeout_text = py_float(timeout);
   g_autofree char *note_len = count_text((size_t)g_utf8_strlen(note ? note : "", -1));
   g_autofree char *ocr_len = count_text((size_t)g_utf8_strlen(ocr_text ? ocr_text : "", -1));
-  log_event("ai.start", "argv", joined, "vision", vision ? "True" : "False", "timeout", timeout_text,
+  log_event("ai.start", "program", program, "vision", vision ? "True" : "False", "timeout", timeout_text,
       "hardened", hardened ? "True" : "False", "note_len", note_len, "ocr_len", ocr_len, NULL);
 
   g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision);
@@ -525,7 +522,9 @@ json_object *run_ai(
     g_autofree char *err_line = one_line(proc.err, 300);
     g_autofree char *out_line = one_line(proc.out, 300);
     const char *detail = *err_line ? err_line : *out_line ? out_line : "no output";
-    log_event("ai.exit", "rc", rc, "seconds", seconds, "detail", detail, NULL);
+    g_autofree char *err_len = count_text((size_t)g_utf8_strlen(proc.err, -1));
+    g_autofree char *out_len = count_text((size_t)g_utf8_strlen(proc.out, -1));
+    log_event("ai.exit", "rc", rc, "seconds", seconds, "err_len", err_len, "out_len", out_len, NULL);
     *reason = g_strdup_printf("%s exited %d: %s", argv[0], proc.status, detail);
     return NULL;
   }
@@ -534,8 +533,7 @@ json_object *run_ai(
   if (!truthy(data)) {
     json_object_put(data);
     g_autofree char *out_len = count_text((size_t)g_utf8_strlen(proc.out, -1));
-    g_autofree char *head = one_line(proc.out, 160);
-    log_event("ai.unparsed", "seconds", seconds, "out_len", out_len, "head", head, NULL);
+    log_event("ai.unparsed", "seconds", seconds, "out_len", out_len, NULL);
     *reason = g_strdup_printf("%s replied without a JSON object", argv[0]);
     return NULL;
   }
@@ -564,7 +562,7 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
   }
   json_object *tags = json_get(enriched, "tags");
   for (size_t i = 0;
-      json_object_is_type(tags, json_type_array) && i < json_object_array_length(tags) && i < 8; i++) {
+      json_object_is_type(tags, json_type_array) && i < json_object_array_length(tags) && i < MAX_TAGS; i++) {
     g_autofree char *clean = clean_text(json_object_array_get_idx(tags, i), MAX_TAG);
     g_autofree char *tag = g_utf8_strdown(clean, -1);
     if (!*tag)
@@ -597,7 +595,6 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
       g_autofree char *block_id =
           add_block(db, memory_id, "event", json_tokener_parse("{\"item_id\": \"\"}"), "ai");
       g_autofree char *item_id = create_item(db, memory_id, block_id, json_get(block, "item"), "ai");
-      created++;
       json_object *payload = json_object_new_object();
       json_object_object_add(payload, "item_id", json_object_new_string(item_id));
       set_block_payload(db, block_id, payload);

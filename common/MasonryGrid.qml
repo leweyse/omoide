@@ -12,6 +12,16 @@ Item {
   property int spacing: Style.spacing.lg
   property Component delegate: null
 
+  // Rows of cards still loading, drawn with `placeholder`, which is given its
+  // `aspect`. Every column gets one per row, after a column shorter than the
+  // tallest is first topped up to it, so no column stands empty while a page
+  // is on its way. The cursor never lands on one.
+  property int placeholderRows: 0
+  property Component placeholder: null
+
+  // A few capture shapes, cycled, so a row of placeholders reads as a grid.
+  readonly property var placeholderAspects: [1.6, 1.0, 0.8, 1.9, 1.3]
+
   // The focused card, addressed by memory id rather than by index. The grid
   // reflows when the column count changes, so an index would move the cursor to
   // a different card on a window resize.
@@ -31,7 +41,7 @@ Item {
   // Returns whether the key was used, so the page can hand an unused one on.
   // That is how Left at the first column reaches the sidebar.
   function moveCursor(dx, dy) {
-    var next = Model.stepGrid(root.buckets, root.cursorId, dx, dy)
+    var next = Model.stepGrid(root.cardBuckets, root.cursorId, dx, dy)
     if (next === null) return false
     root.cursorId = next
     root.cursorMoved()
@@ -40,7 +50,7 @@ Item {
 
   // Focus the top of a column, for crossing down into the grid from above.
   function focusColumn(col) {
-    var b = root.buckets
+    var b = root.cardBuckets
     if (!b || !b.length) return false
     var i = Math.max(0, Math.min(b.length - 1, col))
     // Walk outward if that column happens to be empty, so a sparse grid still
@@ -86,11 +96,51 @@ Item {
     return art + text + root.spacing
   }
 
-  readonly property var buckets: Model.balanceColumns(items, columns, estimate)
+  readonly property var buckets: {
+    var cols = Model.balanceColumns(root.items, root.columns, root.estimate)
+    if (root.placeholderRows <= 0) return cols
+    var heights = cols.map(function (column) {
+      return column.reduce(function (sum, entry) { return sum + root.estimate(entry) }, 0)
+    })
+    var tallest = Math.max.apply(null, heights)
+    var n = 0
+    function add(c) {
+      var entry = { placeholder: true, key: "~" + n, thumb: true, lede: true, tags: [true],
+                    aspect: root.placeholderAspects[n % root.placeholderAspects.length] }
+      n++
+      cols[c].push(entry)
+      heights[c] += root.estimate(entry)
+    }
+    for (var c = 0; c < cols.length; c++) {
+      add(c)
+      while (heights[c] < tallest) add(c)
+    }
+    for (var r = 1; r < root.placeholderRows; r++)
+      for (c = 0; c < cols.length; c++) add(c)
+    return cols
+  }
+  // The columns without placeholders, for the cursor. Placeholders come after
+  // every item, so each card keeps its row here.
+  readonly property var cardBuckets: root.buckets.map(function (column) {
+    return column.filter(function (entry) { return !entry.placeholder })
+  })
 
   // What the columns actually came out at, not what estimate() guessed. The
   // page adds its bottom inset to this number, so it has to be the real height.
   implicitHeight: columnsRow.implicitHeight
+
+  // Every entry by its key: a memory's id, or a placeholder's "~n". A cell
+  // looks its entry up here, so a re-fetch that hands the same card back as a
+  // new object updates the card in place.
+  readonly property var byKey: {
+    var map = {}
+    for (var c = 0; c < root.buckets.length; c++)
+      for (var i = 0; i < root.buckets[c].length; i++) {
+        var entry = root.buckets[c][i]
+        map[entry.placeholder ? entry.key : entry.id] = entry
+      }
+    return map
+  }
 
   Row {
     id: columnsRow
@@ -99,44 +149,71 @@ Item {
     spacing: root.spacing
 
     Repeater {
-      model: root.buckets
+      model: root.columns
 
       delegate: Column {
-        required property var modelData
+        id: column
+        required property int index
         width: root.columnWidth
         spacing: root.spacing
-        // A column can genuinely be empty -- balanceColumns leaves one
-        // spare when there are fewer captures than columns, which is why
-        // stepGrid steps over them. An empty Column is zero-width but still
-        // claims a spacing slot in the Row, leaving a double gap.
-        visible: (modelData || []).length > 0
+        // A column is empty when there are fewer captures than columns. An
+        // empty Column is zero-width but still claims a spacing slot in the
+        // Row, leaving a double gap.
+        visible: keys.count > 0
+
+        // The column's cells by key, changed only past the part that stayed
+        // the same. A new page appends below the cards already there, and a
+        // model replaced wholesale would rebuild every card above it, images
+        // and all.
+        ListModel { id: keys }
+
+        function sync() {
+          var want = (root.buckets[column.index] || []).map(function (entry) {
+            return entry.placeholder ? entry.key : entry.id
+          })
+          var keep = 0
+          while (keep < keys.count && keep < want.length && keys.get(keep).key === want[keep])
+            keep++
+          if (keys.count > keep) keys.remove(keep, keys.count - keep)
+          for (var i = keep; i < want.length; i++) keys.append({ key: want[i] })
+        }
+
+        Component.onCompleted: column.sync()
+        Connections {
+          target: root
+          function onBucketsChanged() { column.sync() }
+        }
 
         Repeater {
-          model: parent.modelData
-          // An Item wrapping the cell, so the exclusion ring can sit BESIDE the
-          // loaded card rather than inside it. A ShaderEffectSource pointing at
-          // an ancestor recurses, so the ring can never be a child of the thing
-          // it samples.
+          model: keys
+          // One Loader per cell, instantiating the page's delegate for each
+          // memory and driving its cursor.
           delegate: Loader {
             id: cell
-            required property var modelData
+            required property string key
+            readonly property var entry: root.byKey[cell.key] || null
+            readonly property bool isPlaceholder: cell.key.charAt(0) === "~"
             width: root.columnWidth
-            sourceComponent: root.delegate
-            onLoaded: if (item) item.memory = modelData
+            sourceComponent: cell.isPlaceholder ? root.placeholder : root.delegate
 
             readonly property bool isCursor:
-              root.cursorActive && root.cursorId.length > 0 && cell.modelData
-              && cell.modelData.id === root.cursorId
+              root.cursorActive && root.cursorId.length > 0 && cell.key === root.cursorId
 
             onIsCursorChanged: if (cell.isCursor) root.cursorCell = cell
 
-            // A Binding, not an assignment in onLoaded: that fires once, so the
-            // highlight would freeze at whatever it was when the card loaded.
+            // Bindings, not assignments in onLoaded: that fires once, so the
+            // card would freeze at the data and highlight it loaded with.
+            Binding {
+              target: cell.item
+              property: cell.isPlaceholder ? "aspect" : "memory"
+              value: cell.entry ? (cell.isPlaceholder ? cell.entry.aspect : cell.entry) : null
+              when: cell.item !== null && cell.entry !== null
+            }
             Binding {
               target: cell.item
               property: "hasCursor"
               value: cell.isCursor
-              when: cell.item !== null
+              when: cell.item !== null && !cell.isPlaceholder
             }
           }
         }

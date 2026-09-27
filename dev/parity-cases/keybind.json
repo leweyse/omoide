@@ -1,0 +1,21 @@
+{
+ "calls": {
+  "hyprctl": [
+   {
+    "argv": [
+     "binds",
+     "-j"
+    ]
+   }
+  ]
+ },
+ "config": null,
+ "db": null,
+ "exit": 0,
+ "files": [],
+ "index": null,
+ "log": [],
+ "stdout": {
+  "unparsed": "o.bind(\"SUPER + CTRL + M\", \"Omoide capture\",\n       \"omarchy-shell -q omoide toggleChooser\")\n"
+ }
+}

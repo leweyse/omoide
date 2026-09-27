@@ -19,8 +19,6 @@ jobs:
             glib2 json-c sqlite ffmpeg
 
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # dev/parity exports the Python reference from history
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -38,7 +36,7 @@ jobs:
         working-directory: cli
         run: gcc @build.rsp -Werror -fanalyzer -o /dev/null
 
-      - name: Parity with the Python CLI
+      - name: Parity with the recorded cases
         run: |
           dev/parity
           dev/parity --cc gcc

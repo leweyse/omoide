@@ -143,24 +143,18 @@ Flickable {
   clip: true
   boundsBehavior: Flickable.StopAtBounds
 
-  // Flickable's built-in wheel step is tuned for touch flicking and crawls with
-  // a mouse or touchpad, which is painful on a page this tall. One notch moves
-  // a readable chunk instead, clamped so it cannot overscroll.
-  WheelHandler {
-    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-    onWheel: function (event) {
-      if (event.angleDelta.y === 0) return
-      var notches = event.angleDelta.y / 120
-      var limit = Math.max(0, root.contentHeight - root.height)
-      root.contentY = Math.max(0, Math.min(limit,
-                                           root.contentY - notches * Style.space(140)))
-    }
-  }
+  PageWheel { page: root }
+
+  // True once `archive` has answered. Until then the list is drawn as
+  // placeholder rows; a re-fetch after an edit keeps the rows it has.
+  property bool loaded: false
 
   function reload() {
     if (!service) return
     service.call(["archive"], function (code, json) {
+      if (!root) return
       if (json) root.groups = json
+      root.loaded = true
       // Ticking a task removes it from Upcoming, so the index the cursor held
       // can now be past the end.
       if (root.cursor >= root.regionRows.length)
@@ -224,6 +218,42 @@ Flickable {
       }
     }
 
+    // Where the tasks will be, drawn to TaskGroup's card and TodoRow's height.
+    BorderSurface {
+      visible: !root.loaded
+      width: parent.width
+      height: skeletonRows.implicitHeight + Style.spacing.lg * 2
+      radius: Style.cornerRadius
+      color: Color.popups.background
+      borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
+
+      Column {
+        id: skeletonRows
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: Style.spacing.lg
+        spacing: Style.spacing.sm
+
+        Repeater {
+          model: [0.7, 0.5, 0.6, 0.4]
+
+          delegate: Item {
+            required property real modelData
+            width: skeletonRows.width
+            height: Style.space(34)
+
+            Skeleton {
+              anchors.verticalCenter: parent.verticalCenter
+              x: Style.spacing.md
+              width: (parent.width - Style.spacing.md * 2) * parent.modelData
+              height: Style.font.body
+            }
+          }
+        }
+      }
+    }
+
     // Your tasks. Unlabelled: the tab above already says which set this is.
     TaskGroup {
       id: tasksGroup
@@ -255,7 +285,7 @@ Flickable {
     }
 
     Text {
-      visible: (root.groups[root.tab] || []).length === 0
+      visible: root.loaded && (root.groups[root.tab] || []).length === 0
                && !(root.tab === "upcoming"
                     && (root.groups.suggested || []).length > 0)
       width: parent.width

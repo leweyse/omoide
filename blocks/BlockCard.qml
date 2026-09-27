@@ -42,6 +42,7 @@ BorderSurface {
   FocusRing {
     anchors.fill: parent
     radius: root.radius
+    cornersOnly: true
     hasCursor: root.hasCursor
     hot: false
   }

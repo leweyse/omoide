@@ -23,7 +23,7 @@ BorderSurface {
   implicitHeight: Style.space(24)
   width: implicitWidth
   height: implicitHeight
-  radius: height / 2
+  radius: Style.cornerRadius
   color: root.selected
          ? Style.selectedFillFor(Color.popups.text, Color.accent, Color.urgent)
          : (root.hot ? Style.hoverFillFor(Color.popups.text, Color.accent, Color.urgent)
@@ -36,7 +36,7 @@ BorderSurface {
                                    : (root.hot ? "hover-cursor" : "normal"),
                                    Color.popups.text, Color.accent, Color.urgent)
 
-  // Takes the pill's radius, so the corner marks follow its curve.
+  // Takes the chip's radius, so the corner marks follow its curve.
   FocusRing {
     diagonalCorners: true
     anchors.fill: parent

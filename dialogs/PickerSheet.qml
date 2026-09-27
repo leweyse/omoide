@@ -30,6 +30,10 @@ FocusScope {
   // itself. That is how a new collection gets created.
   property bool allowFreeText: false
   property string emptyText: "Nothing to choose from."
+  // The owner is fetching rows. With none shown yet, placeholder rows stand
+  // where they will land instead of the empty text; a narrowing search keeps
+  // the rows it has.
+  property bool loading: false
 
   property string query: ""
   // Which row the keyboard is on, or -1 while the text field owns it.
@@ -159,13 +163,36 @@ FocusScope {
       }
 
       Text {
-        visible: (root.rows || []).length === 0
+        visible: !root.loading && (root.rows || []).length === 0
         width: parent.width
         text: root.emptyText
         textFormat: Text.PlainText
         color: Color.muted
         font.family: Style.font.menuFamily
         font.pixelSize: Style.font.body
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.spacing.sm
+        visible: root.loading && (root.rows || []).length === 0
+
+        Repeater {
+          model: [0.6, 0.45, 0.55]
+
+          delegate: Item {
+            required property real modelData
+            width: parent.width
+            height: Style.spacing.popupRowHeight
+
+            Skeleton {
+              anchors.verticalCenter: parent.verticalCenter
+              x: Style.spacing.lg
+              width: (parent.width - Style.spacing.lg * 2) * parent.modelData
+              height: Style.font.subtitle
+            }
+          }
+        }
       }
 
       Column {
