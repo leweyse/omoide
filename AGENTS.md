@@ -5,7 +5,7 @@ Omoide is an Omarchy shell plugin. It has two halves, and every change belongs t
 - **QML**: the bar widget, the Space window, the dialogs. It never opens the database. It renders the index it pulls from `omoide index`, and it changes state only by running the CLI.
 - **The CLI** (`cli/`): a C program that owns everything touching disk, including SQLite, blobs, the agent, reminders and the index. `Service.qml` compiles it on the user's machine from `cli/build.rsp`, so no binary is committed and nothing is built into the plugin directory.
 
-[`.agents/docs/index.md`](.agents/docs/index.md) is the map, and [the architecture reference](.agents/docs/reference/architecture.md) is where to start. A directory with its own `AGENTS.md` (`cli/`, `sql/`, `common/`, `dev/`) holds the invariants for any edit there, and it loads when files there are read.
+[`.agents/docs/index.md`](.agents/docs/index.md) is the map, and [the architecture reference](.agents/docs/reference/architecture.md) is where to start. A directory with its own `AGENTS.md` (`cli/`, `sql/`, `ui/common/`, `dev/`) holds the invariants for any edit there, and it loads when files there are read.
 
 `.agents/` ships with the plugin, because `omarchy plugin add` is a plain clone. Nothing written under it names a machine, a user, or a secret.
 
@@ -21,7 +21,7 @@ These are user-facing contracts. Changing one needs explicit human approval, and
 - the database schema, `SCHEMA_VERSION`, `INDEX_VERSION`, or the shape of the index `omoide index` prints;
 - any path the plugin reads, writes, or deletes, and the `uninstall` guard;
 - an agent preset's sandbox flags, which only ever get stricter;
-- the reply shape `prompts/enrich.txt` asks for;
+- the reply shape `cli/prompts/enrich.txt` asks for;
 - a library, flag, or source layout in `cli/build.rsp`, and any new program the plugin runs.
 
 Never add a dependency, runtime or development, without asking. If a change turns out to be breaking partway through, stop, summarize the impact, and wait.

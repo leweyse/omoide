@@ -4,7 +4,7 @@ title: Reminders
 description: How an alarm is armed inside the shell from the pulled index and fired, once, by the CLI.
 sources:
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: armAlarms and the alarm timer
   - id: reminders
     resource: ../../../cli/src/reminders.c

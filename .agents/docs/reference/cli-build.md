@@ -4,7 +4,7 @@ title: CLI build
 description: How Service.qml compiles the CLI on the user's machine, where the binary lives, and what keeps QML and CLI from the same checkout.
 sources:
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: buildCli, linkCli and the call queue
   - id: rsp
     resource: ../../../cli/build.rsp

@@ -9,7 +9,7 @@ Users get a change through `omarchy plugin update leweyse.omoide`, a fast-forwar
 
 ## Before a merge
 
-1. `dev/check` passes, and the CI workflows would pass: `cli.yml` for anything under `cli/`, `sql/` or `prompts/`, and `check.yml` for the rest.
+1. `dev/check` passes, and the CI workflows would pass: `cli.yml` for anything under `cli/`, `sql/` or `cli/prompts/`, and `check.yml` for the rest.
 2. Walk the update from the last release's state. A new migration upgrades the user's database on its first write. A changed `INDEX_VERSION` triggers one reindex. A new program the plugin runs has to be installed already, or the feature says so.
 3. If the change needs anything from the user beyond a restart, update the README's install or update section. The README is written for someone installing the plugin, so it says what to do, not how the code works.
 

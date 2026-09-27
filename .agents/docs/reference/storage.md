@@ -13,7 +13,7 @@ sources:
     resource: ../../../cli/src/memories.c
     title: remove_tree and the blob directory of a memory
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: The paths QML derives for itself
 generated:
   by: anthropic/claude-opus-5-5

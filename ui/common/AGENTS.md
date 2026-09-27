@@ -1,6 +1,6 @@
 # common
 
-Read this before adding a primitive here or restyling one. Everything in `common/` is used across the plugin, so a change to one file changes every surface that uses it. `grep -rl` for its name before editing.
+Read this before adding a primitive here or restyling one. Everything in `ui/common/` is used across the plugin, so a change to one file changes every surface that uses it. `grep -rl` for its name before editing.
 
 ## Invariants
 

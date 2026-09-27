@@ -38,8 +38,7 @@ PATTERNS = [
 # the Python reference name it because that is their job.
 PORT_SCOPE = ("cli/",)
 
-SOURCES = ["*.qml", "*.js", "blocks/*.qml", "common/*", "components/*.qml", "dialogs/*.qml",
-           "views/*.qml", "surfaces/*.qml", "cli/src/*", "cli/fuzz/*.c", "dev/*",
+SOURCES = ["ui/*.qml", "ui/*.js", "ui/*/*.qml", "ui/*/*.js", "cli/src/*", "cli/fuzz/*.c", "dev/*",
            "sql/migrations/*.sql", ".github/workflows/*.yml", ".gitignore"]
 NOT_CHECKED = {"dev/comment-allowlist", "dev/check-comments"}
 

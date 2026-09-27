@@ -13,7 +13,7 @@ sources:
     resource: ../../../cli/src/index.c
     title: How the model is projected into the index
   - id: renderer
-    resource: ../../../blocks/BlockRenderer.qml
+    resource: ../../../ui/blocks/BlockRenderer.qml
     title: Which QML renders which block type
 generated:
   by: anthropic/claude-opus-5-5
@@ -34,8 +34,8 @@ A block has a type, a JSON payload, a position, an origin and an `edited` flag.
 
 - **Origin says who wrote it.** `capture` blocks are the image, `user` blocks are the note, and `ai` blocks came from the agent.
 - **`edited` protects a correction.** Editing a block sets it, and `enrich` replaces only AI blocks that are unedited. A user's fix survives a re-run.
-- **The agent may write only the types it is asked for.** The list is in `prompts/enrich.txt`, and `validate_blocks` in `cli/src/enrich.c` drops anything else. The `note` and `image` types belong to the capture and are never accepted from an agent.
-- **Every type needs a renderer.** `blocks/BlockRenderer.qml` maps a type to its QML, and `KNOWN_BLOCKS` in `MemoryModel.js` decides what is renderable. A type the CLI can store and QML cannot render is invisible, not an error.
+- **The agent may write only the types it is asked for.** The list is in `cli/prompts/enrich.txt`, and `validate_blocks` in `cli/src/enrich.c` drops anything else. The `note` and `image` types belong to the capture and are never accepted from an agent.
+- **Every type needs a renderer.** `ui/blocks/BlockRenderer.qml` maps a type to its QML, and `KNOWN_BLOCKS` in `MemoryModel.js` decides what is renderable. A type the CLI can store and QML cannot render is invisible, not an error.
 
 Adding a block type touches the prompt, the validator, the renderer and a parity case, and changes what an agent writes into users' databases. It needs approval.
 
@@ -59,4 +59,4 @@ A reminder belongs to an item. It is either absolute, at a fixed time, or relati
 
 ## What QML sees
 
-The index `omoide index` prints carries counts, open to-dos, suggestions, upcoming events, collections, today's digest, and the live alarms. It carries no memory cards: the library and a collection page load theirs a page at a time with `list` or `search`, through `components/PagedMemories.qml`, and their chips come from `facets`. A detail page asks for links and block bodies with `show` and `related`. Each list in the index is capped in `build_index`, so a view must not treat the length of one as the total; `memoryCount` and a page's `pageInfo.total` are totals.
+The index `omoide index` prints carries counts, open to-dos, suggestions, upcoming events, collections, today's digest, and the live alarms. It carries no memory cards: the library and a collection page load theirs a page at a time with `list` or `search`, through `ui/components/PagedMemories.qml`, and their chips come from `facets`. A detail page asks for links and block bodies with `show` and `related`. Each list in the index is capped in `build_index`, so a view must not treat the length of one as the total; `memoryCount` and a page's `pageInfo.total` are totals.

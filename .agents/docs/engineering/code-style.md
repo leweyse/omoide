@@ -18,7 +18,7 @@ sources:
     resource: ../../../cli/src/enrich.c
     title: Where agent output is bounded and validated
   - id: model
-    resource: ../../../MemoryModel.js
+    resource: ../../../ui/MemoryModel.js
     title: Pure QML helpers
   - id: review
     resource: ../../skills/maintainability-review/SKILL.md
@@ -85,12 +85,12 @@ Keep every memory-safety check: lengths, caps on output read from a process, ari
   | Directory | Holds | May import |
   | --------- | ----- | ---------- |
   | root | `Service.qml`, `BarWidget.qml`, `Cli.qml`, `MemoryModel.js` | anything |
-  | `common/` | design primitives with no knowledge of memories | `qs.*` only |
-  | `components/` | domain cards and rows reused across pages | `common/`, `MemoryModel.js` |
-  | `blocks/` | one renderer per memory block type, each extending `BlockCard` | `common/`, `components/`, `MemoryModel.js` |
-  | `views/` | the pages of the Space window, plus the cards only they use | `common/`, `components/`, `blocks/`, `MemoryModel.js` |
-  | `dialogs/` | sheets that open over the Space window, and the bar's action menu | `common/`, `components/`, `MemoryModel.js` |
-  | `surfaces/` | top-level layer windows, loaded by `Service.qml` | any directory above |
+  | `ui/common/` | design primitives with no knowledge of memories | `qs.*` only |
+  | `ui/components/` | domain cards and rows reused across pages | `ui/common/`, `MemoryModel.js` |
+  | `ui/blocks/` | one renderer per memory block type, each extending `BlockCard` | `ui/common/`, `ui/components/`, `MemoryModel.js` |
+  | `ui/views/` | the pages of the Space window, plus the cards only they use | `ui/common/`, `ui/components/`, `ui/blocks/`, `MemoryModel.js` |
+  | `ui/dialogs/` | sheets that open over the Space window, and the bar's action menu | `ui/common/`, `ui/components/`, `MemoryModel.js` |
+  | `ui/surfaces/` | top-level layer windows, loaded by `Service.qml` | any directory above |
 
 - **Imports.** A QML directory is imported unqualified, as `import "../common"`; a JavaScript file takes an alias, as `import "../MemoryModel.js" as Model`. `dev/check-types` resolves every type against these imports, and qmllint rejects an unused one.
 - **Only the service runs things.** `Service.qml` and `Cli.qml` are the only files that create a `Process`. Everything else calls `service.call` or `service.detach`, or opens a URL with `Quickshell.execDetached`.

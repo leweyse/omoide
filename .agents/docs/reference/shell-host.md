@@ -7,10 +7,10 @@ sources:
     resource: ../../../manifest.json
     title: Plugin manifest
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: Service entry point and IPC handler
   - id: widget
-    resource: ../../../BarWidget.qml
+    resource: ../../../ui/BarWidget.qml
     title: Bar widget entry point
 generated:
   by: anthropic/claude-opus-5-5
@@ -34,7 +34,7 @@ The host strips `__sourceDir` from a third-party manifest before handing it over
 
 The shell watches the plugins folder with `inotifywait` and reloads plugins shortly after any change, ignoring dotfiles and `.git/`. A reload rebuilds widgets and non-kept services and clears the component cache.
 
-Because `Service.qml` is kept, a reload does not re-run it, and everything its loaders created stays as it was. An edit to `Service.qml`, to a component under `components/`, or to anything a kept surface loaded is not picked up until `omarchy-restart-shell`. The `verify-in-shell` skill covers this in practice.
+Because `Service.qml` is kept, a reload does not re-run it, and everything its loaders created stays as it was. An edit to `Service.qml`, to a component under `ui/components/`, or to anything a kept surface loaded is not picked up until `omarchy-restart-shell`. The `verify-in-shell` skill covers this in practice.
 
 Anything written into the plugin directory triggers the watcher, and an untracked or modified file there makes `omarchy plugin update`'s fast-forward pull fail. That is why the CLI is built into the user's cache directory and why nothing at runtime writes into the checkout.
 

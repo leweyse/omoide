@@ -5,7 +5,7 @@ description: What was settled, why, and what each decision rules out.
 tags: [decisions, governance]
 sources:
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: CLI build, IPC and reminder arming
   - id: parity
     resource: ../../../dev/parity

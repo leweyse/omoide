@@ -16,10 +16,10 @@ Item {
   property var shell: null
   property var manifest: null
 
-  // Resolved from this file's own location, not the manifest: the host strips
-  // `__sourceDir` from a third-party manifest.
+  // The plugin's root, one up from ui/. Resolved from this file's own location,
+  // not the manifest: the host strips `__sourceDir` from a third-party manifest.
   readonly property string pluginDir:
-    decodeURIComponent(String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")).replace(/\/$/, "")
+    decodeURIComponent(String(Qt.resolvedUrl("..")).replace(/^file:\/\//, "")).replace(/\/$/, "")
 
   // The CLI is built into the cache, never the checkout: a file written there
   // blocks `omarchy plugin update`'s fast-forward pull. binPath is a stable
@@ -118,7 +118,7 @@ Item {
   // argv, never a shell string. cliSources is everything the binary compiles or
   // embeds; a file embedded from any other path must be added here, or an
   // update that changes only that file keeps running the old build.
-  readonly property var cliSources: ["cli", "sql", "prompts", "manifest.json"]
+  readonly property var cliSources: ["cli", "sql", "manifest.json"]
   property bool cliReady: false
   property var cliQueue: []
 

@@ -29,7 +29,7 @@ enum {
 static const char *const CANONICAL_LABELS[] = { "summary", "event date", "to-dos", "todos", "to dos", NULL };
 
 static const char prompt_template[] = {
-#embed "../../prompts/enrich.txt"
+#embed "../prompts/enrich.txt"
   , 0
 };
 

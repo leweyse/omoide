@@ -4,10 +4,10 @@ title: Architecture
 description: The two halves of the plugin, what each may do, and the three channels between them.
 sources:
   - id: service
-    resource: ../../../Service.qml
+    resource: ../../../ui/Service.qml
     title: The singleton that builds the CLI, reads the index, and owns IPC
   - id: cli-runner
-    resource: ../../../Cli.qml
+    resource: ../../../ui/Cli.qml
     title: The one Process wrapper QML uses to run the CLI
   - id: dispatch
     resource: ../../../cli/src/main.c
@@ -39,7 +39,7 @@ The split is what lets the CLI be tested without a desktop: `dev/parity` runs ev
 
 **The CLI to QML: the index, pulled.** Nothing is written for the shell to read. Every write ends by signalling `refresh`, and `Service.refresh()` then runs `omoide index` and renders its stdout; it runs at load too, once the CLI is built. One pull runs at a time, and a refresh that arrives during one queues exactly one more. There is no polling and no watched file. The index carries a `version` that must equal `indexVersion` in `Service.qml`; a mismatch is logged and rendered anyway. Its shape is defined by `build_index` in `cli/src/index.c`.
 
-**Memory cards: pulled a page at a time.** The index carries no cards. `components/PagedMemories.qml` fetches them from `list` or `search`, sized to fill the view about twice over, and asks for the next page while a viewport of cards is still below. A new query or chip restarts it once its bindings settle, and only the latest request is applied. After a `refresh` it re-fetches what is already on screen, from the top, so the view keeps its place.
+**Memory cards: pulled a page at a time.** The index carries no cards. `ui/components/PagedMemories.qml` fetches them from `list` or `search`, sized to fill the view about twice over, and asks for the next page while a viewport of cards is still below. A new query or chip restarts it once its bindings settle, and only the latest request is applied. After a `refresh` it re-fetches what is already on screen, from the top, so the view keeps its place.
 
 **The CLI to the running shell: IPC.** The CLI calls back with `omarchy-shell -q omoide refresh` after a write and `compose` after a capture, and a notification's click action runs `openSpace`. Those IPC functions are the same ones a user binds, so they carry the same compatibility promise; see [the host reference](shell-host.md).
 

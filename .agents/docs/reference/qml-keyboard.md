@@ -4,10 +4,10 @@ title: Keyboard model
 description: How the Space window routes keys between the rail, the page and overlays, and the contract every page implements.
 sources:
   - id: space
-    resource: ../../../surfaces/SpaceWindow.qml
+    resource: ../../../ui/surfaces/SpaceWindow.qml
     title: handleKey, unwind, and focus restoration
   - id: library
-    resource: ../../../views/LibraryView.qml
+    resource: ../../../ui/views/LibraryView.qml
     title: A page implementing the contract
 generated:
   by: anthropic/claude-opus-5-5
@@ -20,7 +20,7 @@ Read this before adding a page, an overlay, or a shortcut to the Space window. T
 
 ## Two depths
 
-Focus lives at one of two depths, the rail or the page, and `inContent` in `surfaces/SpaceWindow.qml` says which. Opening at a section puts focus on the rail; opening a memory by id, or choosing a section, enters the page.
+Focus lives at one of two depths, the rail or the page, and `inContent` in `ui/surfaces/SpaceWindow.qml` says which. Opening at a section puts focus on the rail; opening a memory by id, or choosing a section, enters the page.
 
 ## The router
 

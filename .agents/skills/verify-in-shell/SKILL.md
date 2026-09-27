@@ -11,9 +11,9 @@ The shell being restarted is the user's live desktop. Form a hypothesis, check i
 
 | Edited | Picks up with |
 | ------ | ------------- |
-| `BarWidget.qml`, `dialogs/ActionMenu.qml`, other files a widget loads fresh | the plugin watcher, a second or so after saving |
-| `Service.qml`, anything under `components/` or `common/`, anything a kept surface loaded | `omarchy-restart-shell` only; the watcher logs "reloading" and keeps rendering the old code |
-| `cli/`, `sql/`, `prompts/`, `manifest.json` | a shell restart, which rebuilds the CLI because the source id changed |
+| `BarWidget.qml`, `ui/dialogs/ActionMenu.qml`, other files a widget loads fresh | the plugin watcher, a second or so after saving |
+| `Service.qml`, anything under `ui/components/` or `ui/common/`, anything a kept surface loaded | `omarchy-restart-shell` only; the watcher logs "reloading" and keeps rendering the old code |
+| `cli/`, `sql/`, `cli/prompts/`, `manifest.json` | a shell restart, which rebuilds the CLI because the source id changed |
 
 The trap is a batch touching both rows: the widget reloads, the component does not, and the result looks half-applied. When in doubt, restart; it takes about ten seconds to come back.
 
@@ -43,7 +43,7 @@ The Space window takes exclusive keyboard focus, so `wtype -k Down`, `wtype -k R
 
 Take the screen with `grim` and scan the pixels for the colors in question with PIL, rather than eyeballing a crop. A present one-pixel border and a missing one look identical once scaled.
 
-To reproduce a small screen without a second monitor, copy `surfaces/SpaceWindow.qml` aside, lower the `Style.space(1000)` literal that sets the dialog width, restart, measure, then restore the copy and `git diff` the file to prove the override is gone.
+To reproduce a small screen without a second monitor, copy `ui/surfaces/SpaceWindow.qml` aside, lower the `Style.space(1000)` literal that sets the dialog width, restart, measure, then restore the copy and `git diff` the file to prove the override is gone.
 
 ## 6. Report
 

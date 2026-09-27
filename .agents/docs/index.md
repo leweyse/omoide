@@ -17,7 +17,7 @@ Navigation for everything under `.agents/docs`. Every document appears here once
 
 ## Reference
 
-How the system works. Each page owns its subject; the directory contracts (`cli/AGENTS.md`, `sql/AGENTS.md`, `common/AGENTS.md`, `dev/AGENTS.md`) hold the invariants and point here for the mechanism.
+How the system works. Each page owns its subject; the directory contracts (`cli/AGENTS.md`, `sql/AGENTS.md`, `ui/common/AGENTS.md`, `dev/AGENTS.md`) hold the invariants and point here for the mechanism.
 
 - [Omarchy host](reference/shell-host.md) — loading, reloading, surfaces, and the IPC functions users bind.
 - [CLI contract](reference/cli-contract.md) — what each subcommand accepts, touches and returns, and the exit codes. `dev/parity` enforces it.

@@ -13,7 +13,7 @@ sources:
     resource: ../../../cli/src/proc.c
     title: Running an agent in its own process group, capped
   - id: prompt
-    resource: ../../../prompts/enrich.txt
+    resource: ../../../cli/prompts/enrich.txt
     title: The prompt and the reply shape it asks for
 generated:
   by: anthropic/claude-opus-5-5
