@@ -11,9 +11,7 @@
       "Edit(/dev/cli-surface)",
       "Edit(/dev/cli-surface.lock)",
       "Edit(/dev/capabilities)",
-      "Edit(/dev/capabilities.lock)",
-      "Bash(git commit*)",
-      "Bash(git push*)"
+      "Edit(/dev/capabilities.lock)"
     ]
   }
 }

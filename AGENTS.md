@@ -25,11 +25,11 @@ These are user-facing contracts. Changing one needs explicit human approval, and
 - the reply shape `cli/prompts/enrich.txt` asks for;
 - a library, flag, or source layout in `cli/build.rsp`, and any new program the plugin runs.
 
-`.claude/settings.json` makes Claude Code ask before it edits the CLI, the schema, the manifest, `ui/Service.qml`, CI, the checks that guard them, or itself, and before `git commit` or `git push`. Another harness does not read that file, so for it the locks and the owner's review are the gate.
+`.claude/settings.json` makes Claude Code ask before it edits the CLI, the schema, the manifest, `ui/Service.qml`, CI, the checks that guard them, or itself. Committing and pushing are held by the rule above, not by a prompt. Another harness does not read that file, so for it the locks and the owner's review are the gate.
 
 Never add a dependency, runtime or development, without asking. If a change turns out to be breaking partway through, stop, summarize the impact, and wait.
 
-Never create, amend, or push a commit unless asked for that exact action. Asking for a commit message is asking for text. A commit is one Conventional Commit per coherent change, `type(scope): summary` in lowercase, with the scopes `git log` already uses. A change to what users run also carries a changeset in `.changeset/`, titled `type(scope): what changed` and written by the `changesets` skill; the version is bumped only by the release pull request, which `release` owns.
+Never create, amend, or push a commit unless asked for that exact action, in the current request. Finishing a task, a passing `dev/check`, a pending changeset, or permission to commit or push given earlier is not that request: wait for it. Asking for a commit message is asking for text. A commit is one Conventional Commit per coherent change, `type(scope): summary` in lowercase, with the scopes `git log` already uses. A change to what users run also carries a changeset in `.changeset/`, titled `type(scope): what changed` and written by the `changesets` skill; the version is bumped only by the release pull request, which `release` owns.
 
 ## Skills
 
