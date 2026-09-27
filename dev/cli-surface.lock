@@ -1,0 +1,469 @@
+# The CLI's approved surface, written by dev/cli-surface --write.
+# A change here is a change to what callers depend on: it needs the owner's
+# approval, and the diff of this file is what they review.
+
+command capture
+  flag --mode string hidden
+    exits capture: 0
+    key capture: autoDictate
+    key capture: hasImage
+    key capture: id
+    key capture: image
+    key capture: mode
+    key capture: voiceAvailable
+  verb clipboard
+    exits capture clipboard: 2
+  verb note
+    exits capture note: 0
+    key capture note: autoDictate
+    key capture note: hasImage
+    key capture note: id
+    key capture note: image
+    key capture note: mode
+    key capture note: voiceAvailable
+  verb screenshot
+    exits capture screenshot: 0,2
+    key capture screenshot: autoDictate
+    key capture screenshot: hasImage
+    key capture screenshot: id
+    key capture screenshot: image
+    key capture screenshot: mode
+    key capture screenshot: voiceAvailable
+  verb video
+    exits capture video: 2
+  verb voice
+    exits capture voice: 0
+    key capture voice: autoDictate
+    key capture voice: hasImage
+    key capture voice: id
+    key capture voice: image
+    key capture voice: mode
+    key capture voice: voiceAvailable
+command commit
+  flag --id string
+  flag --note string
+  flag --remove-image none
+    exits commit: 0,1,2
+    key commit: aiStatus
+    key commit: id
+    key commit: reminders
+    key commit: suggested
+    key commit: todos
+command discard
+  flag --id string
+    exits discard: 0,2
+    key discard: discarded
+command list
+  flag --after string
+  flag --collection string
+  flag --facet string
+  flag --limit int
+    exits list: 0,2
+    key list: memories
+    key list: memories[].aiStatus
+    key list: memories[].aspect
+    key list: memories[].collections
+    key list: memories[].createdAt
+    key list: memories[].domain
+    key list: memories[].id
+    key list: memories[].kind
+    key list: memories[].lede
+    key list: memories[].openTodos
+    key list: memories[].tags
+    key list: memories[].thumb
+    key list: memories[].title
+    key list: pageInfo
+    key list: pageInfo.endCursor
+    key list: pageInfo.hasNextPage
+    key list: pageInfo.startCursor
+    key list: pageInfo.total
+command show
+  flag --id string
+    exits show: 0,1,2
+    key show: aiError
+    key show: aiStatus
+    key show: blocks
+    key show: blocks[].edited
+    key show: blocks[].id
+    key show: blocks[].origin
+    key show: blocks[].payload
+    key show: blocks[].payload.aspect
+    key show: blocks[].payload.attachment_id
+    key show: blocks[].payload.domain
+    key show: blocks[].payload.heading
+    key show: blocks[].payload.items
+    key show: blocks[].payload.items[].label
+    key show: blocks[].payload.items[].text
+    key show: blocks[].payload.path
+    key show: blocks[].payload.text
+    key show: blocks[].payload.thumb
+    key show: blocks[].payload.url
+    key show: blocks[].type
+    key show: collections
+    key show: collections[].id
+    key show: collections[].name
+    key show: createdAt
+    key show: id
+    key show: items
+    key show: items[].allDay
+    key show: items[].completedAt
+    key show: items[].dueAt
+    key show: items[].endsAt
+    key show: items[].id
+    key show: items[].kind
+    key show: items[].location
+    key show: items[].mapUrl
+    key show: items[].reminders
+    key show: items[].reminders[].fireAt
+    key show: items[].reminders[].id
+    key show: items[].reminders[].offsetMin
+    key show: items[].reminders[].status
+    key show: items[].startsAt
+    key show: items[].status
+    key show: items[].title
+    key show: lede
+    key show: tags
+    key show: title
+command search
+  flag --after string
+  flag --facet string
+  flag --limit int
+  flag --q string
+    exits search: 0,2
+    key search: pageInfo
+    key search: pageInfo.endCursor
+    key search: pageInfo.hasNextPage
+    key search: pageInfo.startCursor
+    key search: pageInfo.total
+    key search: results
+    key search: results[].aiStatus
+    key search: results[].aspect
+    key search: results[].collections
+    key search: results[].createdAt
+    key search: results[].domain
+    key search: results[].id
+    key search: results[].kind
+    key search: results[].lede
+    key search: results[].openTodos
+    key search: results[].tags
+    key search: results[].thumb
+    key search: results[].title
+command facets
+  flag --collection string
+  flag --q string
+    exits facets: 0
+    key facets: facets
+    key facets: facets[].count
+    key facets: facets[].group
+    key facets: facets[].id
+    key facets: facets[].label
+command archive
+  flag --after string
+  flag --group string
+  flag --limit int
+    exits archive: 0,2
+    key archive: completed
+    key archive: completed[].completedAt
+    key archive: completed[].createdAt
+    key archive: completed[].dueAt
+    key archive: completed[].id
+    key archive: completed[].memoryId
+    key archive: completed[].status
+    key archive: completed[].title
+    key archive: items
+    key archive: items[].completedAt
+    key archive: items[].createdAt
+    key archive: items[].dueAt
+    key archive: items[].id
+    key archive: items[].memoryId
+    key archive: items[].status
+    key archive: items[].title
+    key archive: pageInfo
+    key archive: pageInfo.endCursor
+    key archive: pageInfo.hasNextPage
+    key archive: pageInfo.startCursor
+    key archive: pageInfo.total
+    key archive: past
+    key archive: past[].completedAt
+    key archive: past[].createdAt
+    key archive: past[].dueAt
+    key archive: past[].id
+    key archive: past[].memoryId
+    key archive: past[].status
+    key archive: past[].title
+    key archive: suggested
+    key archive: suggested[].completedAt
+    key archive: suggested[].createdAt
+    key archive: suggested[].dueAt
+    key archive: suggested[].id
+    key archive: suggested[].memoryId
+    key archive: suggested[].status
+    key archive: suggested[].title
+    key archive: upcoming
+    key archive: upcoming[].completedAt
+    key archive: upcoming[].createdAt
+    key archive: upcoming[].dueAt
+    key archive: upcoming[].id
+    key archive: upcoming[].memoryId
+    key archive: upcoming[].status
+    key archive: upcoming[].title
+command events
+  flag --after string
+  flag --limit int
+    exits events: 0,2
+    key events: events
+    key events: events[].allDay
+    key events: events[].domain
+    key events: events[].endsAt
+    key events: events[].id
+    key events: events[].location
+    key events: events[].memoryId
+    key events: events[].startsAt
+    key events: events[].thumb
+    key events: events[].title
+    key events: pageInfo
+    key events: pageInfo.endCursor
+    key events: pageInfo.hasNextPage
+    key events: pageInfo.startCursor
+    key events: pageInfo.total
+command state
+    exits state: 0
+    key state: aiConfigured
+    key state: enriching
+    key state: failed
+    key state: memories
+    key state: next
+    key state: next.fireAt
+    key state: next.title
+    key state: pendingReminders
+    key state: voiceAvailable
+command index
+    exits index: 0,3
+    key index: alarms
+    key index: alarms[].fireAt
+    key index: alarms[].id
+    key index: collections
+    key index: collections[].count
+    key index: collections[].id
+    key index: collections[].name
+    key index: collections[].thumbs
+    key index: digest
+    key index: digest.events
+    key index: digest.todos
+    key index: eventCount
+    key index: failedCount
+    key index: generatedAt
+    key index: memoryCount
+    key index: pendingCount
+    key index: todoCounts
+    key index: todoCounts.completed
+    key index: todoCounts.past
+    key index: todoCounts.suggested
+    key index: todoCounts.upcoming
+    key index: version
+    key index: voiceAvailable
+command item
+  flag --at string
+  flag --clear-at none
+  flag --id string
+  flag --kind string
+  flag --memory string
+  flag --notes string
+  flag --title string
+  verb add
+    exits item add: 0,2
+    key item add: id
+  verb cancel
+    exits item cancel: 0
+  verb complete
+    exits item complete: 0
+  verb edit
+    exits item edit: 0,1
+  verb explode
+    exits item explode: 2
+  verb get
+    exits item get: 0,1
+    key item get: allDay
+    key item get: completedAt
+    key item get: dueAt
+    key item get: endsAt
+    key item get: id
+    key item get: kind
+    key item get: location
+    key item get: mapUrl
+    key item get: memoryId
+    key item get: memoryTitle
+    key item get: notes
+    key item get: reminders
+    key item get: reminders[].fireAt
+    key item get: reminders[].id
+    key item get: reminders[].offsetMin
+    key item get: reminders[].status
+    key item get: source
+    key item get: startsAt
+    key item get: status
+    key item get: title
+  verb promote
+    exits item promote: 0
+  verb reopen
+    exits item reopen: 0
+command reminder
+  flag --at string
+  flag --id string
+  flag --item string
+  flag --offset string
+  verb add
+    exits reminder add: 0,1,2
+  verb fire
+    exits reminder fire: 0,1
+    key reminder fire: id
+    key reminder fire: outcome
+  verb remove
+    exits reminder remove: 0
+command sweep (alias sync-timers)
+    exits sweep: 0
+    key sweep: draftsSwept
+    key sweep: expired
+    key sweep: fired
+    key sweep: pending
+    key sweep: stalledEnrichments
+command collection
+  flag --memory string
+  flag --name string
+  flag --to string
+  verb add
+    exits collection add: 0
+  verb delete
+    exits collection delete: 0
+  verb new
+    exits collection new: 0,2
+  verb remove
+    exits collection remove: 0,1
+  verb rename
+    exits collection rename: 0,1,2
+command link
+  flag --from string
+  flag --to string
+  verb add
+    exits link add: 0
+  verb remove
+    exits link remove: 0
+command related
+  flag --id string
+    exits related: 0
+    key related: linked
+    key related: linked[].aiStatus
+    key related: linked[].aspect
+    key related: linked[].collections
+    key related: linked[].createdAt
+    key related: linked[].domain
+    key related: linked[].id
+    key related: linked[].kind
+    key related: linked[].lede
+    key related: linked[].openTodos
+    key related: linked[].tags
+    key related: linked[].thumb
+    key related: linked[].title
+command candidates
+  flag --id string
+  flag --limit int
+  flag --q string
+    exits candidates: 0
+    key candidates: candidates
+    key candidates: candidates[].aiStatus
+    key candidates: candidates[].aspect
+    key candidates: candidates[].collections
+    key candidates: candidates[].createdAt
+    key candidates: candidates[].domain
+    key candidates: candidates[].id
+    key candidates: candidates[].kind
+    key candidates: candidates[].lede
+    key candidates: candidates[].openTodos
+    key candidates: candidates[].tags
+    key candidates: candidates[].thumb
+    key candidates: candidates[].title
+command block
+  flag --id string
+  flag --payload string
+  verb delete
+    exits block delete: 0,1
+  verb set
+    exits block set: 0,1
+command delete
+  flag --id string
+    exits delete: 0
+command memory
+  flag --id string
+  flag --lede string
+  flag --title string
+    exits memory: 0,1,2
+    key memory: id
+command enrich
+  flag --id string
+    exits enrich: 0,1,2
+    key enrich: aiStatus
+    key enrich: error
+    key enrich: id
+command reindex
+    exits reindex: 0
+    key reindex: measured
+    key reindex: reindexed
+    key reindex: version
+command migrate
+    exits migrate: 0,3
+    key migrate: schemaVersion
+  verb extra
+    exits migrate extra: 2
+command ai-config
+    exits ai-config: 0
+    key ai-config: command
+    key ai-config: enabled
+    key ai-config: model
+    key ai-config: provider
+    key ai-config: providers
+    key ai-config: providers[].available
+    key ai-config: providers[].command
+    key ai-config: providers[].commandImage
+    key ai-config: providers[].id
+    key ai-config: providers[].needsModel
+    key ai-config: providers[].restriction
+    key ai-config: providers[].restrictionImage
+    key ai-config: providers[].vision
+    key ai-config: resolved
+    key ai-config: timeoutMs
+    key ai-config: visionMode
+command setup-ai
+  flag --command string
+  flag --disable none
+  flag --model string
+  flag --provider string
+  flag --vision string
+    exits setup-ai: 0,1,2
+    key setup-ai: command
+    key setup-ai: enabled
+    key setup-ai: provider
+    key setup-ai: visionMode
+command install
+  flag --accel string
+    exits install: 0,1
+    key install: aiConfigured
+    key install: command
+    key install: installed
+    key install: keybind
+    key install: keybindFile
+command keybind
+  flag --accel string
+  flag --json none
+    exits keybind: 0
+    key keybind: accel
+    key keybind: conflict
+    key keybind: file
+    key keybind: snippet
+command uninstall
+  flag --purge none
+    exits uninstall: 0
+    key uninstall: configFile
+    key uninstall: dataDir
+    key uninstall: dataRemoved
+    key uninstall: uninstalled
+# a case runs an unknown command: no-such-command

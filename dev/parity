@@ -1,0 +1,1014 @@
+#!/usr/bin/env python3
+"""Pin what the CLI does, case by case, against recorded fixtures.
+
+Development only; nothing in the plugin runs this. Each case in CASES builds a
+home from its seeds, runs one invocation of the C CLI in it, and compares what
+happened against dev/parity-cases/<name>.json, which records the behavior this
+repository has agreed to keep.
+
+Every external program the CLI can run -- the notifier, the shell, hyprctl, the
+picker, OCR, ffmpeg, the agents -- is a stub that records how it was called, so
+a case never touches the real desktop and the calls themselves are compared.
+
+Compared: exit code; stdout, config.json, and the index `omoide index` hands
+the shell afterwards, parsed as JSON (so spacing and key order are not
+differences); the database, schema and every
+row; the log; the files left in the data and state directories; and every
+recorded call, including the prompt an agent was sent. stderr is not compared:
+the wording of errors is allowed to change.
+
+A behavior change is made by changing the code, re-recording the cases it
+touches, and reviewing the fixture diff in the same change. A case with no
+fixture fails, and so does a fixture with no case.
+
+    dev/parity                  all cases
+    dev/parity commit           cases whose name contains "commit"
+    dev/parity --record commit  rewrite those fixtures from what the CLI does now
+    dev/parity --cc gcc         a different compiler
+    dev/parity --sanitize       the CLI under ASan and UBSan
+    dev/parity --dump item      print what the CLI did, to check a case tests something
+"""
+
+from __future__ import annotations
+
+import argparse
+import ctypes
+import hashlib
+import json
+import multiprocessing
+import os
+import re
+import shutil
+import sqlite3
+import struct
+import subprocess
+import sys
+import tempfile
+import zlib
+from datetime import datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+FIXTURES = ROOT / "dev" / "parity-cases"
+NOW = "2026-09-26T10:00:00Z"     # what the CLI sees as "now"
+TZ = "Europe/Madrid"             # DST ends 25 October, which is where dates break
+
+
+# Later flags win, so these override build.rsp's -Os and -s. Fortify is off
+# because ASan does the same job and the two warn about each other.
+SANITIZE = ["-O1", "-g", "-fno-omit-frame-pointer", "-U_FORTIFY_SOURCE",
+            "-fsanitize=address,undefined", "-fno-sanitize-recover=all"]
+
+
+def build_c(cc: str, out: Path, sanitize: bool) -> Path:
+    binary = out / "omoide-c"
+    extra = SANITIZE if sanitize else []
+    subprocess.run([cc, "@build.rsp", "-Werror", *extra, "-o", str(binary)],
+                   cwd=ROOT / "cli", check=True)
+    return binary
+
+
+# --- stubs -------------------------------------------------------------------
+#
+# One script, linked under every name it stands in for. Behaviour a case wants
+# to vary -- what the agent replies, whether slurp is cancelled -- is read from
+# dot-files in the home the case runs in.
+
+STUB = r'''#!/usr/bin/env python3
+import json, os, shutil, sys, time
+name = os.path.basename(sys.argv[0])
+home = os.environ["HOME"]
+args = sys.argv[1:]
+
+def option(path):
+    p = os.path.join(home, path)
+    return open(p).read() if os.path.exists(p) else None
+
+def record(**extra):
+    with open(os.path.join(home, f".stub-{name}.log"), "a") as log:
+        log.write(json.dumps({"argv": args, **extra}) + "\n")
+
+if name in ("agent", "claude", "codex", "opencode", "gemini"):
+    prompt = sys.stdin.read()
+    env = {k: os.environ[k] for k in ("GEMINI_CLI_TRUST_WORKSPACE", "OPENCODE_CONFIG_CONTENT")
+           if k in os.environ}
+    record(stdin=prompt, cwd=os.getcwd(), env=env)
+    if option(".agent-sleep"):
+        time.sleep(float(option(".agent-sleep")))
+    if option(".agent-flood"):
+        sys.stdout.write("x" * int(option(".agent-flood")))
+        sys.stdout.flush()
+    sys.stdout.write(option(".agent-reply") or "")
+    sys.stderr.write(option(".agent-stderr") or "")
+    sys.exit(int(option(".agent-exit") or 0))
+elif name == "hyprpicker":
+    record()
+    while True:
+        time.sleep(60)
+elif name == "slurp":
+    record(stdin=sys.stdin.read())
+    if option(".slurp-cancel"):
+        sys.exit(1)
+    print("10,20 300x200")
+elif name == "grim":
+    record()
+    shutil.copy(os.path.join(home, ".fixture.png"), args[-1])
+elif name == "tesseract":
+    record()
+    print("Release notes\n  for bandcamp  ")
+elif name == "ffmpeg":
+    record()
+    shutil.copy(args[args.index("-i") + 1], args[-1])
+elif name == "ffprobe":
+    # What `-show_entries stream=width,height -of csv=p=0:s=x` prints for a PNG,
+    # read from its header: nothing here is measured by the machine's ffprobe.
+    record()
+    with open(args[-1], "rb") as image:
+        head = image.read(24)
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        print(f"{int.from_bytes(head[16:20], 'big')}x{int.from_bytes(head[20:24], 'big')}")
+    else:
+        sys.exit(1)
+elif name == "hyprctl":
+    record()
+    if args[:2] == ["monitors", "-j"]:
+        print(json.dumps([
+            {"name": "eDP-1", "focused": True, "x": 0, "y": 0, "width": 2880, "height": 1920,
+             "scale": 1.5, "transform": 0, "activeWorkspace": {"id": 3}},
+            {"name": "HDMI-A-1", "focused": False, "x": 1920, "y": 0, "width": 1920,
+             "height": 1080, "scale": 1, "transform": 1, "activeWorkspace": {"id": 3}},
+            {"name": "DP-2", "focused": False, "x": 4000, "y": 0, "width": 800,
+             "height": 600, "scale": 1, "transform": 0, "activeWorkspace": {"id": 9}}]))
+    elif args[:2] == ["clients", "-j"]:
+        window = {"at": [5, 5], "size": [400, 300], "workspace": {"id": 3},
+                  "mapped": True, "hidden": False}
+        print(json.dumps([window, dict(window),
+                          dict(window, workspace={"id": 4}),
+                          dict(window, at=[1, 1], hidden=True),
+                          dict(window, at=[50, 60], size=[640, 480])]))
+    elif args[:2] == ["layers", "-j"]:
+        print(json.dumps({"eDP-1": {"levels": {"3": [{"namespace": "hyprpicker"}]}}}))
+    elif args[:2] == ["binds", "-j"]:
+        print(option(".hypr-binds") or "[]")
+    elif args[:1] == ["getoption"]:
+        print(json.dumps({"option": "cursor:no_hardware_cursors", "int": 2}))
+    else:
+        print("ok")
+elif name == "omarchy":
+    record()
+    code = int(option(".omarchy-exit") or 0)
+    if code:
+        sys.stderr.write("plugin not found\n")
+    sys.exit(code)
+elif name == "gum":
+    record()
+    print("claude")
+else:
+    record()
+'''
+
+STUBBED = ["omarchy-notification-send", "omarchy-shell", "omarchy", "hyprctl", "hyprpicker",
+           "slurp", "grim", "tesseract", "ffmpeg", "gum",
+           "agent", "claude", "codex", "opencode", "gemini", "voxtype", "ffprobe"]
+# Real programs a case may run, by name. The CLI's PATH is the stub directory
+# alone, so a program in neither list is not found and the case fails rather
+# than running something on this machine. `sh` runs a custom agent command,
+# which the user writes and the CLI runs as `sh -c`.
+REAL = ["sh"]
+STUB_DIR: Path | None = None   # set in main()
+DUMPING = False                # set in main()
+
+
+def json_or_text(value):
+    """A JSON argument compared as what it says rather than how it is spaced."""
+    if isinstance(value, str) and value[:1] in ("{", "["):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            pass
+    return value
+
+
+def normalize_call(name: str, call: dict) -> dict:
+    call = dict(call, argv=[json_or_text(a) for a in call["argv"]])
+    if "stdin" in call and "\n\nINPUT:\n" in call["stdin"]:
+        template, context = call["stdin"].split("\n\nINPUT:\n", 1)
+        call["stdin"] = {"template_len": len(template), "input": json.loads(context)}
+    if "OPENCODE_CONFIG_CONTENT" in call.get("env", {}):
+        call["env"]["OPENCODE_CONFIG_CONTENT"] = json.loads(call["env"]["OPENCODE_CONFIG_CONTENT"])
+    return call
+
+
+# --- seeds -------------------------------------------------------------------
+
+def at(minutes: int) -> str:
+    """NOW shifted by some minutes, in the stored format."""
+    base = datetime.fromisoformat(NOW.replace("Z", "+00:00"))
+    return (base + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def png(width: int, height: int) -> bytes:
+    """A real, if blank, PNG, so ffprobe has something to measure."""
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+    raw = b"".join(b"\x00" + b"\x00\x00\x00" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def migrations_upto(version: int) -> str:
+    files = sorted((ROOT / "sql/migrations").glob("*.sql"))
+    return "".join(f.read_text() for f in files if int(f.name[:3]) <= version)
+
+
+def seed_v1(home: Path) -> None:
+    """A database left at schema v1, as an install from before 002 has."""
+    db = home / ".local/share/omoide/memories.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db)
+    conn.executescript(migrations_upto(1))
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+
+def seed_v2(home: Path) -> None:
+    """A database left at schema v2, as an install from before 003 has."""
+    db = home / ".local/share/omoide/memories.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db)
+    conn.executescript(migrations_upto(2))
+    conn.execute("PRAGMA user_version = 2")
+    conn.commit()
+    conn.close()
+
+
+def seed_library(home: Path) -> None:
+    """A library with one of everything the commands look at.
+
+    Run after `migrate`, so the schema is the CLI's own.
+    """
+    data = home / ".local/share/omoide"
+    conn = sqlite3.connect(data / "memories.db")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    def memory(mid, created, *, status="ready", ai="ok", title=None, lede=None, ocr=None):
+        conn.execute("INSERT INTO memories (id, created_at, updated_at, title, lede, "
+                     "ocr_text, status, ai_status) VALUES (?,?,?,?,?,?,?,?)",
+                     (mid, created, created, title, lede, ocr, status, ai))
+
+    def block(bid, mid, pos, kind, payload, origin="ai", edited=0):
+        conn.execute("INSERT INTO blocks (id, memory_id, position, type, payload, origin, edited) "
+                     "VALUES (?,?,?,?,?,?,?)", (bid, mid, pos, kind, json.dumps(payload), origin, edited))
+
+    def item(iid, mid, kind, title, created, **cols):
+        fields = {"id": iid, "memory_id": mid, "kind": kind, "title": title,
+                  "created_at": created, **cols}
+        conn.execute(f"INSERT INTO items ({', '.join(fields)}) VALUES "
+                     f"({', '.join('?' * len(fields))})", tuple(fields.values()))
+
+    def blob(mid, name, content):
+        path = data / "blobs" / mid / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return f"blobs/{mid}/{name}"
+
+    # A screenshot from GitHub, measured, in a collection, with to-dos.
+    memory("m-shot", at(-600), title="Café José – release notes",
+           lede="Diacritics and a dash", ocr="Release v2.0 notes for bandcamp")
+    rel = blob("m-shot", "capture.png", png(16, 9))
+    thumb = blob("m-shot", "thumb.png", png(8, 4))
+    conn.execute("INSERT INTO attachments (id, memory_id, kind, rel_path, thumb_path, "
+                 "width, height) VALUES ('a-shot', 'm-shot', 'image', ?, ?, 1600, 900)",
+                 (rel, thumb))
+    block("b-src", "m-shot", 0, "source", {"url": "https://github.com/x/y", "domain": "github.com"})
+    block("b-img", "m-shot", 1, "image", {"attachment_id": "a-shot"}, origin="capture")
+    block("b-sum", "m-shot", 2, "summary", {"text": "A summary / with a slash"})
+    block("b-list", "m-shot", 3, "list", {"heading": "Names",
+                                          "items": [{"label": "Ana"}, {"text": "Lu"}]}, edited=1)
+    block("b-note", "m-shot", 4, "note", {"text": "my own note"}, origin="user")
+
+    # A note, no attachment, same source domain as the screenshot.
+    memory("m-note", at(-300), title="Groceries", lede="", ocr=None)
+    block("b-src2", "m-note", 0, "source", {"url": "https://www.github.com/z", "domain": "github.com"})
+
+    # A voice memo whose image was never measured: reindex backfills it.
+    memory("m-voice", at(-200), title="Voice memo", ai="failed")
+    conn.execute("INSERT INTO attachments (id, memory_id, kind, rel_path) "
+                 "VALUES ('a-voice', 'm-voice', 'audio', 'blobs/m-voice/memo.ogg')")
+    rel = blob("m-voice", "frame.png", png(4, 3))
+    conn.execute("INSERT INTO attachments (id, memory_id, kind, rel_path) "
+                 "VALUES ('a-frame', 'm-voice', 'image', ?)", (rel,))
+
+    # An enrichment with no process behind it: the sweep marks it failed.
+    memory("m-stalled", at(-100), title="Stalled", ai="pending")
+    # Drafts: one long abandoned, one still on screen, one with its picture.
+    memory("m-old-draft", at(-60), status="draft", ai="none")
+    blob("m-old-draft", "capture.png", png(2, 2))
+    memory("m-new-draft", at(-2), status="draft", ai="none")
+    blob("m-new-draft", "capture.png", png(2, 2))
+    memory("m-shot-draft", at(-1), status="draft", ai="none")
+    rel = blob("m-shot-draft", "capture.png", png(12, 6))
+    conn.execute("INSERT INTO attachments (id, memory_id, kind, rel_path, mime, bytes, width, "
+                 "height) VALUES ('a-draft', 'm-shot-draft', 'image', ?, 'image/png', 99, 12, 6)",
+                 (rel,))
+
+    for mid, tag in [("m-shot", "release"), ("m-note", "release"), ("m-voice", "release"),
+                     ("m-shot", "work"), ("m-note", "work"), ("m-shot", "zeta")]:
+        conn.execute("INSERT INTO tags (memory_id, tag) VALUES (?,?)", (mid, tag))
+
+    conn.execute("INSERT INTO collections (id, name, created_at) VALUES ('c-1', 'Reading', ?)", (at(-500),))
+    conn.execute("INSERT INTO collections (id, name, created_at) VALUES ('c-2', 'Empty', ?)", (at(-500),))
+    conn.execute("INSERT INTO memory_collections (memory_id, collection_id) VALUES ('m-shot', 'c-1')")
+    conn.execute("INSERT INTO memory_collections (memory_id, collection_id) VALUES ('m-note', 'c-1')")
+    conn.execute("INSERT INTO links (from_id, to_id, created_at) VALUES ('m-note', 'm-shot', ?)", (at(-50),))
+
+    item("t-today", "m-shot", "todo", "Ship it", at(-590), due_at=at(300))
+    item("t-overdue", "m-shot", "todo", "Overdue thing", at(-580), due_at=at(-120))
+    item("t-undated", "m-note", "todo", "Buy milk", at(-290))
+    item("t-local", "m-note", "todo", "Typed by hand", at(-280), due_at="2026-09-27 09:30")
+    item("t-done", "m-note", "todo", "Done already", at(-270), due_at=at(-60), completed_at=at(-30))
+    item("t-suggested", "m-shot", "todo", "Maybe this", at(-260), status="suggested")
+    item("t-sugg-dated", "m-shot", "todo", "Maybe later", at(-255), status="suggested",
+         due_at=at(600))
+    item("t-cancelled", "m-shot", "todo", "Never mind", at(-250), status="cancelled")
+    item("e-tomorrow", "m-shot", "event", "Launch", at(-240), starts_at=at(1440),
+         ends_at=at(1500), location="Madrid <office>")
+    item("e-today", "m-note", "event", "Standup", at(-230), starts_at=at(60), all_day=1)
+
+    for rid, iid, fire, status in [
+            ("r-due", "t-today", at(-5), "pending"),        # fires
+            ("r-late", "e-today", at(-120), "pending"),     # too late: expires
+            ("r-future", "e-tomorrow", at(1380), "pending"),
+            ("r-fired", "t-today", at(-300), "fired"),
+            ("r-cancelled-item", "t-cancelled", at(-5), "pending"),
+            ("r-done-item", "t-done", at(-5), "pending"),
+            ("r-reopen", "t-done", at(-400), "cancelled")]:
+        conn.execute("INSERT INTO reminders (id, item_id, fire_at, trigger_offset_min, status) "
+                     "VALUES (?,?,?,?,?)", (rid, iid, fire, -30 if rid == "r-due" else None, status))
+    conn.commit()
+    conn.close()
+
+
+def memory_arrives(home: Path) -> None:
+    """A capture saved after a first page was read, newer than everything."""
+    conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
+    conn.execute("INSERT INTO memories (id, created_at, updated_at, title, status, ai_status) "
+                 "VALUES ('m-arrived', ?, ?, 'Arrived later', 'ready', 'ok')", (at(1), at(1)))
+    conn.commit()
+    conn.close()
+
+
+def write_config(ai: dict):
+    def apply(home: Path) -> None:
+        path = home / ".config/omoide/config.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ai": ai, "other": {"kept": True}}))
+    return apply
+
+
+def write_shell(settings: dict):
+    """The widget's inline settings in shell.json, where the shell keeps them."""
+    def apply(home: Path) -> None:
+        path = home / ".config/omarchy/shell.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"bar": {"layout": {"right": [
+            {"id": "omarchy.clock"}, {"id": "leweyse.omoide", **settings}]}}}))
+    return apply
+
+
+def home_file(name: str, content: str):
+    def apply(home: Path) -> None:
+        (home / name).write_text(content)
+    return apply
+
+
+def many_items(todos: int, events: int):
+    """One memory holding more to-dos and events than any page, so a case shows
+    that counts and pages hold past the sizes a view asks for. One past the caps
+    the index once had, 200 to-dos and 50 events, is enough."""
+    def apply(home: Path) -> None:
+        conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
+        conn.execute("INSERT INTO memories (id, created_at, updated_at, title, status, ai_status) "
+                     "VALUES ('m-many', '2026-09-20T10:00:00Z', '2026-09-20T10:00:00Z', 'Many', 'ready', 'ok')")
+        for n in range(todos):
+            conn.execute("INSERT INTO items (id, memory_id, kind, title, due_at, created_at) "
+                         "VALUES (?, 'm-many', 'todo', ?, ?, ?)",
+                         (f"t-{n:03d}", f"To-do {n}", f"2026-10-{1 + n % 28:02d}T09:00:00Z",
+                          f"2026-09-{1 + n % 25:02d}T10:{n % 60:02d}:00Z"))
+        for n in range(events):
+            conn.execute("INSERT INTO items (id, memory_id, kind, title, starts_at, created_at) "
+                         "VALUES (?, 'm-many', 'event', ?, ?, '2026-09-20T10:00:00Z')",
+                         (f"e-{n:03d}", f"Event {n}", f"2026-11-{1 + n % 28:02d}T18:{n % 60:02d}:00Z"))
+        conn.commit()
+        conn.close()
+    return apply
+
+
+def set_version(version: int):
+    def apply(home: Path) -> None:
+        conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
+        conn.execute(f"PRAGMA user_version = {version}")
+        conn.commit()
+        conn.close()
+    return apply
+
+
+def bad_config(home: Path) -> None:
+    (home / ".config/omoide").mkdir(parents=True, exist_ok=True)
+    (home / ".config/omoide/config.json").write_text("{nope")
+
+
+LIBRARY = [["migrate"], seed_library]            # search index not built yet
+INDEXED = LIBRARY + [["reindex"]]
+AGENT = write_config({"enabled": True, "command": ["agent", "--json"], "timeoutMs": 45000})
+
+RICH_REPLY = json.dumps({
+    "title": "Launch plan  for\nQ4", "lede": "Everything about the launch",
+    "tags": ["Launch", "planning", "launch", "  Work  ", "a", "b", "c", "d", "e"],
+    "blocks": [
+        {"type": "source", "url": "https://Example.com/post?x=1", "title": "Post",
+         "byline": "Ana", "chip": "Blog"},
+        {"type": "source", "url": "javascript:alert(1)"},
+        {"type": "summary", "text": "  Line one\nLine two  "},
+        {"type": " Quote ", "text": "Quoted", "attribution": "Someone"},
+        {"type": "code", "text": "print(1)", "language": "python"},
+        {"type": "list", "heading": "To-dos:", "items": ["one", {"label": "L", "text": "two"},
+                                                        {"text": ""}, 5]},
+        {"type": "list", "heading": "Empty", "ordered": 1, "items": []},
+        {"type": "event", "title": "Launch", "start": "2026-10-01T16:00:00Z",
+         "end": "2026-10-01T17:00:00Z", "location": "HQ", "map_url": "file:///etc/passwd",
+         "remind": [{"offset_min": -60}, {"at": "2026-10-01T08:00:00Z"}, "bad"]},
+        {"type": "event", "title": "Undated"},
+        {"type": "event", "title": "Default alarm", "starts_at": "2026-10-02T10:00:00Z",
+         "suggested": False},
+        {"type": "todos", "items": [
+            {"title": "Inferred task", "due_at": "2026-09-28T09:00:00Z"},
+            {"title": "Asked task", "due_at": "2026-09-27T09:00:00Z", "suggested": False},
+            {"title": "Asked undated", "suggested": False},
+            {"title": "Asked with alarm", "due_at": "2026-09-29T09:00:00Z", "suggested": False,
+             "remind": [{"offset_min": "-15"}, {"offset_min": "x"}, {"offset_min": None}]},
+            {"title": ""}, "x"]},
+        {"type": "note", "text": "a model's note is ignored"},
+        {"type": "unknown"}]})
+
+# name, seed steps (CLI argv lists, or callables on the home), argv
+CASES = [
+    ("migrate-fresh", [], ["migrate"]),
+    ("migrate-again", [["migrate"]], ["migrate"]),
+    ("migrate-from-v1", [seed_v1], ["migrate"]),
+    ("migrate-from-v2", [seed_v2], ["migrate"]),
+    ("migrate-schema-newer", [["migrate"], set_version(9)], ["migrate"]),
+    ("migrate-extra-argument", [], ["migrate", "extra"]),
+    ("unknown-command", [], ["no-such-command"]),
+
+    ("state-empty", [["migrate"]], ["state"]),
+    ("state-library", INDEXED, ["state"]),
+    ("state-ai-custom", INDEXED + [write_config({"enabled": True, "command": ["cat"]})], ["state"]),
+    ("state-ai-disabled", INDEXED + [write_config({"enabled": False, "command": ["cat"]})], ["state"]),
+    ("state-ai-preset", INDEXED + [write_config({"enabled": True, "provider": "claude"})], ["state"]),
+    ("state-ai-preset-missing", INDEXED + [write_config({"enabled": True, "provider": "ollama"})], ["state"]),
+    ("state-bad-config", INDEXED + [bad_config], ["state"]),
+
+    ("index", INDEXED, ["index"]),
+    ("index-many", [["migrate"], many_items(201, 51)], ["index"]),
+    ("index-schema-newer", [["migrate"], set_version(9)], ["index"]),
+    ("list", INDEXED, ["list"]),
+    ("list-limit", INDEXED, ["list", "--limit", "2"]),
+    ("list-collection", INDEXED, ["list", "--collection", "Reading"]),
+    ("list-collection-missing", INDEXED, ["list", "--collection", "Nope"]),
+    ("list-after", INDEXED, ["list", "--limit", "2", "--after", "2026-09-26T08:20:00Z,m-stalled"]),
+    ("list-last-page", INDEXED, ["list", "--limit", "2", "--after", "2026-09-26T06:40:00Z,m-voice"]),
+    ("list-after-arrival", INDEXED + [memory_arrives],
+     ["list", "--limit", "2", "--after", "2026-09-26T08:20:00Z,m-stalled"]),
+    ("list-facet-kind", INDEXED, ["list", "--facet", "kind:screenshot"]),
+    ("list-facet-source", INDEXED, ["list", "--facet", "source:github.com"]),
+    ("list-facet-tag", INDEXED, ["list", "--facet", "tag:release", "--limit", "1"]),
+    ("list-facet-in-collection", INDEXED, ["list", "--collection", "Reading", "--facet", "tag:zeta"]),
+    ("list-bad-cursor", INDEXED, ["list", "--after", "not-a-cursor"]),
+    ("list-bad-facet", INDEXED, ["list", "--facet", "colour:red"]),
+    ("show-screenshot", INDEXED, ["show", "--id", "m-shot"]),
+    ("show-note", INDEXED, ["show", "--id", "m-note"]),
+    ("show-missing", INDEXED, ["show", "--id", "nope"]),
+    ("show-without-id", INDEXED, ["show"]),
+    ("search-prefix", INDEXED, ["search", "--q", "bandcam"]),
+    ("search-diacritics", INDEXED, ["search", "--q", "jose"]),
+    ("search-terms", INDEXED, ["search", "--q", "groceries release"]),
+    ("search-punctuation-only", INDEXED, ["search", "--q", "!!"]),
+    ("search-limit", INDEXED, ["search", "--q", "release", "--limit", "1"]),
+    ("search-after", INDEXED, ["search", "--q", "release", "--limit", "1", "--after", "1"]),
+    ("search-facet", INDEXED, ["search", "--q", "release", "--facet", "tag:work"]),
+    ("search-bad-cursor", INDEXED, ["search", "--q", "release", "--after", "-3"]),
+    ("facets", INDEXED, ["facets"]),
+    ("facets-collection", INDEXED, ["facets", "--collection", "Reading"]),
+    ("facets-search", INDEXED, ["facets", "--q", "release"]),
+    ("facets-search-punctuation-only", INDEXED, ["facets", "--q", "!!"]),
+    ("facets-collection-missing", INDEXED, ["facets", "--collection", "Nope"]),
+    ("archive", INDEXED, ["archive"]),
+    ("archive-open", INDEXED, ["archive", "--group", "open", "--limit", "2"]),
+    ("archive-open-after", INDEXED, ["archive", "--group", "open", "--limit", "2",
+                                     "--after", "2026-09-26 15:00:00,t-today"]),
+    ("archive-upcoming", INDEXED, ["archive", "--group", "upcoming"]),
+    ("archive-past", INDEXED, ["archive", "--group", "past"]),
+    ("archive-completed", INDEXED, ["archive", "--group", "completed"]),
+    ("archive-suggested", INDEXED, ["archive", "--group", "suggested"]),
+    ("archive-many", [["migrate"], many_items(201, 0)], ["archive", "--group", "open", "--limit", "2"]),
+    ("archive-bad-group", INDEXED, ["archive", "--group", "someday"]),
+    ("archive-bad-cursor", INDEXED, ["archive", "--group", "open", "--after", "nope"]),
+    ("archive-after-without-group", INDEXED, ["archive", "--after", "x,y"]),
+    ("events", INDEXED, ["events", "--limit", "1"]),
+    ("events-after", INDEXED, ["events", "--after", "2026-09-26 11:00:00,e-today"]),
+    ("events-many", [["migrate"], many_items(0, 51)], ["events", "--limit", "2"]),
+    ("events-bad-cursor", INDEXED, ["events", "--after", "nope"]),
+    ("related", INDEXED, ["related", "--id", "m-shot"]),
+    ("candidates", INDEXED, ["candidates", "--id", "m-shot"]),
+    ("candidates-query", INDEXED, ["candidates", "--id", "m-note", "--q", "voice"]),
+    ("candidates-negative-limit", INDEXED, ["candidates", "--id", "m-voice", "--limit", "-1"]),
+
+    ("reindex", LIBRARY, ["reindex"]),
+    ("sweep", INDEXED, ["sweep"]),
+    ("sweep-old-name", INDEXED, ["sync-timers"]),
+    ("discard-draft", INDEXED, ["discard", "--id", "m-new-draft"]),
+    ("discard-ready-memory", INDEXED, ["discard", "--id", "m-shot"]),
+    ("discard-missing", INDEXED, ["discard", "--id", "nope"]),
+
+    ("item-get", INDEXED, ["item", "get", "--id", "t-today"]),
+    ("item-get-missing", INDEXED, ["item", "get", "--id", "nope"]),
+    ("item-add-todo", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Call Ana",
+                                "--at", "tomorrow at 3pm"]),
+    ("item-add-event", INDEXED, ["item", "add", "--memory", "m-note", "--kind", "event",
+                                 "--title", "Dinner", "--at", "2026-10-01 18:00"]),
+    ("item-add-undated", INDEXED, ["item", "add", "--memory", "m-note", "--title", "  Someday  "]),
+    ("item-add-day-first", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Dentist",
+                                     "--at", "30/09/2026 08:15"]),
+    ("item-add-weekday", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Gym",
+                                   "--at", "friday"]),
+    ("item-add-bare-clock", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Call",
+                                      "--at", "9:30"]),
+    ("item-add-tonight", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Read",
+                                   "--at", "tonight"]),
+    ("item-add-in-hours", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Tea",
+                                    "--at", "in 2 hours"]),
+    ("item-add-bad-date", INDEXED, ["item", "add", "--memory", "m-note", "--title", "Bad",
+                                    "--at", "2026-02-30"]),
+    ("item-add-dst", INDEXED, ["item", "add", "--memory", "m-note", "--title", "DST check",
+                               "--at", "in 30 days"]),
+    ("item-add-bad-kind", INDEXED, ["item", "add", "--kind", "chore", "--title", "x"]),
+    ("item-bad-action", INDEXED, ["item", "explode", "--id", "t-today"]),
+    ("item-promote", INDEXED, ["item", "promote", "--id", "t-sugg-dated"]),
+    ("item-promote-undated", INDEXED, ["item", "promote", "--id", "t-suggested"]),
+    ("item-complete", INDEXED, ["item", "complete", "--id", "t-today"]),
+    ("item-reopen", INDEXED, ["item", "reopen", "--id", "t-done"]),
+    ("item-cancel", INDEXED, ["item", "cancel", "--id", "t-today"]),
+    ("item-edit-title-notes", INDEXED, ["item", "edit", "--id", "t-undated", "--title", "Buy oat milk",
+                                        "--notes", "the barista one"]),
+    ("item-edit-at", INDEXED, ["item", "edit", "--id", "t-undated", "--at", "2026-09-30T08:00:00Z"]),
+    ("item-edit-reschedule", INDEXED, ["item", "edit", "--id", "t-today", "--at", "2026-09-28 12:00"]),
+    ("item-edit-clear-at", INDEXED, ["item", "edit", "--id", "t-today", "--clear-at"]),
+    ("item-edit-bad-date", INDEXED, ["item", "edit", "--id", "t-today", "--at", "whenever"]),
+    ("item-edit-missing", INDEXED, ["item", "edit", "--id", "nope", "--title", "x"]),
+
+    ("reminder-add-offset", INDEXED, ["reminder", "add", "--item", "t-today", "--offset", "-15"]),
+    ("reminder-add-at", INDEXED, ["reminder", "add", "--item", "t-undated", "--at", "2026-09-30 08:00"]),
+    ("reminder-add-offset-undated", INDEXED, ["reminder", "add", "--item", "t-undated", "--offset", "-5"]),
+    ("reminder-add-bad-offset", INDEXED, ["reminder", "add", "--item", "t-today", "--offset", "soon"]),
+    ("reminder-add-unreadable", INDEXED, ["reminder", "add", "--item", "t-today", "--at", "later-ish"]),
+    ("reminder-remove", INDEXED, ["reminder", "remove", "--id", "r-future"]),
+    ("reminder-fire", INDEXED, ["reminder", "fire", "--id", "r-due"]),
+    ("reminder-fire-future", INDEXED, ["reminder", "fire", "--id", "r-future"]),
+    ("reminder-fire-late", INDEXED, ["reminder", "fire", "--id", "r-late"]),
+    ("reminder-fire-without-id", INDEXED, ["reminder", "fire"]),
+
+    ("collection-new", INDEXED, ["collection", "new", "--name", "Ideas"]),
+    ("collection-new-existing", INDEXED, ["collection", "new", "--name", "Reading"]),
+    ("collection-add-new", INDEXED, ["collection", "add", "--name", "Ideas", "--memory", "m-voice"]),
+    ("collection-add-existing", INDEXED, ["collection", "add", "--name", "Empty", "--memory", "m-shot"]),
+    ("collection-remove", INDEXED, ["collection", "remove", "--name", "Reading", "--memory", "m-note"]),
+    ("collection-remove-missing", INDEXED, ["collection", "remove", "--name", "Nope", "--memory", "m-note"]),
+    ("collection-rename", INDEXED, ["collection", "rename", "--name", "Reading", "--to", "  Books  "]),
+    ("collection-rename-clash", INDEXED, ["collection", "rename", "--name", "Reading", "--to", "Empty"]),
+    ("collection-rename-without-to", INDEXED, ["collection", "rename", "--name", "Reading"]),
+    ("collection-delete", INDEXED, ["collection", "delete", "--name", "Reading"]),
+    ("collection-without-name", INDEXED, ["collection", "new"]),
+
+    ("link-add", INDEXED, ["link", "add", "--from", "m-voice", "--to", "m-shot"]),
+    ("link-add-reversed-duplicate", INDEXED, ["link", "add", "--from", "m-shot", "--to", "m-note"]),
+    ("link-remove", INDEXED, ["link", "remove", "--from", "m-shot", "--to", "m-note"]),
+
+    ("block-set", INDEXED, ["block", "set", "--id", "b-sum",
+                            "--payload", '{"text": "Rewritten / by hand", "extra": [1, 2.5, "é"]}']),
+    ("block-set-not-json", INDEXED, ["block", "set", "--id", "b-sum", "--payload", "{nope"]),
+    ("block-delete", INDEXED, ["block", "delete", "--id", "b-src"]),
+    ("block-missing", INDEXED, ["block", "delete", "--id", "nope"]),
+    ("delete", INDEXED, ["delete", "--id", "m-shot"]),
+    ("memory-title", INDEXED, ["memory", "--id", "m-note", "--title", "  Weekly groceries  "]),
+    ("memory-empty-title", INDEXED, ["memory", "--id", "m-note", "--title", "   "]),
+    ("memory-lede", INDEXED, ["memory", "--id", "m-note", "--lede", " fruit, mostly "]),
+    ("memory-missing", INDEXED, ["memory", "--id", "nope", "--title", "x"]),
+
+    ("capture-note", INDEXED, ["capture", "note"]),
+    ("capture-default-action", INDEXED + [write_shell({"defaultAction": "note"})], ["capture"]),
+    ("capture-mode-option", INDEXED, ["capture", "--mode", "note"]),
+    ("capture-voice", INDEXED, ["capture", "voice"]),
+    ("capture-clipboard", INDEXED, ["capture", "clipboard"]),
+    ("capture-bad-mode", INDEXED, ["capture", "video"]),
+    ("capture-screenshot", INDEXED, ["capture", "screenshot"]),
+    ("capture-screenshot-window", INDEXED + [write_shell({"captureMode": "window"})], ["capture"]),
+    ("capture-screenshot-fullscreen", INDEXED + [write_shell({"captureMode": "fullscreen"})],
+     ["capture", "screenshot"]),
+    ("capture-screenshot-no-freeze", INDEXED + [write_shell({"captureFreeze": False})],
+     ["capture", "screenshot"]),
+    ("capture-screenshot-cancelled", INDEXED + [home_file(".slurp-cancel", "1")],
+     ["capture", "screenshot"]),
+
+    ("commit-note-ai-off", INDEXED, ["commit", "--id", "m-new-draft",
+                                     "--note", "remind me to call Ana tomorrow at 3pm"]),
+    ("commit-note-plain", INDEXED, ["commit", "--id", "m-new-draft", "--note", "  Just a thought\nsecond line"]),
+    ("commit-screenshot-ai-off", INDEXED, ["commit", "--id", "m-shot-draft"]),
+    ("commit-remove-image-nothing-left", INDEXED, ["commit", "--id", "m-shot-draft", "--remove-image"]),
+    ("commit-missing", INDEXED, ["commit", "--id", "nope", "--note", "x"]),
+    ("commit-ai-rich", INDEXED + [AGENT, home_file(".agent-reply", RICH_REPLY)],
+     ["commit", "--id", "m-shot-draft", "--note", "launch notes"]),
+    ("commit-ai-envelope", INDEXED + [AGENT, home_file(".agent-reply", json.dumps(
+        {"result": 'Here:\n```json\n{"title": "Wrapped", "blocks": []}\n```'}))],
+     ["commit", "--id", "m-new-draft", "--note", "wrapped"]),
+    ("commit-ai-prose", INDEXED + [AGENT, home_file(".agent-reply",
+        'Sure! {"title": "In prose", "blocks": [{"type": "summary", "text": "S"}]} hope that helps')],
+     ["commit", "--id", "m-new-draft", "--note", "prose"]),
+    ("commit-ai-event-only-reminder", INDEXED + [AGENT, home_file(".agent-reply", json.dumps(
+        {"title": "Vet", "blocks": [{"type": "event", "title": "Clinic open day",
+                                     "starts_at": "2026-10-03T09:00:00Z"}]}))],
+     ["commit", "--id", "m-new-draft", "--note", "remind me to call the vet tomorrow at 3pm"]),
+    ("commit-ai-unparsed", INDEXED + [AGENT, home_file(".agent-reply", "no json here")],
+     ["commit", "--id", "m-new-draft", "--note", "remind me to water plants tonight"]),
+    ("commit-ai-exit", INDEXED + [AGENT, home_file(".agent-exit", "3"),
+                                  home_file(".agent-stderr", "boom\x1b[31m\nbad")],
+     ["commit", "--id", "m-new-draft", "--note", "exit"]),
+    ("commit-ai-flood", INDEXED + [AGENT, home_file(".agent-flood", str(1024 * 1024 + 10))],
+     ["commit", "--id", "m-new-draft", "--note", "flood"]),
+    ("commit-ai-timeout", INDEXED + [write_config({"enabled": True, "command": ["agent"],
+                                                   "timeoutMs": 1000}),
+                                     home_file(".agent-sleep", "8")],
+     ["commit", "--id", "m-new-draft", "--note", "slow"]),
+    ("commit-custom-sh", INDEXED + [write_config({"enabled": True,
+                                                  "command": ["sh", "-c", "agent --json 'quoted arg'"]}),
+                                    home_file(".agent-reply", '{"title": "Through a shell"}')],
+     ["commit", "--id", "m-new-draft", "--note", "shell"]),
+    ("commit-claude-image", INDEXED + [write_config({"enabled": True, "provider": "claude",
+                                                     "visionMode": "image", "model": "opus"}),
+                                       home_file(".agent-reply", '{"title": "Seen"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-claude-ocr", INDEXED + [write_config({"enabled": True, "provider": "claude"}),
+                                     home_file(".agent-reply", '{"title": "Read"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-opencode", INDEXED + [write_config({"enabled": True, "provider": "opencode",
+                                                 "visionMode": "image"}),
+                                   home_file(".agent-reply", '{"title": "Open"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-gemini", INDEXED + [write_config({"enabled": True, "provider": "gemini"}),
+                                 home_file(".agent-reply", '{"title": "Gem"}')],
+     ["commit", "--id", "m-new-draft", "--note", "gemini"]),
+    ("commit-codex-image", INDEXED + [write_config({"enabled": True, "provider": "codex",
+                                                    "visionMode": "image"}),
+                                      home_file(".agent-reply", '{"title": "Codex"}')],
+     ["commit", "--id", "m-shot-draft"]),
+
+    ("enrich", INDEXED + [AGENT, home_file(".agent-reply", RICH_REPLY)], ["enrich", "--id", "m-shot"]),
+    ("enrich-fails", INDEXED + [AGENT, home_file(".agent-reply", "nothing")], ["enrich", "--id", "m-shot"]),
+    ("enrich-without-agent", INDEXED, ["enrich", "--id", "m-shot"]),
+    ("enrich-missing", INDEXED + [AGENT], ["enrich", "--id", "nope"]),
+
+    ("ai-config", [["migrate"]], ["ai-config"]),
+    ("ai-config-configured", [["migrate"], write_config({"enabled": True, "provider": "gemini",
+                                                         "model": "flash", "timeoutMs": "30000"})],
+     ["ai-config"]),
+    ("ai-config-custom", [["migrate"], write_config({"enabled": True, "command": ["agent", "-x"]})],
+     ["ai-config"]),
+    ("setup-ai-disable", [["migrate"], AGENT], ["setup-ai", "--disable"]),
+    ("setup-ai-preset", [["migrate"]], ["setup-ai", "--provider", "claude", "--model", "sonnet",
+                                        "--vision", "image"]),
+    ("setup-ai-preset-missing", [["migrate"]], ["setup-ai", "--provider", "ollama"]),
+    ("setup-ai-custom", [["migrate"], AGENT], ["setup-ai", "--provider", "custom",
+                                               "--command", "agent --flag value"]),
+    ("setup-ai-custom-empty", [["migrate"]], ["setup-ai", "--provider", "custom", "--command", "  "]),
+    ("setup-ai-unknown", [["migrate"]], ["setup-ai", "--provider", "hal"]),
+    ("setup-ai-bad-vision", [["migrate"]], ["setup-ai", "--provider", "claude", "--vision", "x-ray"]),
+    ("setup-ai-picker", [["migrate"]], ["setup-ai"]),
+
+    ("keybind", [], ["keybind"]),
+    ("keybind-json", [], ["keybind", "--json", "--accel", "SUPER + ALT + K"]),
+    ("keybind-conflict", [home_file(".hypr-binds", json.dumps(
+        [{"modmask": 68, "key": "M", "dispatcher": "exec", "arg": "something-else"}]))],
+     ["keybind", "--json"]),
+    ("keybind-ours", [home_file(".hypr-binds", json.dumps(
+        [{"modmask": 68, "key": "m", "dispatcher": "exec", "arg": "omarchy-shell -q omoide toggleChooser"}]))],
+     ["keybind", "--json"]),
+    ("install", [], ["install"]),
+    ("install-enable-fails", [home_file(".omarchy-exit", "1")], ["install"]),
+    ("uninstall", INDEXED + [AGENT], ["uninstall"]),
+    ("uninstall-purge", INDEXED + [AGENT], ["uninstall", "--purge"]),
+]
+
+
+def become_subreaper() -> None:
+    """Adopt whatever a command leaves running.
+
+    Both CLIs launch the notifier detached and exit without waiting for it, so
+    a stub could still be starting when its log is read, and a case that fires
+    a toast would compare two empty lists. As a subreaper this process inherits
+    those orphans and can wait for them.
+    """
+    PR_SET_CHILD_SUBREAPER = 36
+    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+        sys.exit("parity: could not become a subreaper; toasts would go unrecorded")
+
+
+def reap_orphans() -> None:
+    while True:
+        try:
+            os.waitpid(-1, 0)
+        except ChildProcessError:
+            return
+
+
+def env_for(home: Path) -> dict:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
+    env.update(HOME=str(home), TZ=TZ, OMOIDE_NOW=NOW, OMOIDE_TEST_IDS="1", LC_ALL="C.UTF-8",
+               PATH=str(STUB_DIR))
+    return env
+
+
+def run(argv: list[str], home: Path) -> tuple[int, str]:
+    proc = subprocess.run(argv, env=env_for(home), capture_output=True,
+                          text=True, timeout=120, stdin=subprocess.DEVNULL)
+    reap_orphans()
+    return proc.returncode, proc.stdout
+
+
+def parse_stdout(text: str):
+    lines = [line for line in text.splitlines() if line.strip()]
+    try:
+        return [json.loads(line) for line in lines]
+    except json.JSONDecodeError:
+        return {"unparsed": text}
+
+
+def cell(value):
+    """A JSON column compared as JSON, so spacing is not a difference."""
+    return json_or_text(value) if isinstance(value, str) else value
+
+
+def dump_db(home: Path):
+    path = home / ".local/share/omoide/memories.db"
+    if not path.exists():
+        return None
+    conn = sqlite3.connect(path)
+    out = {"user_version": conn.execute("PRAGMA user_version").fetchone()[0]}
+    tables = conn.execute(
+        "SELECT name, type, sql FROM sqlite_master ORDER BY type, name").fetchall()
+    # The schema is the same in almost every case, so a fixture holds its digest;
+    # --dump shows the text when a digest changes.
+    schema = json.dumps([list(t) for t in tables], ensure_ascii=False)
+    out["schema"] = schema if DUMPING else "sha256:" + hashlib.sha256(schema.encode()).hexdigest()
+    for name, kind, _ in tables:
+        # FTS5's shadow tables hold its internal b-tree; the rows that matter
+        # are compared through the tables they index.
+        if kind != "table" or name.startswith("memories_fts_") or name.startswith("sqlite_"):
+            continue
+        rows = conn.execute(f'SELECT * FROM "{name}"').fetchall()
+        out[name] = sorted(json.dumps([cell(v) for v in r], default=str, ensure_ascii=False)
+                           for r in rows)
+    conn.close()
+    return out
+
+
+def scrub(value, home: Path):
+    """Each side runs in its own home, so absolute paths name different
+    directories. Written as ~ they compare as what they are."""
+    if isinstance(value, str):
+        return value.replace(str(home), "~")
+    if isinstance(value, list):
+        return [scrub(v, home) for v in value]
+    if isinstance(value, dict):
+        return {k: scrub(v, home) for k, v in value.items()}
+    return value
+
+
+def read_json(path: Path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+# How long a step took is the one thing two honest runs disagree on.
+SECONDS = re.compile(r"seconds=[0-9.]+")
+
+
+def pulled_index(cli: list[str], home: Path):
+    """What the shell would render after this command: `omoide index`, run in a
+    copy of the home so the pull itself leaves nothing in the case."""
+    if not (home / ".local/share/omoide/memories.db").exists():
+        return None
+    copy = home.parent / f"{home.name}.pull"
+    shutil.copytree(home, copy, symlinks=True)
+    try:
+        code, stdout = run(cli + ["index"], copy)
+        return scrub(json.loads(stdout), copy) if code == 0 else None
+    finally:
+        shutil.rmtree(copy)
+
+
+def side_effects(cli: list[str], home: Path) -> dict:
+    """Everything a command leaves behind besides the database."""
+    data = home / ".local/share/omoide"
+    state = home / ".local/state/omoide"
+    files = []
+    for root in (data, state):
+        if root.exists():
+            files += sorted(str(p.relative_to(home)) for p in root.rglob("*")
+                            if p.is_file() and not p.name.startswith("memories.db")
+                            and p.name != "omoide.log")
+    calls = {}
+    for name in STUBBED:
+        log = home / f".stub-{name}.log"
+        if log.exists():
+            calls[name] = [normalize_call(name, json.loads(line))
+                           for line in log.read_text().splitlines()]
+            # Toasts are launched detached, so the order they are recorded in
+            # is a race even within one run. Which toasts went out is not.
+            if name == "omarchy-notification-send":
+                calls[name].sort(key=lambda c: json.dumps(c, ensure_ascii=False))
+    log = state / "omoide.log"
+    return {
+        "index": pulled_index(cli, home),
+        "config": read_json(home / ".config/omoide/config.json"),
+        "log": [SECONDS.sub("seconds=N", line) for line in log.read_text().splitlines()]
+               if log.exists() else [],
+        "files": files,
+        "calls": calls,
+    }
+
+
+CLI: list[str] = []            # set in main()
+WORK: Path | None = None       # set in main()
+
+
+def seeded(seeds, home: Path) -> None:
+    """A home as `seeds` leave it, with the seeds' own traces removed."""
+    home.mkdir(parents=True)
+    (home / ".fixture.png").write_bytes(png(20, 10))
+    for step in seeds:
+        if callable(step):
+            step(home)
+        else:
+            run(CLI + step, home)
+    # The seed's own calls and log lines are not this case's.
+    for leftover in home.glob(".stub-*.log"):
+        leftover.unlink()
+    (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
+
+
+def template_of(index: int) -> Path:
+    """Where the seeded home for case `index`'s seed list is kept. Cases that
+    share a list share one template, built once and copied."""
+    return WORK / "seeded" / str(SEED_LISTS.index(CASES[index][1]))
+
+
+def build_template(key: int) -> None:
+    seeded(SEED_LISTS[key], WORK / "seeded" / str(key))
+
+
+def run_case(index: int):
+    """One case in its own home, returning (name, result). Everything it touches
+    is under WORK/<name>, so cases can run side by side. The home starts as a
+    copy of its seed list's template, which nothing in it can tell apart from a
+    fresh seeding: the seeds are deterministic, and the index pull already runs
+    in a copied home."""
+    name, _seeds, argv = CASES[index]
+    home = WORK / name
+    shutil.copytree(template_of(index), home, symlinks=True)
+    code, stdout = run(CLI + argv, home)
+    return name, scrub({"exit": code, "stdout": parse_stdout(stdout),
+                        "db": dump_db(home), **side_effects(CLI, home)}, home)
+
+
+# Each distinct seed list: cases whose lists are equal share a template, since
+# equal lists run the same steps. Set in main() for the cases chosen.
+SEED_LISTS: list = []
+
+
+def run_cases(chosen: list[int], jobs: int):
+    """Each chosen case's (name, result), in CASES order.
+
+    In worker processes, not threads: every run ends by reaping whatever the
+    command left behind with waitpid(-1), which would take another thread's
+    child. A worker is its own subreaper, since fork does not carry the setting,
+    and runs one case at a time. Forked rather than spawned, because the seeds
+    are closures that cannot be sent to a fresh interpreter."""
+    keys = list(range(len(SEED_LISTS)))
+    if jobs <= 1 or len(chosen) <= 1:
+        for key in keys:
+            build_template(key)
+        for index in chosen:
+            yield run_case(index)
+        return
+    context = multiprocessing.get_context("fork")
+    with context.Pool(min(jobs, len(chosen)), initializer=become_subreaper) as pool:
+        # Every template first, then the cases that copy them.
+        pool.map(build_template, keys)
+        yield from pool.imap(run_case, chosen)
+
+
+def fixture_path(name: str) -> Path:
+    return FIXTURES / f"{name}.json"
+
+
+def encode(result: dict) -> str:
+    return json.dumps(result, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="CLI behavior against recorded fixtures")
+    parser.add_argument("filter", nargs="?", default="")
+    parser.add_argument("--cc", default="clang")
+    parser.add_argument("--sanitize", action="store_true",
+                        help="build the CLI with ASan and UBSan")
+    parser.add_argument("--record", action="store_true",
+                        help="rewrite the selected fixtures from what the CLI does now")
+    parser.add_argument("--dump", action="store_true",
+                        help="print what the CLI did, to check a case tests something")
+    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
+                        help="cases run at once; 1 runs them one after another")
+    args = parser.parse_args()
+
+    global STUB_DIR, DUMPING, CLI, WORK
+    DUMPING = args.dump and not args.record
+    become_subreaper()
+    failed = 0
+    names = [name for name, _, _ in CASES]
+    if len(names) != len(set(names)):
+        sys.exit("parity: two cases share a name")
+    if not args.filter and not args.record:
+        known = {fixture_path(name) for name in names}
+        for orphan in sorted(set(FIXTURES.glob("*.json")) - known):
+            failed += 1
+            print(f"FAIL {orphan.stem}: a fixture with no case; delete it or restore the case")
+
+    with tempfile.TemporaryDirectory(prefix="omoide-parity-") as tmp:
+        tmp = Path(tmp)
+        STUB_DIR = tmp / "stubs"
+        STUB_DIR.mkdir()
+        # By absolute path: nothing else is on PATH to find python3 with.
+        (STUB_DIR / "stub").write_text(STUB.replace("#!/usr/bin/env python3", f"#!{sys.executable}", 1))
+        (STUB_DIR / "stub").chmod(0o755)
+        for name in STUBBED:
+            (STUB_DIR / name).symlink_to("stub")
+        for name in REAL:
+            found = shutil.which(name)
+            if not found:
+                sys.exit(f"dev/parity: {name} is not installed, and cases need it")
+            (STUB_DIR / name).symlink_to(found)
+        CLI = [str(build_c(args.cc, tmp, args.sanitize))]
+        WORK = tmp
+
+        chosen = [i for i, (name, _, _) in enumerate(CASES) if args.filter in name]
+        for i in chosen:
+            if CASES[i][1] not in SEED_LISTS:
+                SEED_LISTS.append(CASES[i][1])
+        for name, result in run_cases(chosen, args.jobs):
+            if args.dump:
+                print(json.dumps(result, ensure_ascii=False, indent=1))
+
+            path = fixture_path(name)
+            if args.record:
+                FIXTURES.mkdir(exist_ok=True)
+                before = path.read_text() if path.exists() else None
+                path.write_text(encode(result))
+                print(f"{'same' if before == encode(result) else 'rec '} {name}")
+                continue
+            if not path.exists():
+                failed += 1
+                print(f"FAIL {name}: no fixture; review --dump, then --record {name}")
+                continue
+            expected = json.loads(path.read_text())
+            diffs = [key for key in sorted(set(expected) | set(result))
+                     if expected.get(key) != result.get(key)]
+            if diffs:
+                failed += 1
+                print(f"FAIL {name}: {', '.join(diffs)} differ")
+                for key in diffs:
+                    for label, side in (("fixture", expected), ("now", result)):
+                        shown = json.dumps(side.get(key), ensure_ascii=False)
+                        print(f"  {label:>7} {key}: {shown[:900]}")
+            else:
+                print(f"ok   {name}")
+
+    print(f"\n{failed} failed" if failed else "\nall passed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

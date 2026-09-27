@@ -1,0 +1,301 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+import "../common"
+import "../MemoryModel.js" as Model
+
+// One dialog for "type something, pick from a list".
+//
+// It serves linking a memory and filing into a collection. As a dialog it does
+// not shift the page under the cursor, and it contains focus: the sheet takes
+// the keyboard, arrows walk the rows, Esc leaves.
+//
+// The owner supplies `rows` and reloads them when `query` changes; this component
+// owns no data of its own.
+//
+// A FocusScope root, so focus falls back to the dialog when the focused child
+// disappears or declines a key, and the Escape handler below sees keys from
+// every control inside.
+FocusScope {
+  id: root
+
+  property bool opened: false
+  property real scrimRadius: 0
+
+  property string title: ""
+  property string placeholder: ""
+  // [{ id, label, sublabel }]
+  property var rows: []
+  // When true, Enter on a non-empty query that matches no row submits the text
+  // itself. That is how a new collection gets created.
+  property bool allowFreeText: false
+  property string emptyText: "Nothing to choose from."
+  // The owner is fetching rows. With none shown yet, placeholder rows stand
+  // where they will land instead of the empty text; a narrowing search keeps
+  // the rows it has.
+  property bool loading: false
+
+  property string query: ""
+  // Which row the keyboard is on, or -1 while the text field owns it.
+  property int cursor: -1
+
+  // NOT `queryChanged`: `property string query` already generates that, and
+  // redeclaring it is a load-time duplicate-signal error.
+  signal searchRequested(string text)
+  signal chose(string id)
+  signal submitted(string text)
+
+  function open() {
+    root.query = ""
+    root.cursor = -1
+    field.text = ""
+    root.opened = true
+    Qt.callLater(function () { field.forceActiveFocus() })
+  }
+
+  function close() { root.opened = false }
+
+  // Rebuilt whenever the owner replaces `rows`: an index into the previous set
+  // would point at a different row, or past the end.
+  onRowsChanged: root.cursor = -1
+
+  visible: opened
+
+  // A place to park focus, inside the scope so it stays on the parent chain.
+  //
+  // Not the scope root itself: a FocusScope given focus hands it back to the
+  // child it last had, so `escapeTo: root` would return focus to the text field
+  // and Escape would do nothing. A plain Item holds focus without forwarding it,
+  // and keys from it still bubble up to the root handler below. Zero-sized, so
+  // it cannot affect layout or swallow a click.
+  Item { id: focusSink }
+
+  Scrim {
+    anchors.fill: parent
+    radius: root.scrimRadius
+    MouseArea { anchors.fill: parent; onClicked: root.close() }
+  }
+
+  // On the ROOT of the card, so it catches the key wherever focus sits. An inner
+  // catcher beside the content is never on the focused item's parent chain.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
+
+  BorderSurface {
+    id: card
+    anchors.centerIn: parent
+    width: Math.min(Style.space(440),
+                    parent.width - Style.spacing.panelPadding * 2)
+    height: layout.implicitHeight + Style.spacing.panelPadding * 2
+    radius: Style.cornerRadius
+    color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
+                   Color.menu.background.b, 1.0)
+    borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border,
+                                   Math.max(1, Style.space(2)))
+
+    MouseArea { anchors.fill: parent; onClicked: {} }
+
+    Column {
+      id: layout
+      anchors.left: parent.left
+      anchors.right: parent.right
+      anchors.top: parent.top
+      anchors.margins: Style.spacing.panelPadding
+      // Title, field and results are three sections, not three controls, so
+      // they get a section-sized gap.
+      spacing: Style.space(20)
+
+      Text {
+        text: root.title
+        textFormat: Text.PlainText
+        color: Color.menu.text
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.title
+        font.bold: true
+      }
+
+      AccentField {
+        id: field
+        width: parent.width
+        placeholderText: root.placeholder
+        foreground: Color.menu.text
+        accent: Color.accent
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.subtitle
+        onTextChanged: {
+          root.query = text
+          debounce.restart()
+        }
+
+        // Typing must not launch one CLI process per keystroke.
+        Timer {
+          id: debounce
+          interval: 180
+          onTriggered: root.searchRequested(root.query)
+        }
+
+        // The field keeps focus throughout, so it drives the list rather than
+        // handing focus over: typing and picking stay one continuous motion.
+        Keys.onDownPressed: function (event) {
+          root.moveCursor(1)
+          event.accepted = true
+        }
+
+        Keys.onUpPressed: function (event) {
+          root.moveCursor(-1)
+          event.accepted = true
+        }
+
+        // Esc releases the field first, exactly as it does in every other
+        // dialog; the scope root then takes the next one and closes.
+        escapeTo: focusSink
+
+        Keys.onReturnPressed: function (event) {
+          root.commit()
+          event.accepted = true
+        }
+      }
+
+      Text {
+        visible: !root.loading && (root.rows || []).length === 0
+        width: parent.width
+        text: root.emptyText
+        textFormat: Text.PlainText
+        color: Color.muted
+        font.family: Style.font.menuFamily
+        font.pixelSize: Style.font.body
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.spacing.sm
+        visible: root.loading && (root.rows || []).length === 0
+
+        Repeater {
+          model: [0.6, 0.45, 0.55]
+
+          delegate: Item {
+            required property real modelData
+            width: parent.width
+            height: Style.spacing.popupRowHeight
+
+            Skeleton {
+              anchors.verticalCenter: parent.verticalCenter
+              x: Style.spacing.lg
+              width: (parent.width - Style.spacing.lg * 2) * parent.modelData
+              height: Style.font.subtitle
+            }
+          }
+        }
+      }
+
+      Column {
+        width: parent.width
+        spacing: Style.spacing.sm
+        // Invisible, not merely empty: a zero-height Column still takes a
+        // spacing slot from its parent.
+        visible: (root.rows || []).length > 0
+
+        Repeater {
+          model: root.rows || []
+
+          delegate: CursorSurface {
+            id: pick
+            required property var modelData
+            required property int index
+
+            width: parent.width
+            height: Math.max(Style.spacing.popupRowHeight,
+                             rowText.implicitHeight + Style.spacing.lg * 2)
+            radius: Style.cornerRadius
+            hasCursor: root.cursor === index
+            bordered: false
+            foreground: Color.menu.text
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onEntered: root.cursor = pick.index
+              onClicked: root.chose(pick.modelData.id)
+            }
+
+            Column {
+              id: rowText
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.lg
+              anchors.rightMargin: Style.spacing.lg
+              spacing: 0
+
+              Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: pick.modelData.label || ""
+                elide: Text.ElideRight
+                color: Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.subtitle
+              }
+
+              Text {
+                visible: text.length > 0
+                width: parent.width
+                textFormat: Text.PlainText
+                text: pick.modelData.sublabel || ""
+                elide: Text.ElideRight
+                color: Color.muted
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.body
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Arrows and Enter once the list has the cursor. Up off the first row hands the
+  // keyboard back to the field, so typing and picking are one continuous motion.
+  Keys.onUpPressed: function (event) { root.moveCursor(-1); event.accepted = true }
+  Keys.onDownPressed: function (event) { root.moveCursor(1); event.accepted = true }
+
+  // -1 means "the field owns the keyboard". Up off the first row returns there,
+  // so you can go back to typing without reaching for the mouse.
+  function moveCursor(d) {
+    var n = (root.rows || []).length
+    if (n === 0) { root.cursor = -1; return }
+    // Only Down enters the list. stepList treats -1 as unset and would send Up
+    // to the last row, which reads as the cursor teleporting from the field.
+    if (root.cursor < 0 && d < 0) return
+    var moved = Model.stepList(n, root.cursor, d)
+    if (moved === null) {
+      if (d < 0) { root.cursor = -1; field.forceActiveFocus() }
+      return
+    }
+    root.cursor = moved
+  }
+
+  Keys.onReturnPressed: function (event) {
+    root.commit()
+    event.accepted = true
+  }
+
+  function commit() {
+    var list = root.rows || []
+    if (root.cursor >= 0 && root.cursor < list.length) {
+      root.chose(list[root.cursor].id)
+      return
+    }
+    // Nothing highlighted: a typed name creates, if the caller allows it.
+    if (root.allowFreeText && root.query.trim().length > 0)
+      root.submitted(root.query.trim())
+  }
+}

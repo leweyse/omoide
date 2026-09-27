@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Record every place the CLI can do harm, so a new one is always seen.
+
+A capability is a call that deletes something, runs a program, writes a file
+outside the database, or opens a network connection. Each one in cli/src is
+listed by category, file and enclosing function, with how many times that
+function makes it; line numbers are left out so moving code does not churn it.
+
+dev/capabilities.lock holds the approved list. --check fails when a call site
+appears or disappears, so destructive or outward-reaching behavior reaches main
+only through a lock diff the owner reviews, even inside an approved feature.
+It sees calls by name: a wrapper around one of these is listed where it is
+called, and a new wrapper name has to be added to CALLS below to be seen.
+
+Usage:  dev/capabilities            check against the lock (what dev/check runs)
+        dev/capabilities --write    rewrite the lock from the sources
+Exit:   0 matches, 1 differs
+"""
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SOURCES = ROOT / "cli" / "src"
+LOCK = ROOT / "dev" / "capabilities.lock"
+
+CALLS = {
+    "delete": ["remove_tree", "remove", "nftw", "g_unlink", "g_remove", "g_rmdir", "unlink", "unlinkat",
+               "rmdir", "g_file_delete", "g_file_trash", "truncate", "ftruncate"],
+    "run": ["proc_run", "proc_run_agent", "g_spawn_async", "g_spawn_sync", "g_spawn_command_line_async",
+            "g_spawn_command_line_sync", "g_subprocess_new", "g_subprocess_newv", "g_subprocess_launcher_spawn",
+            "execv", "execvp", "execve", "execl", "execlp", "system", "popen", "shell_ipc", "notify", "omarchy"],
+    "write": ["g_file_set_contents", "fopen", "freopen", "open", "openat", "creat", "symlink", "link", "rename",
+              "renameat", "g_rename", "g_mkdir_with_parents", "g_mkdir", "mkdir", "g_file_replace", "g_file_copy",
+              "g_file_move", "g_file_make_symbolic_link", "g_file_make_directory"],
+    "network": ["socket", "connect", "getaddrinfo", "g_socket_client_connect", "g_socket_new",
+                "g_network_address_new", "curl_easy_init", "soup_session_new"],
+}
+# SQL that removes data, and the one statement that writes a file.
+SQL = {"delete": ["DELETE FROM", "DROP TABLE", "DROP INDEX", "DROP TRIGGER"], "write": ["VACUUM INTO"]}
+
+HEADER = """\
+# Every call in cli/src that deletes, runs a program, writes outside the
+# database, or reaches the network, written by dev/capabilities --write.
+# A new line here is new power over the user's machine: it needs the owner's
+# approval, and the diff of this file is what they review.
+"""
+
+FUNCTION = re.compile(r"^(?:static )?[\w *]+?\b(\w+)\([^;{]*\)\s*\{", re.M)
+STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+
+
+def without_comments(text: str) -> str:
+    """Line comments blanked, strings kept: SQL lives in string literals."""
+    out = []
+    for line in text.splitlines():
+        stripped, i, quoted = [], 0, False
+        while i < len(line):
+            if line[i] == '"' and (i == 0 or line[i - 1] != "\\"):
+                quoted = not quoted
+            if not quoted and line.startswith("//", i):
+                break
+            stripped.append(line[i])
+            i += 1
+        out.append("".join(stripped))
+    return "\n".join(out)
+
+
+def capabilities() -> str:
+    counted = Counter()
+    for path in sorted(SOURCES.glob("*.c")):
+        text = without_comments(path.read_text())
+        starts = [(m.start(), m.group(1), m.start(1)) for m in FUNCTION.finditer(text)]
+        definitions = {at for _, _, at in starts}
+
+        def owner(at):
+            before = [name for start, name, _ in starts if start <= at]
+            return before[-1] if before else "(file scope)"
+
+        for category, names in CALLS.items():
+            for name in names:
+                for m in re.finditer(rf"(?<![\w.>]){re.escape(name)}\s*\(", text):
+                    if m.start() in definitions:
+                        continue
+                    counted[(category, path.name, owner(m.start()), name)] += 1
+        for literal in STRING.finditer(text):
+            for category, statements in SQL.items():
+                for statement in statements:
+                    if statement in literal.group(0).upper():
+                        counted[(category, path.name, owner(literal.start()), f'SQL "{statement}"')] += 1
+    lines = [HEADER]
+    for (category, file, function, call), n in sorted(counted.items()):
+        lines.append(f"{category:8} {file:14} {function:28} {call}" + (f"  x{n}" if n > 1 else ""))
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    current = capabilities()
+    if "--write" in sys.argv[1:]:
+        LOCK.write_text(current)
+        print(f"wrote {LOCK.relative_to(ROOT)}")
+        return 0
+    recorded = LOCK.read_text() if LOCK.exists() else ""
+    if current == recorded:
+        print("capabilities: matches dev/capabilities.lock")
+        return 0
+    old, new = set(recorded.splitlines()), set(current.splitlines())
+    print("capabilities: the CLI's capabilities differ from dev/capabilities.lock")
+    for line in sorted(new - old):
+        print(f"  + {' '.join(line.split())}")
+    for line in sorted(old - new):
+        print(f"  - {' '.join(line.split())}")
+    print("New power over the user's machine needs the owner's approval; once given, run dev/capabilities --write.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

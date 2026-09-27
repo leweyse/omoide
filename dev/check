@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# The gate a change passes before it is done. Runs every check and reports each,
+# so one failure does not hide the next.
+#
+#   dev/check              everything
+#   dev/check --no-cli     skip the C builds and parity, for a QML or docs change
+#   dev/check --no-docs    skip the docs and digest checks, which CI runs as a
+#                          job of their own
+#   dev/check --no-shell   skip the QML checks, which need the Omarchy shell
+#                          installed; CI passes this and says so, because a QML
+#                          check that silently skipped would read as a pass
+#
+# Exit: 0 when every check that ran passed, 1 otherwise.
+set -uo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root" || exit 1
+
+shell_dir=/usr/share/omarchy/shell
+qmllint=/usr/lib/qt6/bin/qmllint
+run_cli=1 run_shell=1 run_docs=1
+for arg in "$@"; do
+  case $arg in
+    --no-cli) run_cli=0 ;;
+    --no-shell) run_shell=0 ;;
+    --no-docs) run_docs=0 ;;
+    *) echo "dev/check: unknown option $arg" >&2; exit 2 ;;
+  esac
+done
+
+failed=()
+step() {
+  local name=$1; shift
+  printf '\n== %s\n' "$name"
+  if "$@"; then
+    printf -- '-- %s: ok\n' "$name"
+  else
+    printf -- '-- %s: FAILED\n' "$name"
+    failed+=("$name")
+  fi
+}
+
+qml_lint() {
+  # qmllint resolves `import qs.Commons` through a directory whose `qs` entry is
+  # the shell. The disabled categories are the ones QML cannot answer statically
+  # here: members of `property var` objects, parent-scope lookups in delegates,
+  # and Quickshell types whose C++ metadata ships without qmltypes.
+  local modules
+  modules=$(mktemp -d) || return 1
+  ln -s "$shell_dir" "$modules/qs"
+  "$qmllint" -I "$modules" -W 0 \
+    --unqualified disable --missing-property disable \
+    --uncreatable-type disable --signal-handler-parameters disable \
+    $(git ls-files '*.qml')
+  local status=$?
+  rm -rf "$modules"
+  return $status
+}
+
+build() {
+  local out
+  out=$(mktemp) || return 1
+  (cd cli && "$1" @build.rsp -Werror -o "$out")
+  local status=$?
+  rm -f "$out"
+  return $status
+}
+
+if [[ $run_docs == 1 ]]; then
+  step docs dev/check-docs --strict
+  step digests dev/sync-docs --check
+fi
+step comments dev/check-comments --strict
+# The CLI's approved surface and its power over the machine. Read from
+# source and fixtures, so they need no build and run under every flag.
+step surface dev/cli-surface
+step capabilities dev/capabilities
+step changesets dev/changeset status
+step changeset-selftest dev/changeset selftest
+step format clang-format --dry-run --Werror cli/src/*.c cli/src/*.h cli/fuzz/*.c
+
+if [[ $run_shell == 1 ]]; then
+  if [[ ! -d $shell_dir || ! -x $qmllint ]]; then
+    echo "dev/check: needs $shell_dir and $qmllint for the QML checks; pass --no-shell to skip them" >&2
+    failed+=(qml)
+  else
+    step qml-types dev/check-types
+    step qml-lint qml_lint
+  fi
+else
+  printf '\n== qml: skipped (--no-shell)\n'
+fi
+
+if [[ $run_cli == 1 ]]; then
+  step build-gcc build gcc
+  step build-clang build clang
+  step parity dev/parity
+else
+  printf '\n== cli: skipped (--no-cli)\n'
+fi
+
+if (( ${#failed[@]} )); then
+  printf '\nfailed: %s\n' "${failed[*]}"
+  exit 1
+fi
+printf '\nall checks passed\n'

@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Flag code comments that narrate history instead of stating a constraint.
+
+A comment is for what a reader needs at that line. How the code got there,
+which release changed it, and which bug prompted it belong in .agents/docs/log.md
+or the decision register; the agent-knowledge skill says where each kind goes.
+This finds the phrasing those comments share. It reads comments only: // and
+/* */ in QML, JS and C, # and docstrings in dev/ and CI, -- in SQL.
+
+A match that states a constraint which genuinely needs the history to make
+sense is allowlisted in dev/comment-allowlist, one per line:
+
+    <path>: <substring of the comment line>   # why it stays
+
+Usage:  dev/check-comments [--strict] [path ...]
+Exit:   0 clean, 1 findings under --strict or a stale allowlist entry
+"""
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+ALLOWLIST = ROOT / "dev" / "comment-allowlist"
+
+PATTERNS = [
+    ("history", re.compile(
+        r"\b(used to|no longer|previously|formerly|originally|any more|anymore|"
+        r"(was|were) (added|removed|renamed|introduced) (in|by|for|when)|"
+        r"\b(it|this) now [a-z]+s\b|"
+        r"shipped (past|with|in)|once shipped|broke (the|it|every)|regress\w*|the old (code|version|one)|before (this|the) (fix|change))\b", re.I)),
+    ("version", re.compile(r"\b(since|as of|until|before|after) (omarchy|quickshell|qt|v)?\s?\d+\.\d+", re.I)),
+    ("reference", re.compile(r"(?<![\w&])#\d+\b|\b(?!UTF-|UCS-|ISO-|SHA-)[A-Z]{2,}-\d+\b|\bPR\b|\bcommit [0-9a-f]{7,}\b")),
+    ("port", re.compile(r"\b(python|argparse|the python (cli|side|version))\b", re.I)),
+]
+
+# The port pattern is about the C sources, which should state the behavior they
+# keep rather than who they copied it from. The dev tools that compare against
+# the Python reference name it because that is their job.
+PORT_SCOPE = ("cli/",)
+
+SOURCES = ["ui/*.qml", "ui/*.js", "ui/*/*.qml", "ui/*/*.js", "cli/src/*", "cli/fuzz/*.c", "dev/*",
+           "sql/migrations/*.sql", ".github/workflows/*.yml", ".gitignore"]
+NOT_CHECKED = {"dev/comment-allowlist", "dev/check-comments"}
+
+
+def strip_strings(line: str) -> str:
+    return re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+
+
+def comments(path: pathlib.Path):
+    """Yield (line number, comment text) for every comment line in the file."""
+    text = path.read_text(errors="replace").split("\n")
+    suffix = path.suffix
+    hash_style = suffix in ("", ".yml", ".py") or path.name == ".gitignore"
+    if path.parent.name == "dev" and text and text[0].startswith("#!"):
+        hash_style = True
+    in_block = in_doc = False
+    for n, raw in enumerate(text, 1):
+        if hash_style:
+            stripped = raw.strip()
+            quotes = stripped.count('"""')
+            if in_doc:
+                yield n, raw
+                if quotes:
+                    in_doc = False
+                continue
+            if quotes == 1:
+                in_doc = True
+                yield n, raw
+                continue
+            m = re.search(r"(?:^|\s)#(?!!)\s?(.*)$", strip_strings(raw))
+            if m:
+                yield n, m.group(1)
+            continue
+        if suffix == ".sql":
+            if "--" in raw:
+                yield n, raw.split("--", 1)[1]
+            continue
+        line = strip_strings(raw)
+        if in_block:
+            yield n, line
+            if "*/" in line:
+                in_block = False
+            continue
+        if "/*" in line and "*/" not in line.split("/*", 1)[1]:
+            in_block = True
+            yield n, line.split("/*", 1)[1]
+            continue
+        if "//" in line:
+            yield n, line.split("//", 1)[1]
+
+
+def load_allowlist():
+    entries = []
+    if not ALLOWLIST.exists():
+        return entries
+    for n, line in enumerate(ALLOWLIST.read_text().split("\n"), 1):
+        body = line.split("   #", 1)[0].strip()
+        if not body or body.startswith("#"):
+            continue
+        path, _, needle = body.partition(": ")
+        entries.append((n, path.strip(), needle.strip()))
+    return entries
+
+
+def files(args):
+    if args:
+        return [ROOT / a for a in args]
+    found = set()
+    for pattern in SOURCES:
+        found.update(p for p in ROOT.glob(pattern) if p.is_file())
+    return sorted(p for p in found if p.relative_to(ROOT).as_posix() not in NOT_CHECKED)
+
+
+def main() -> int:
+    strict = "--strict" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    allow = load_allowlist()
+    used = set()
+    findings = []
+    for path in files(args):
+        where = path.relative_to(ROOT).as_posix()
+        for n, text in comments(path):
+            for label, pattern in PATTERNS:
+                if label == "port" and not where.startswith(PORT_SCOPE):
+                    continue
+                m = pattern.search(text)
+                if not m:
+                    continue
+                hit = next((e for e in allow if e[1] == where and e[2] in text), None)
+                if hit:
+                    used.add(hit[0])
+                    continue
+                findings.append(f"  {where}:{n}  {label}: {m.group(0)!r}  {text.strip()[:90]}")
+                break
+
+    stale = [e for e in allow if e[0] not in used and not args]
+    for n, path, needle in stale:
+        print(f"  dev/comment-allowlist:{n}  matches nothing any more: {path}: {needle}")
+    for finding in findings:
+        print(finding)
+    print(f"\n{len(findings)} comment(s) narrating history · {len(stale)} stale allowlist entr(y/ies)")
+    if stale or (strict and findings):
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

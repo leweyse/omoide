@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Verify in Shell'
+  short_description: 'See a change running in the live Omarchy shell'
+  default_prompt: 'Use $verify-in-shell to verify this change in the running shell without restart loops.'

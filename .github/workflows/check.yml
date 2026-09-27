@@ -1,0 +1,80 @@
+# The half of dev/check that needs no Omarchy install and no C build: the agent
+# documentation, the comment policy, changesets, and C formatting, plus the
+# changeset gate on pull requests. cli.yml owns the builds
+# and parity. The QML checks need /usr/share/omarchy/shell, which this container
+# does not have, so they run locally through dev/check.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress. Runs on
+# main always finish, so every merge is checked.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docs:
+    name: Check agent documentation
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed git python
+
+      # The token stays out of .git/config while this repository's own scripts run.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Every path, link and frontmatter resource resolves, at every tier.
+      - name: Validate
+        run: dev/check-docs --strict
+
+      # Every concept is pinned to the files it describes. A stale digest means
+      # a described file changed: revisit the document, then re-pin.
+      - name: Confirm digests are current
+        run: dev/sync-docs --check
+
+  check:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed clang git python
+
+      # The token stays out of .git/config while this repository's own scripts run.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Comments, changesets and formatting
+        run: dev/check --no-shell --no-cli --no-docs
+
+  # A pull request that changes what users run carries a changeset. The paths
+  # that count are in dev/changeset's usage text.
+  changeset:
+    name: Require a changeset
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      # Full history, so the merge base with the target branch is present.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: A user-facing change has a changeset
+        env:
+          BASE: ${{ github.base_ref }}
+        run: dev/changeset status --since "origin/$BASE"

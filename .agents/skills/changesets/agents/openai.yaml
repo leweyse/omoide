@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Changesets'
+  short_description: 'The changeset file: three-word name, typed title, plain body'
+  default_prompt: 'Use $changesets to write the changeset for this change.'

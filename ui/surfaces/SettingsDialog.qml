@@ -1,0 +1,400 @@
+import QtQuick
+import Quickshell
+import Quickshell.Wayland
+import qs.Commons
+import qs.Ui
+import "../common"
+import "../components"
+
+// Choosing the model that enriches captures.
+//
+// Its own surface, owned by the service rather than the Space dialog, so it
+// opens without Space.
+//
+// The root is a FocusScope, so focus falls back to it when the focused child
+// disappears or declines a key. With nothing focused, no Keys handler here
+// would fire. Being the root also puts it on the parent chain of every
+// control, so the Escape handler sees keys wherever focus sits.
+FocusScope {
+  id: root
+
+  property var service: null
+  property bool opened: false
+
+  // Escape, on the scope root so it catches the key however deep focus is.
+  Keys.onPressed: function (event) {
+    if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+  }
+  property var config: ({ providers: [], visionMode: "ocr", enabled: false })
+
+  property string chosen: ""
+  property string customCommand: ""
+  property string model: ""
+  property string vision: "ocr"
+
+  signal saved()
+
+  readonly property var providers: (config && config.providers) || []
+
+  // Presets plus custom, as one list, so custom takes a cell in the grid.
+  readonly property var choices: {
+    var out = []
+    for (var i = 0; i < root.providers.length; i++) out.push(root.providers[i])
+    out.push({
+      id: "custom",
+      command: "reads a prompt on stdin, prints JSON",
+      // The presets are invoked with their own CLI's read-only flag. A custom
+      // command is invoked as written, so say so where the choice is made.
+      restriction: "run as written, so add your agent's own read-only flag",
+      available: true,
+      vision: false,
+      needsModel: false
+    })
+    return out
+  }
+  readonly property bool isCustom: root.chosen === "custom"
+  readonly property var chosenProvider: {
+    for (var i = 0; i < root.providers.length; i++)
+      if (root.providers[i].id === root.chosen) return root.providers[i]
+    return null
+  }
+  // Whether `image` is offerable at all. A custom command gets the image path
+  // when visionMode is "image" (run_ai in cli/src/enrich.c), so it is
+  // selectable. It carries no "reads images" marker, because nothing here
+  // knows whether the user's command reads them.
+  readonly property bool visionCapable: root.isCustom
+    || !!(root.chosenProvider && root.chosenProvider.vision)
+  onVisionCapableChanged: if (!root.visionCapable) root.vision = "ocr"
+
+  readonly property bool canSave: root.isCustom
+    ? root.customCommand.trim().length > 0
+    : (!!root.chosenProvider && root.chosenProvider.available
+       && (!root.chosenProvider.needsModel || root.model.trim().length > 0))
+
+  function open() {
+    if (!service) return
+    service.call(["ai-config"], function (code, json) {
+      if (!json) return
+      root.config = json
+      root.chosen = (json.command && json.command.length) ? "custom" : (json.provider || "")
+      root.customCommand = (json.command || []).join(" ")
+      root.model = json.model || ""
+      root.vision = json.visionMode || "ocr"
+      root.opened = true
+      Qt.callLater(function () { keys.forceActiveFocus() })
+    })
+  }
+
+  function close() { root.opened = false }
+
+  function save() {
+    if (!service || !root.canSave) return
+    var args = ["setup-ai", "--vision",
+                root.visionCapable ? root.vision : "ocr"]
+    if (root.isCustom) {
+      args = args.concat(["--provider", "custom", "--command", root.customCommand.trim()])
+    } else {
+      args = args.concat(["--provider", root.chosen])
+      if (root.model.trim().length) args = args.concat(["--model", root.model.trim()])
+    }
+    service.call(args, function () {
+      root.saved()
+      root.close()
+    })
+  }
+
+  function disable() {
+    if (!service) return
+    service.call(["setup-ai", "--disable"], function () {
+      root.saved()
+      root.close()
+    })
+  }
+
+  PanelWindow {
+    id: panel
+    visible: root.opened
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    WlrLayershell.namespace: "omoide-settings"
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    exclusionMode: ExclusionMode.Ignore
+
+    Scrim { anchors.fill: parent }
+    MouseArea { anchors.fill: parent; onClicked: root.close() }
+
+    BorderSurface {
+      id: sheet
+      anchors.centerIn: parent
+      width: Math.min(Style.space(760), parent.width - Style.gapsOut * 2)
+      height: Math.min(layout.implicitHeight + Style.spacing.panelPadding * 2,
+                       parent.height - Style.gapsOut * 2)
+      radius: Style.cornerRadius
+      color: Qt.rgba(Color.menu.background.r, Color.menu.background.g,
+                     Color.menu.background.b, 1.0)
+      borderSpec: Border.surfaceSpec("menu", "border", Color.menu.border,
+                                     Math.max(1, Style.space(2)))
+
+      MouseArea { anchors.fill: parent; onClicked: {} }
+
+      Item {
+        id: keys
+        anchors.fill: parent
+        focus: true
+        Keys.onPressed: function (event) {
+          if (event.key === Qt.Key_Escape) {
+      // Only on a real press: holding Escape auto-repeats, and each
+      // repeat would dismiss another layer.
+      if (!event.isAutoRepeat) root.close()
+      event.accepted = true
+    }
+        }
+
+        Column {
+          id: layout
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.top: parent.top
+          anchors.margins: Style.spacing.panelPadding
+          spacing: Style.spacing.xxxl
+
+          Item {
+            width: parent.width
+            height: Math.max(sheetTitle.implicitHeight, turnOff.height)
+
+            Text {
+              id: sheetTitle
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Agent for Omoide"
+              color: Color.menu.text
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.title
+            }
+
+            // Turning enrichment off is rare and loses the choice, so it sits
+            // away from Cancel and Use this model. The tooltip says what the
+            // icon does.
+            PanelActionButton {
+              id: turnOff
+              anchors.right: parent.right
+              anchors.verticalCenter: sheetTitle.verticalCenter
+              visible: root.config.enabled === true
+              iconText: "⏻"
+              tooltipText: "Turn enrichment off. Captures still save — note, "
+                         + "screenshot, and any date read without an agent."
+              size: Style.space(26)
+              fontSize: Style.font.body
+              foreground: Color.menu.text
+              fontFamily: Style.font.menuFamily
+              onClicked: root.disable()
+            }
+          }
+
+          Text {
+            width: parent.width
+            text: "Enrichment runs the agent you pick here — the same CLI you "
+                  + "already use, invoked once per capture. Nothing runs until "
+                  + "you choose one, and a capture still saves without it: its "
+                  + "note, its screenshot, and any date it can read on its own."
+            wrapMode: Text.WordWrap
+            color: Color.muted
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
+          // The one thing worth saying before the choice rather than after it.
+          // These are coding agents with a shell, and a capture is text off a
+          // screen that the user did not necessarily write, so how each one is
+          // invoked matters more than which one it is. Brighter than the
+          // paragraph above because it is a guarantee, not background.
+          Text {
+            width: parent.width
+            text: "Agents run with their tools switched off, in an empty "
+                  + "directory, so nothing on a captured screen can make one "
+                  + "read a file or run a command. A custom command is the "
+                  + "exception, and runs exactly as you wrote it."
+            wrapMode: Text.WordWrap
+            color: Color.menu.text
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.body
+          }
+
+          // One row per preset, plus custom. An uninstalled provider is shown
+          // disabled with the reason rather than hidden.
+          // Two columns: every choice fits at a comfortable gap, which one
+          // column cannot do without cramping the list.
+          Grid {
+            id: providerGrid
+            width: parent.width
+            columns: 2
+            columnSpacing: Style.spacing.lg
+            rowSpacing: Style.spacing.lg
+            readonly property real cellWidth: (width - columnSpacing) / columns
+
+            Repeater {
+              model: root.choices
+
+              delegate: ChoiceCard {
+                required property var modelData
+
+                width: providerGrid.cellWidth
+                title: modelData.id + (modelData.vision ? "   · reads images" : "")
+                // The command as it will actually be invoked, which differs
+                // between the two vision modes: ocr needs no tools at all,
+                // image needs the screenshot attached or read. Both strings
+                // come from the CLI, so this cannot drift from what runs.
+                detail: {
+                  if (!modelData.available)
+                    return modelData.id + " is not installed"
+                  var image = root.vision === "image"
+                  var line = (image && modelData.commandImage)
+                             ? modelData.commandImage
+                             : modelData.command
+                  var note = (image && modelData.restrictionImage)
+                             ? modelData.restrictionImage
+                             : modelData.restriction
+                  return note ? line + "\n" + note : line
+                }
+                picked: root.chosen === modelData.id
+                selectable: modelData.available
+                onChose: root.chosen = modelData.id
+              }
+            }
+          }
+
+          AccentField {
+
+            ringBackdrop: Color.menu.background
+            width: parent.width
+            visible: root.isCustom
+            text: root.customCommand
+            foreground: Color.menu.text
+            accent: Color.accent
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.subtitle
+            placeholderText: "my-agent --json"
+            onTextChanged: root.customCommand = text
+            Keys.onEscapePressed: function (event) {
+              // Only on a real press. Holding Escape auto-repeats, and each
+              // repeat would dismiss another layer.
+              if (event.isAutoRepeat) { event.accepted = true; return }
+              keys.forceActiveFocus()
+              event.accepted = true
+            }
+          }
+
+          AccentField {
+
+            ringBackdrop: Color.menu.background
+            width: parent.width
+            visible: !!(root.chosenProvider && root.chosenProvider.needsModel)
+            text: root.model
+            foreground: Color.menu.text
+            accent: Color.accent
+            font.family: Style.font.menuFamily
+            font.pixelSize: Style.font.subtitle
+            placeholderText: "model to run, e.g. llama3.2"
+            onTextChanged: root.model = text
+            Keys.onEscapePressed: function (event) {
+              // Only on a real press. Holding Escape auto-repeats, and each
+              // repeat would dismiss another layer.
+              if (event.isAutoRepeat) { event.accepted = true; return }
+              keys.forceActiveFocus()
+              event.accepted = true
+            }
+          }
+
+          PanelSeparator { width: parent.width; foreground: Color.menu.text }
+
+          Column {
+            width: parent.width
+            spacing: Style.spacing.lg
+
+            Text {
+              text: "What the agent sees from a screenshot"
+              color: Color.muted
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+            }
+
+            // The same cards as the agent grid above, so both trade-offs are
+            // on screen at once. `image` carries its own reason when the chosen
+            // agent cannot use it, as an uninstalled agent does.
+            Grid {
+              id: visionGrid
+              width: parent.width
+              columns: 2
+              columnSpacing: Style.spacing.lg
+              rowSpacing: Style.spacing.lg
+              readonly property real cellWidth: (width - columnSpacing) / columns
+
+              ChoiceCard {
+                width: visionGrid.cellWidth
+                title: "ocr"
+                detail: "Text pulled out with tesseract. Works with any agent, "
+                        + "and the screenshot never leaves this machine."
+                picked: root.vision === "ocr"
+                onChose: root.vision = "ocr"
+              }
+
+              ChoiceCard {
+                width: visionGrid.cellWidth
+                title: "image"
+                detail: root.isCustom
+                        ? "The screenshot's path, for a command that can open it."
+                        : (root.visionCapable
+                           ? "The screenshot itself. Better on charts and on "
+                             + "dense pages, where flattened text loses the layout."
+                           : (root.chosen === ""
+                              ? "Needs an agent that reads images."
+                              : root.chosen + " does not read images."))
+                picked: root.vision === "image"
+                selectable: root.visionCapable
+                onChose: root.vision = "image"
+              }
+            }
+          }
+
+          Item {
+            width: parent.width
+            height: settingsActions.height
+
+            Row {
+              id: settingsActions
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.controlGap
+
+              Button {
+                text: "Cancel"
+                foreground: Color.menu.text
+                background: Color.menu.background
+                fontFamily: Style.font.menuFamily
+                onClicked: root.close()
+              }
+
+              Button {
+                text: "Save"
+                selected: root.canSave
+                enabled: root.canSave
+                opacity: root.canSave ? 1.0 : 0.45
+                foreground: Color.menu.text
+                background: Color.menu.background
+                accent: Color.accent
+                fontFamily: Style.font.menuFamily
+                onClicked: root.save()
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

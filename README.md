@@ -83,16 +83,19 @@ bullet with a `+` and no alarm until you accept it.
 omarchy plugin add https://github.com/leweyse/omoide.git --enable
 ```
 
-It asks which bar section to put the icon in. The CLI runs on `python3`.
-Screenshots need `grim` and `slurp`, OCR needs `tesseract`, dictation needs
-`voxtype` (`omarchy-voxtype-install`).
+It asks which bar section to put the icon in. The CLI is C, and there is no
+binary in the repository: the shell builds it from `cli/` the first time it
+loads the plugin, with the clang and libraries Omarchy already has, in a second
+or two. An update rebuilds it the same way. Screenshots need `grim` and `slurp`,
+OCR needs `tesseract`, dictation needs `voxtype` (`omarchy-voxtype-install`).
 
 To update, `omarchy plugin update leweyse.omoide`, then `omarchy restart
 shell`. The shell rescans plugins on update but keeps rendering from its cached
 QML until it restarts, so without one you are still running the old version.
 
 To remove it, `omarchy plugin remove leweyse.omoide`. Your memories stay on
-disk. Run `bin/omoide uninstall --purge` first if you want them gone with it.
+disk. Run `~/.cache/omoide/bin/omoide uninstall --purge` first if you want them
+gone with it.
 
 For keybindings, in `~/.config/hypr/bindings.lua`:
 
@@ -125,7 +128,9 @@ agents with a shell. Omoide passes each CLI's own flag for this, so claude gets
 no tools, codex its shell tool switched off inside a read-only sandbox, gemini
 its read-only mode, and opencode a deny-all permission set merged over your
 config. `custom` is run exactly as you
-wrote it, so add your agent's own read-only flag to the command yourself.
+wrote it, by `sh -c`, so quotes and variables mean what they do in a terminal;
+add your agent's own read-only flag to the command yourself. The prompt reaches
+it on stdin, never on the command line.
 
 With no agent you still get the capture, your note, search over OCR'd text, and
 a reminder from an explicit "remind me to call the vet tomorrow at 3pm".
@@ -136,9 +141,11 @@ a reminder from an explicit "remind me to call the vet tomorrow at 3pm".
 ~/.config/omoide/config.json     the agent you chose
 ~/.local/share/omoide/           memories.db and blobs/, your captures
 ~/.local/state/omoide/           derived cache, rebuildable
+~/.cache/omoide/bin/             the CLI, built from this checkout
 ```
 
-The plugin writes nothing else. `XDG_*_HOME` moves the base directory, but the
+The plugin writes nothing else, unless you run `omoide install`, which also
+links `~/.local/bin/omoide` to the CLI so you can run it by name. `XDG_*_HOME` moves the base directory, but the
 `omoide/` leaf is always hardcoded, so `uninstall` can only delete a directory
 the plugin made itself. No environment variable hands it a path to remove.
 

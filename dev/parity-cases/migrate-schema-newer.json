@@ -1,0 +1,23 @@
+{
+ "calls": {},
+ "config": null,
+ "db": {
+  "attachments": [],
+  "blocks": [],
+  "collections": [],
+  "items": [],
+  "links": [],
+  "memories": [],
+  "memories_fts": [],
+  "memory_collections": [],
+  "reminders": [],
+  "schema": "sha256:6fc49b003e4cea4cb6a2dd640f353a46a7d4cff78e1fc275e196b2ae29ad4a0d",
+  "tags": [],
+  "user_version": 9
+ },
+ "exit": 3,
+ "files": [],
+ "index": null,
+ "log": [],
+ "stdout": []
+}

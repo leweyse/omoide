@@ -1,0 +1,4 @@
+# Every change needs the owner's review. It takes effect when main's branch
+# protection requires review from code owners; without that rule this file
+# only suggests reviewers.
+* @leweyse

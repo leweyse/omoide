@@ -1,0 +1,81 @@
+# Every call in cli/src that deletes, runs a program, writes outside the
+# database, or reaches the network, written by dev/capabilities --write.
+# A new line here is new power over the user's machine: it needs the owner's
+# approval, and the diff of this file is what they review.
+
+delete   capture.c      capture_lock                 ftruncate
+delete   capture.c      cmd_commit                   SQL "DELETE FROM"
+delete   capture.c      cmd_commit                   g_unlink
+delete   capture.c      cmd_commit                   remove_tree
+delete   capture.c      cmd_enrich                   SQL "DELETE FROM"  x2
+delete   capture.c      reap_stale_freeze            g_unlink
+delete   capture.c      stop_freeze                  g_unlink
+delete   cmd_maint.c    sweep_stalled                g_unlink
+delete   cmd_setup.c    cmd_uninstall                g_unlink  x2
+delete   cmd_setup.c    cmd_uninstall                remove_tree  x3
+delete   cmd_setup.c    link_command                 g_unlink
+delete   cmd_write.c    cmd_block                    SQL "DELETE FROM"
+delete   cmd_write.c    cmd_collection               SQL "DELETE FROM"  x2
+delete   cmd_write.c    cmd_item                     SQL "DELETE FROM"
+delete   cmd_write.c    cmd_link                     SQL "DELETE FROM"
+delete   cmd_write.c    cmd_reminder                 SQL "DELETE FROM"
+delete   db.c           backup                       g_unlink
+delete   db.c           migrate                      g_unlink
+delete   index.c        refresh_fts                  SQL "DELETE FROM"  x2
+delete   memories.c     discard                      SQL "DELETE FROM"  x2
+delete   memories.c     discard                      remove_tree
+delete   memories.c     remove_entry                 remove
+delete   memories.c     remove_tree                  nftw
+run      capture.c      cmd_capture                  notify
+run      capture.c      cmd_capture                  shell_ipc
+run      capture.c      cmd_commit                   notify
+run      capture.c      cmd_commit                   shell_ipc  x2
+run      capture.c      cmd_enrich                   shell_ipc  x2
+run      capture.c      hypr                         proc_run
+run      capture.c      make_thumb                   proc_run
+run      capture.c      ocr                          proc_run
+run      capture.c      pick_region                  proc_run
+run      capture.c      take_screenshot              proc_run
+run      cmd_maint.c    cmd_discard                  shell_ipc
+run      cmd_maint.c    cmd_reindex                  shell_ipc
+run      cmd_maint.c    cmd_sweep                    shell_ipc
+run      cmd_setup.c    cmd_install                  omarchy
+run      cmd_setup.c    cmd_install                  proc_run
+run      cmd_setup.c    cmd_install                  shell_ipc
+run      cmd_setup.c    cmd_setup_ai                 proc_run
+run      cmd_setup.c    cmd_uninstall                omarchy
+run      cmd_setup.c    cmd_uninstall                shell_ipc
+run      cmd_setup.c    keybind_conflict             proc_run
+run      cmd_setup.c    omarchy                      proc_run
+run      cmd_write.c    cmd_block                    shell_ipc
+run      cmd_write.c    cmd_collection               shell_ipc
+run      cmd_write.c    cmd_delete                   shell_ipc
+run      cmd_write.c    cmd_item                     shell_ipc
+run      cmd_write.c    cmd_link                     shell_ipc
+run      cmd_write.c    cmd_memory                   shell_ipc
+run      cmd_write.c    cmd_reminder                 shell_ipc  x2
+run      enrich.c       run_ai                       proc_run_agent
+run      index.c        image_size                   proc_run
+run      notify.c       notify                       g_spawn_async
+run      notify.c       shell_ipc                    proc_run
+run      proc.c         proc_run                     g_subprocess_newv
+run      proc.c         proc_spawn_quiet             g_subprocess_newv
+run      reminders.c    fire_reminder                notify
+write    capture.c      attach_image                 g_file_move
+write    capture.c      attach_image                 g_mkdir_with_parents
+write    capture.c      capture_lock                 g_mkdir_with_parents
+write    capture.c      capture_lock                 open
+write    capture.c      cmd_commit                   g_file_set_contents
+write    capture.c      cmd_commit                   g_mkdir_with_parents
+write    capture.c      start_freeze                 g_file_set_contents
+write    capture.c      start_freeze                 g_mkdir_with_parents
+write    capture.c      take_screenshot              g_mkdir_with_parents
+write    cmd_setup.c    link_command                 g_mkdir_with_parents
+write    cmd_setup.c    link_command                 symlink
+write    config.c       write_ai_settings            g_file_set_contents
+write    config.c       write_ai_settings            g_mkdir_with_parents
+write    db.c           backup                       SQL "VACUUM INTO"
+write    db.c           db_open                      g_mkdir_with_parents  x3
+write    enrich.c       run_ai                       g_mkdir_with_parents
+write    log.c          log_event                    g_mkdir_with_parents
+write    log.c          trim                         g_file_set_contents

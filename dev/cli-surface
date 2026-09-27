@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Record the CLI's surface, so no part of it changes without being seen.
+
+The surface is what a caller can depend on: each subcommand and alias, the
+flags each accepts, hidden ones included, the verbs a parity case runs, the keys
+its output carries, and the exit codes it returns. Subcommands come from the
+table in cli/src/main.c and flags from each command's GOptionEntry table, read
+from source so a hidden flag cannot slip past; verbs, keys and exit codes come
+from the cases and fixtures in dev/parity-cases.
+
+dev/cli-surface.lock holds the approved surface. --check fails on any
+difference, an addition as much as a removal, so a new subcommand, flag or key
+reaches main only through a lock diff the owner reviews.
+
+Usage:  dev/cli-surface            check against the lock (what dev/check runs)
+        dev/cli-surface --write    rewrite the lock from the current surface
+Exit:   0 matches, 1 differs
+"""
+import importlib.machinery
+import importlib.util
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LOCK = ROOT / "dev" / "cli-surface.lock"
+FIXTURES = ROOT / "dev" / "parity-cases"
+
+HEADER = """\
+# The CLI's approved surface, written by dev/cli-surface --write.
+# A change here is a change to what callers depend on: it needs the owner's
+# approval, and the diff of this file is what they review.
+"""
+
+
+SOURCES = ROOT / "cli" / "src"
+COMMAND = re.compile(r'\{ "([a-z][a-z-]*)", (NULL|"[a-z-]*"), "[^"]*", (cmd_\w+) \}')
+FUNCTION = re.compile(r"^(?:static )?[\w *]+?\b(\w+)\([^;{]*\)\s*\{", re.M)
+ENTRY = re.compile(r'\{\s*"([a-z][a-z0-9-]*)",\s*[^,]+,\s*([^,]+),\s*G_OPTION_ARG_(\w+)')
+
+
+def commands():
+    """(name, alias, function) for each row of the dispatch table."""
+    table = (SOURCES / "main.c").read_text()
+    return [(m.group(1), m.group(2).strip('"') if m.group(2) != "NULL" else "", m.group(3))
+            for m in COMMAND.finditer(table)]
+
+
+def option_tables():
+    """Each function's flags, from the GOptionEntry rows in its body."""
+    found = {}
+    for path in sorted(SOURCES.glob("*.c")):
+        text = path.read_text()
+        starts = [(m.start(), m.group(1)) for m in FUNCTION.finditer(text)]
+        for m in ENTRY.finditer(text):
+            owner = [name for at, name in starts if at < m.start()]
+            if not owner or path.name == "args.c":
+                continue
+            hidden = " hidden" if "G_OPTION_FLAG_HIDDEN" in m.group(2) else ""
+            found.setdefault(owner[-1], set()).add(f"--{m.group(1)} {m.group(3).lower()}{hidden}")
+    return found
+
+
+def cases():
+    # Loading dev/parity as a module must not leave bytecode beside it.
+    sys.dont_write_bytecode = True
+    loader = importlib.machinery.SourceFileLoader("parity", str(ROOT / "dev" / "parity"))
+    spec = importlib.util.spec_from_loader("parity", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module.CASES
+
+
+def key_paths(value, prefix=""):
+    """Every key a value carries, as dotted paths, lists shown as []."""
+    if isinstance(value, dict):
+        paths = set()
+        for key, inner in value.items():
+            path = f"{prefix}.{key}" if prefix else key
+            paths.add(path)
+            paths |= key_paths(inner, path)
+        return paths
+    if isinstance(value, list):
+        paths = set()
+        for inner in value:
+            paths |= key_paths(inner, f"{prefix}[]")
+        return paths
+    return set()
+
+
+def surface() -> str:
+    table = commands()
+    tables = option_tables()
+    names = [name for name, _, _ in table]
+    aliases = {alias: name for name, alias, _ in table if alias}
+    lines = [HEADER]
+    observed = {}
+    for name, _seeds, argv in cases():
+        fixture = FIXTURES / f"{name}.json"
+        if not argv or not fixture.exists():
+            continue
+        command = aliases.get(argv[0], argv[0])
+        verb = argv[1] if len(argv) > 1 and not argv[1].startswith("-") and command in names else ""
+        entry = observed.setdefault((command, verb), {"exits": set(), "keys": set()})
+        recorded = json.loads(fixture.read_text())
+        entry["exits"].add(recorded.get("exit"))
+        if recorded.get("exit") == 0:
+            for printed in recorded.get("stdout") or []:
+                if isinstance(printed, (dict, list)):
+                    entry["keys"] |= key_paths(printed)
+    for command, alias, function in table:
+        lines.append(f"command {command}" + (f" (alias {alias})" if alias else ""))
+        for flag in sorted(tables.get(function, ())):
+            lines.append(f"  flag {flag}")
+        for (seen, verb), entry in sorted(observed.items()):
+            if seen != command:
+                continue
+            label = f"{command} {verb}".strip()
+            if verb:
+                lines.append(f"  verb {verb}")
+            exits = ",".join(str(code) for code in sorted(e for e in entry["exits"] if e is not None))
+            lines.append(f"    exits {label}: {exits}")
+            for key in sorted(entry["keys"]):
+                lines.append(f"    key {label}: {key}")
+    helpers = sorted(set(tables) - {function for _, _, function in table})
+    for helper in helpers:
+        lines.append(f"options in {helper}")
+        for flag in sorted(tables[helper]):
+            lines.append(f"  flag {flag}")
+    for command in sorted({c for c, _ in observed} - set(names)):
+        lines.append(f"# a case runs an unknown command: {command}")
+    return "\n".join(lines) + "\n"
+
+
+def main() -> int:
+    current = surface()
+    if "--write" in sys.argv[1:]:
+        LOCK.write_text(current)
+        print(f"wrote {LOCK.relative_to(ROOT)}")
+        return 0
+    recorded = LOCK.read_text() if LOCK.exists() else ""
+    if current == recorded:
+        print("cli-surface: matches dev/cli-surface.lock")
+        return 0
+    old, new = set(recorded.splitlines()), set(current.splitlines())
+    print("cli-surface: the CLI's surface differs from dev/cli-surface.lock")
+    for line in sorted(new - old):
+        print(f"  + {line.strip()}")
+    for line in sorted(old - new):
+        print(f"  - {line.strip()}")
+    print("A surface change needs the owner's approval; once given, run dev/cli-surface --write.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

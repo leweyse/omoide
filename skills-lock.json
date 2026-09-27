@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "unslop": {
+      "source": "Claude Code user skill",
+      "sourceType": "user",
+      "skillPath": "unslop/SKILL.md",
+      "computedHash": "181883e539caec8258ec9129e3ba5f133409144a2cbf2aa361158ab94cfc3441",
+      "files": {
+        ".agents/skills/unslop/SKILL.md": "181883e539caec8258ec9129e3ba5f133409144a2cbf2aa361158ab94cfc3441"
+      },
+      "adaptations": []
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+ "calls": {
+  "omarchy-shell": [
+   {
+    "argv": [
+     "-q",
+     "omoide",
+     "refresh"
+    ]
+   }
+  ]
+ },
+ "config": null,
+ "db": {
+  "attachments": [
+   "[\"a-draft\", \"m-shot-draft\", \"image\", \"blobs/m-shot-draft/capture.png\", null, \"image/png\", 99, 12, 6]",
+   "[\"a-frame\", \"m-voice\", \"image\", \"blobs/m-voice/frame.png\", null, null, null, 4, 3]",
+   "[\"a-shot\", \"m-shot\", \"image\", \"blobs/m-shot/capture.png\", \"blobs/m-shot/thumb.png\", null, null, 1600, 900]",
+   "[\"a-voice\", \"m-voice\", \"audio\", \"blobs/m-voice/memo.ogg\", null, null, null, null, null]"
+  ],
+  "blocks": [
+   "[\"b-img\", \"m-shot\", 1, \"image\", {\"attachment_id\": \"a-shot\"}, \"capture\", 0]",
+   "[\"b-list\", \"m-shot\", 3, \"list\", {\"heading\": \"Names\", \"items\": [{\"label\": \"Ana\"}, {\"text\": \"Lu\"}]}, \"ai\", 1]",
+   "[\"b-note\", \"m-shot\", 4, \"note\", {\"text\": \"my own note\"}, \"user\", 0]",
+   "[\"b-src\", \"m-shot\", 0, \"source\", {\"url\": \"https://github.com/x/y\", \"domain\": \"github.com\"}, \"ai\", 0]",
+   "[\"b-src2\", \"m-note\", 0, \"source\", {\"url\": \"https://www.github.com/z\", \"domain\": \"github.com\"}, \"ai\", 0]",
+   "[\"b-sum\", \"m-shot\", 2, \"summary\", {\"text\": \"A summary / with a slash\"}, \"ai\", 0]"
+  ],
+  "collections": [
+   "[\"c-1\", \"Reading\", \"2026-09-26T01:40:00Z\"]",
+   "[\"c-2\", \"Empty\", \"2026-09-26T01:40:00Z\"]"
+  ],
+  "items": [
+   "[\"e-today\", \"m-note\", null, \"event\", \"Standup\", null, null, \"2026-09-26T11:00:00Z\", null, 1, null, null, null, \"active\", null, \"ai\", \"2026-09-26T06:10:00Z\", null, null, null]",
+   "[\"e-tomorrow\", \"m-shot\", null, \"event\", \"Launch\", null, null, \"2026-09-27T10:00:00Z\", \"2026-09-27T11:00:00Z\", 0, \"Madrid <office>\", null, null, \"active\", null, \"ai\", \"2026-09-26T06:00:00Z\", null, null, null]",
+   "[\"t-cancelled\", \"m-shot\", null, \"todo\", \"Never mind\", null, null, null, null, 0, null, null, null, \"cancelled\", null, \"ai\", \"2026-09-26T05:50:00Z\", null, null, null]",
+   "[\"t-done\", \"m-note\", null, \"todo\", \"Done already\", null, \"2026-09-26T09:00:00Z\", null, null, 0, null, null, null, \"active\", \"2026-09-26T09:30:00Z\", \"ai\", \"2026-09-26T05:30:00Z\", null, null, null]",
+   "[\"t-local\", \"m-note\", null, \"todo\", \"Typed by hand\", null, \"2026-09-27 09:30\", null, null, 0, null, null, null, \"active\", null, \"ai\", \"2026-09-26T05:20:00Z\", null, null, null]",
+   "[\"t-overdue\", \"m-shot\", null, \"todo\", \"Overdue thing\", null, \"2026-09-26T08:00:00Z\", null, null, 0, null, null, null, \"active\", null, \"ai\", \"2026-09-26T00:20:00Z\", null, null, null]",
+   "[\"t-sugg-dated\", \"m-shot\", null, \"todo\", \"Maybe later\", null, \"2026-09-26T20:00:00Z\", null, null, 0, null, null, null, \"suggested\", null, \"ai\", \"2026-09-26T05:45:00Z\", null, null, null]",
+   "[\"t-suggested\", \"m-shot\", null, \"todo\", \"Maybe this\", null, null, null, null, 0, null, null, null, \"suggested\", null, \"ai\", \"2026-09-26T05:40:00Z\", null, null, null]",
+   "[\"t-today\", \"m-shot\", null, \"todo\", \"Ship it\", null, \"2026-09-26T15:00:00Z\", null, null, 0, null, null, null, \"active\", null, \"ai\", \"2026-09-26T00:10:00Z\", null, null, null]",
+   "[\"t-undated\", \"m-note\", null, \"todo\", \"Buy milk\", null, null, null, null, 0, null, null, null, \"active\", null, \"ai\", \"2026-09-26T05:10:00Z\", null, null, null]"
+  ],
+  "links": [],
+  "memories": [
+   "[\"m-new-draft\", \"2026-09-26T09:58:00Z\", \"2026-09-26T09:58:00Z\", \"capture\", null, null, null, \"draft\", \"none\", null]",
+   "[\"m-note\", \"2026-09-26T05:00:00Z\", \"2026-09-26T05:00:00Z\", \"capture\", \"Groceries\", \"\", null, \"ready\", \"ok\", null]",
+   "[\"m-old-draft\", \"2026-09-26T09:00:00Z\", \"2026-09-26T09:00:00Z\", \"capture\", null, null, null, \"draft\", \"none\", null]",
+   "[\"m-shot\", \"2026-09-26T00:00:00Z\", \"2026-09-26T00:00:00Z\", \"capture\", \"Café José – release notes\", \"Diacritics and a dash\", \"Release v2.0 notes for bandcamp\", \"ready\", \"ok\", null]",
+   "[\"m-shot-draft\", \"2026-09-26T09:59:00Z\", \"2026-09-26T09:59:00Z\", \"capture\", null, null, null, \"draft\", \"none\", null]",
+   "[\"m-stalled\", \"2026-09-26T08:20:00Z\", \"2026-09-26T08:20:00Z\", \"capture\", \"Stalled\", null, null, \"ready\", \"pending\", null]",
+   "[\"m-voice\", \"2026-09-26T06:40:00Z\", \"2026-09-26T06:40:00Z\", \"capture\", \"Voice memo\", null, null, \"ready\", \"failed\", null]"
+  ],
+  "memories_fts": [
+   "[\"m-new-draft\", \"\", \"\", \"\", \"\"]",
+   "[\"m-note\", \"Groceries\", \"\", \"https://www.github.com/z Buy milk Typed by hand Done already Standup release work\", \"\"]",
+   "[\"m-old-draft\", \"\", \"\", \"\", \"\"]",
+   "[\"m-shot\", \"Café José – release notes\", \"Diacritics and a dash\", \"https://github.com/x/y A summary / with a slash Names Ana Lu my own note Ship it Overdue thing Maybe this Maybe later Never mind Launch release work zeta\", \"Release v2.0 notes for bandcamp\"]",
+   "[\"m-shot-draft\", \"\", \"\", \"\", \"\"]",
+   "[\"m-stalled\", \"Stalled\", \"\", \"\", \"\"]",
+   "[\"m-voice\", \"Voice memo\", \"\", \"release\", \"\"]"
+  ],
+  "memory_collections": [
+   "[\"m-note\", \"c-1\", 0]",
+   "[\"m-shot\", \"c-1\", 0]"
+  ],
+  "reminders": [
+   "[\"r-cancelled-item\", \"t-cancelled\", \"2026-09-26T09:55:00Z\", null, \"pending\"]",
+   "[\"r-done-item\", \"t-done\", \"2026-09-26T09:55:00Z\", null, \"pending\"]",
+   "[\"r-due\", \"t-today\", \"2026-09-26T09:55:00Z\", -30, \"pending\"]",
+   "[\"r-fired\", \"t-today\", \"2026-09-26T05:00:00Z\", null, \"fired\"]",
+   "[\"r-future\", \"e-tomorrow\", \"2026-09-27T09:00:00Z\", null, \"pending\"]",
+   "[\"r-late\", \"e-today\", \"2026-09-26T08:00:00Z\", null, \"pending\"]",
+   "[\"r-reopen\", \"t-done\", \"2026-09-26T03:20:00Z\", null, \"cancelled\"]"
+  ],
+  "schema": "sha256:6fc49b003e4cea4cb6a2dd640f353a46a7d4cff78e1fc275e196b2ae29ad4a0d",
+  "tags": [
+   "[\"m-note\", \"release\"]",
+   "[\"m-note\", \"work\"]",
+   "[\"m-shot\", \"release\"]",
+   "[\"m-shot\", \"work\"]",
+   "[\"m-shot\", \"zeta\"]",
+   "[\"m-voice\", \"release\"]"
+  ],
+  "user_version": 3
+ },
+ "exit": 0,
+ "files": [
+  ".local/share/omoide/blobs/m-new-draft/capture.png",
+  ".local/share/omoide/blobs/m-old-draft/capture.png",
+  ".local/share/omoide/blobs/m-shot-draft/capture.png",
+  ".local/share/omoide/blobs/m-shot/capture.png",
+  ".local/share/omoide/blobs/m-shot/thumb.png",
+  ".local/share/omoide/blobs/m-voice/frame.png"
+ ],
+ "index": {
+  "alarms": [
+   {
+    "fireAt": "2026-09-26T08:00:00Z",
+    "id": "r-late"
+   },
+   {
+    "fireAt": "2026-09-26T09:55:00Z",
+    "id": "r-due"
+   },
+   {
+    "fireAt": "2026-09-27T09:00:00Z",
+    "id": "r-future"
+   }
+  ],
+  "collections": [
+   {
+    "count": 0,
+    "id": "c-2",
+    "name": "Empty",
+    "thumbs": []
+   },
+   {
+    "count": 2,
+    "id": "c-1",
+    "name": "Reading",
+    "thumbs": [
+     "~/.local/share/omoide/blobs/m-shot/thumb.png"
+    ]
+   }
+  ],
+  "digest": {
+   "events": 1,
+   "todos": 2
+  },
+  "eventCount": 2,
+  "failedCount": 1,
+  "generatedAt": "2026-09-26T10:00:00Z",
+  "memoryCount": 4,
+  "pendingCount": 1,
+  "todoCounts": {
+   "completed": 1,
+   "past": 1,
+   "suggested": 2,
+   "upcoming": 3
+  },
+  "version": 6,
+  "voiceAvailable": true
+ },
+ "log": [],
+ "stdout": []
+}

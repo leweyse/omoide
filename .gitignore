@@ -1,9 +1,3 @@
-# Python bytecode. bin/omoide is a script, not a package -- these only ever
-# appear because something imported or byte-compiled it, and one already got
-# committed once.
-__pycache__/
-*.py[cod]
-
 # Rollback and merge leftovers. The plugin deliberately keeps none of these in
 # its own tree (that is part of the clean-install contract), so anything here is
 # a local accident.
@@ -14,6 +8,9 @@ __pycache__/
 *~
 .*.sw[a-p]
 
+# Python bytecode. The dev/ scripts write none, and none belongs here.
+__pycache__/
+
 # Qt caches, in case a tool is ever pointed at this directory. The real ones
 # live in ~/.cache/quickshell/qmlcache.
 *.qmlc
@@ -21,7 +18,11 @@ __pycache__/
 
 .DS_Store
 
-# Demo scaffolding. Fills the real database with ~26 fake memories and takes
-# them out again; useful locally, not something to ship. dev/check-types IS
-# tracked -- it is the gate that catches QML type references qmllint misses.
+# Demo scaffolding: fills the real database with fake memories and takes them
+# out again. Local only; every other script in dev/ is tracked.
 dev/seed-demo
+
+# Claude Code per-machine settings. .claude/skills is tracked: it is the
+# symlink that makes .agents/skills visible to Claude Code.
+.claude/settings.local.json
+.claude/worktrees/

@@ -1,0 +1,125 @@
+{
+ "calls": {},
+ "config": {
+  "ai": {
+   "enabled": true,
+   "model": "flash",
+   "provider": "gemini",
+   "timeoutMs": "30000"
+  },
+  "other": {
+   "kept": true
+  }
+ },
+ "db": {
+  "attachments": [],
+  "blocks": [],
+  "collections": [],
+  "items": [],
+  "links": [],
+  "memories": [],
+  "memories_fts": [],
+  "memory_collections": [],
+  "reminders": [],
+  "schema": "sha256:6fc49b003e4cea4cb6a2dd640f353a46a7d4cff78e1fc275e196b2ae29ad4a0d",
+  "tags": [],
+  "user_version": 3
+ },
+ "exit": 0,
+ "files": [],
+ "index": {
+  "alarms": [],
+  "collections": [],
+  "digest": {
+   "events": 0,
+   "todos": 0
+  },
+  "eventCount": 0,
+  "failedCount": 0,
+  "generatedAt": "2026-09-26T10:00:00Z",
+  "memoryCount": 0,
+  "pendingCount": 0,
+  "todoCounts": {
+   "completed": 0,
+   "past": 0,
+   "suggested": 0,
+   "upcoming": 0
+  },
+  "version": 6,
+  "voiceAvailable": true
+ },
+ "log": [],
+ "stdout": [
+  {
+   "command": [],
+   "enabled": true,
+   "model": "flash",
+   "provider": "gemini",
+   "providers": [
+    {
+     "available": true,
+     "command": "claude -p --tools ''",
+     "commandImage": "claude -p --tools Read --add-dir <capture>",
+     "id": "claude",
+     "needsModel": false,
+     "restriction": "tools disabled",
+     "restrictionImage": "no tools but reading the screenshot",
+     "vision": true
+    },
+    {
+     "available": true,
+     "command": "codex exec --skip-git-repo-check - -s read-only --ephemeral -c features.shell_tool=false",
+     "commandImage": "codex exec --skip-git-repo-check - -s read-only --ephemeral -c features.shell_tool=false -i <capture>/screenshot.png",
+     "id": "codex",
+     "needsModel": false,
+     "restriction": "shell tool off, read-only sandbox behind it",
+     "restrictionImage": "shell tool off, read-only sandbox behind it",
+     "vision": true
+    },
+    {
+     "available": true,
+     "command": "opencode run --pure",
+     "commandImage": "opencode run --pure --file <capture>/screenshot.png",
+     "id": "opencode",
+     "needsModel": false,
+     "restriction": "every tool permission denied",
+     "restrictionImage": "every tool permission denied",
+     "vision": true
+    },
+    {
+     "available": true,
+     "command": "gemini -p '' --approval-mode plan",
+     "commandImage": "gemini -p '' --approval-mode plan --include-directories <capture>",
+     "id": "gemini",
+     "needsModel": false,
+     "restriction": "read-only mode",
+     "restrictionImage": "read-only mode",
+     "vision": true
+    },
+    {
+     "available": false,
+     "command": "ollama run",
+     "commandImage": "ollama run",
+     "id": "ollama",
+     "needsModel": true,
+     "restriction": "",
+     "restrictionImage": "",
+     "vision": false
+    },
+    {
+     "available": false,
+     "command": "aichat",
+     "commandImage": "aichat",
+     "id": "aichat",
+     "needsModel": false,
+     "restriction": "",
+     "restrictionImage": "",
+     "vision": false
+    }
+   ],
+   "resolved": true,
+   "timeoutMs": 30000,
+   "visionMode": "ocr"
+  }
+ ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'C Memory Safety'
+  short_description: 'Prove ownership and bounds in the C CLI'
+  default_prompt: 'Use $c-memory-safety to check this change under sanitizers and the fuzzer.'

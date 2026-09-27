@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Resolve every QML type this plugin uses against that file's own imports.
 
-qmllint does not resolve custom component types -- `FocusRing is not a type`
-shipped past it once and broke the whole dialog at runtime. Directory moves are
-exactly the change that breaks those references, and the failure is silent until
-someone opens the one surface that uses the type. So this walks the same path Qt
-does: same-directory siblings, unprefixed relative imports, aliased relative
-imports, and the shell's own Ui/Commons modules.
+qmllint does not resolve this plugin's own component types, and an unresolved
+one fails only at runtime, when someone opens the one surface that uses it. A
+directory move is the change that breaks them. This walks the same path Qt does:
+same-directory siblings, unprefixed relative imports, aliased relative imports,
+and the shell's own Ui/Commons modules.
 
 Usage:  dev/check-types [--verbose]
 Exit:   0 clean, 1 unresolved references
@@ -77,9 +76,8 @@ EXTERNAL = {
 LOCAL_TYPES = {}
 
 # A type appears either at the start of a line (`Rectangle {`) or as a property
-# value (`delegate: EventCard {`, `sourceComponent: Foo {`). Matching only the
-# first form is what let a directory move break `delegate: EventCard` in
-# ForYouView while this script reported everything clean.
+# value (`delegate: EventCard {`, `sourceComponent: Foo {`). Both forms must
+# match, or a type used only as a delegate goes unchecked.
 DECL = re.compile(r"(?:^\s*|:\s*)([A-Z][A-Za-z0-9_]*)\s*\{")
 QUALIFIED = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\.([A-Z][A-Za-z0-9_]*)\b")
 IMPORT_DIR = re.compile(r'^\s*import\s+"([^"]+)"(?:\s+as\s+(\w+))?')
@@ -145,11 +143,9 @@ def check(verbose: bool = False) -> int:
                         problems.append((path, n,
                                          f"`{prefix}.{t}` not in that import"))
                     continue
-                # A prefix with NO import at all. Skipping these is what let
-                # `Views.MemoryDetail` survive a directory move and break the
-                # library dialog at runtime: the alias had been dropped, so
-                # there was nothing to check against. If the tail names a real
-                # local type, the prefix was an import alias that went missing.
+                # A prefix with no import at all. If the tail names a real local
+                # type, the prefix is an import alias that is missing, and the
+                # reference fails at runtime.
                 if t in LOCAL_TYPES and prefix not in LOCAL_TYPES:
                     problems.append((path, n,
                                      f"`{prefix}.{t}` -- no import declares "

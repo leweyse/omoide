@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Fuzz the CLI's handling of untrusted text for a while.
+
+Development only. Builds cli/fuzz/fuzz_text.c with libFuzzer, ASan and UBSan
+from the same sources and flags as cli/build.rsp, then runs it against a small
+seed corpus of agent replies and notes.
+
+    dev/fuzz            60 seconds
+    dev/fuzz 600        ten minutes
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CLI = ROOT / "cli"
+
+# The shipped build's flags, minus what does not apply to a fuzz binary:
+# libFuzzer brings its own main(), the target includes enrich.c itself, and
+# optimising for size or stripping symbols only hides what a crash was doing.
+DROP = {"src/main.c", "src/enrich.c", "-s", "-Os", "-pie", "-fPIE", "-D_FORTIFY_SOURCE=3"}
+FUZZ = ["-O1", "-g", "-fno-omit-frame-pointer", "-fsanitize=fuzzer,address,undefined",
+        "-fno-sanitize-recover=all"]
+
+SEEDS = [
+    '{"title": "T", "blocks": [{"type": "todos", "items": [{"title": "x", "due_at": "2026-09-27T09:00:00Z"}]}]}',
+    '{"result": "Here:\\n```json\\n{\\"title\\": \\"Wrapped\\"}\\n```"}',
+    'Sure! {"title": "In prose", "blocks": [{"type": "event", "start": "2026-10-01T16:00:00Z", '
+    '"remind": [{"offset_min": -30}, {"at": "2026-10-01"}]}]} hope that helps',
+    '{"blocks": [{"type": "source", "url": "https://Example.com/a"}, {"type": "list", '
+    '"heading": "To-dos:", "items": ["a", {"label": "b", "text": "c"}]}]}',
+    "remind me to call Ana tomorrow at 3pm",
+    "please remind me about the dentist on friday at 9:30am",
+    "in 3 weeks", "30/02/2026 25:61", "2026-09-26 10", "tonight", "\x1b[31mred\x00 ",
+]
+
+
+def main() -> int:
+    seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 60
+    flags = [line.strip() for line in (CLI / "build.rsp").read_text().splitlines()
+             if line.strip() and line.strip() not in DROP]
+    with tempfile.TemporaryDirectory(prefix="omoide-fuzz-") as tmp:
+        tmp = Path(tmp)
+        binary = tmp / "fuzz_text"
+        subprocess.run(["clang", *flags, *FUZZ, "fuzz/fuzz_text.c", "-o", str(binary)],
+                       cwd=CLI, check=True)
+        corpus = tmp / "corpus"
+        corpus.mkdir()
+        for i, seed in enumerate(SEEDS):
+            (corpus / f"seed-{i}").write_text(seed)
+        # validate_blocks can log. With every XDG_* dropped and HOME at the temp
+        # dir, the log can only land there.
+        env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
+        env.update(HOME=str(tmp), TZ="Europe/Madrid", OMOIDE_NOW="2026-09-26T10:00:00Z")
+        dictionary = tmp / "json.dict"
+        dictionary.write_text("\n".join(json.dumps(t) for t in [
+            "{", "}", "[", "]", ":", ",", '"', '"blocks"', '"type"', '"todos"', '"event"',
+            '"items"', '"remind"', '"offset_min"', '"due_at"', '"start"', "remind me",
+            "tomorrow", "at ", "pm", "in ", "days", "```json"]))
+        return subprocess.run([str(binary), str(corpus), f"-dict={dictionary}",
+                               f"-max_total_time={seconds}", "-max_len=4096",
+                               "-print_final_stats=1"], env=env, cwd=tmp).returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

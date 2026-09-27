@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Schema Migration'
+  short_description: 'Change the SQLite schema safely'
+  default_prompt: 'Use $schema-migration to add this schema change as a new migration with upgrade proof.'

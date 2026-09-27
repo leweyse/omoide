@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Parity Case'
+  short_description: 'Pin CLI behavior with a dev/parity case'
+  default_prompt: 'Use $parity-case to add the parity case this CLI change needs.'

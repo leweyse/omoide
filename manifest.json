@@ -12,8 +12,8 @@
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml",
-    "barWidget": "BarWidget.qml"
+    "service": "ui/Service.qml",
+    "barWidget": "ui/BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Omoide",
