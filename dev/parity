@@ -35,6 +35,7 @@ import argparse
 import ctypes
 import hashlib
 import json
+import multiprocessing
 import os
 import re
 import shutil
@@ -850,6 +851,48 @@ def side_effects(cli: list[str], home: Path) -> dict:
     }
 
 
+CLI: list[str] = []            # set in main()
+WORK: Path | None = None       # set in main()
+
+
+def run_case(index: int):
+    """One case in its own home, returning (name, result). Everything it touches
+    is under WORK/<name>, so cases can run side by side."""
+    name, seeds, argv = CASES[index]
+    home = WORK / name
+    home.mkdir(parents=True)
+    (home / ".fixture.png").write_bytes(png(20, 10))
+    for step in seeds:
+        if callable(step):
+            step(home)
+        else:
+            run(CLI + step, home)
+    # The seed's own calls and log lines are not this case's.
+    for leftover in home.glob(".stub-*.log"):
+        leftover.unlink()
+    (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
+    code, stdout = run(CLI + argv, home)
+    return name, scrub({"exit": code, "stdout": parse_stdout(stdout),
+                        "db": dump_db(home), **side_effects(CLI, home)}, home)
+
+
+def run_cases(chosen: list[int], jobs: int):
+    """Each chosen case's (name, result), in CASES order.
+
+    In worker processes, not threads: every run ends by reaping whatever the
+    command left behind with waitpid(-1), which would take another thread's
+    child. A worker is its own subreaper, since fork does not carry the setting,
+    and runs one case at a time. Forked rather than spawned, because the seeds
+    are closures that cannot be sent to a fresh interpreter."""
+    if jobs <= 1 or len(chosen) <= 1:
+        for index in chosen:
+            yield run_case(index)
+        return
+    context = multiprocessing.get_context("fork")
+    with context.Pool(min(jobs, len(chosen)), initializer=become_subreaper) as pool:
+        yield from pool.imap(run_case, chosen)
+
+
 def fixture_path(name: str) -> Path:
     return FIXTURES / f"{name}.json"
 
@@ -868,9 +911,11 @@ def main() -> int:
                         help="rewrite the selected fixtures from what the CLI does now")
     parser.add_argument("--dump", action="store_true",
                         help="print what the CLI did, to check a case tests something")
+    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
+                        help="cases run at once; 1 runs them one after another")
     args = parser.parse_args()
 
-    global STUB_DIR, DUMPING
+    global STUB_DIR, DUMPING, CLI, WORK
     DUMPING = args.dump and not args.record
     become_subreaper()
     failed = 0
@@ -897,27 +942,11 @@ def main() -> int:
             if not found:
                 sys.exit(f"dev/parity: {name} is not installed, and cases need it")
             (STUB_DIR / name).symlink_to(found)
-        cli = [str(build_c(args.cc, tmp, args.sanitize))]
+        CLI = [str(build_c(args.cc, tmp, args.sanitize))]
+        WORK = tmp
 
-        for name, seeds, argv in CASES:
-            if args.filter not in name:
-                continue
-            home = tmp / name
-            home.mkdir(parents=True)
-            (home / ".fixture.png").write_bytes(png(20, 10))
-            for step in seeds:
-                if callable(step):
-                    step(home)
-                else:
-                    run(cli + step, home)
-            # The seed's own calls and log lines are not this case's.
-            for leftover in home.glob(".stub-*.log"):
-                leftover.unlink()
-            (home / ".local/state/omoide/omoide.log").unlink(missing_ok=True)
-            code, stdout = run(cli + argv, home)
-            result = scrub({"exit": code, "stdout": parse_stdout(stdout),
-                            "db": dump_db(home), **side_effects(cli, home)}, home)
-
+        chosen = [i for i, (name, _, _) in enumerate(CASES) if args.filter in name]
+        for name, result in run_cases(chosen, args.jobs):
             if args.dump:
                 print(json.dumps(result, ensure_ascii=False, indent=1))
 

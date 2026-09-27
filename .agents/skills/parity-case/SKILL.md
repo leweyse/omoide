@@ -31,4 +31,6 @@ Never re-record everything to make a run pass. A broad `--record` with no filter
 
 ## Verify
 
+Cases run in parallel, one worker process per core; `--jobs 1` runs them one after another, which keeps a failing case's output in order while you debug it.
+
 `dev/parity` for the default compiler, `dev/parity --cc gcc` for the other, and `dev/parity --sanitize` before handing off anything that touches memory. CI runs the plain clang build and the sanitized build under both compilers, all against the same fixtures, so a sanitized gcc run stands in for a plain one.
