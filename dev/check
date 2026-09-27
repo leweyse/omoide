@@ -76,6 +76,7 @@ step comments dev/check-comments --strict
 step surface dev/cli-surface
 step capabilities dev/capabilities
 step changesets dev/changeset status
+step versions dev/sync-version --check
 step changeset-selftest dev/changeset selftest
 step format clang-format --dry-run --Werror cli/src/*.c cli/src/*.h cli/fuzz/*.c
 

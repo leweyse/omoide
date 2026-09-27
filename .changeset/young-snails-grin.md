@@ -1,5 +1,5 @@
 ---
-omoide: minor
+"omoide": minor
 ---
 
 feat(space): coming back to a page picks up where you left it

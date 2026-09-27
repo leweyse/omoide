@@ -57,4 +57,4 @@ Read the handler for the current list and the argument each takes. Two propertie
 
 ## Manifest
 
-`manifest.json` is read by the host and by the CLI, which embeds it at build time for `--version`. Its `id`, its `entryPoints` and its `barWidget.schema` keys are stored in users' `shell.json`, so changing any of them breaks existing installs. `version` changes only through `dev/changeset version`, in the release pull request the `release` skill describes, and `dev/sync-docs` ignores its value so a release does not stale this page.
+`manifest.json` is read by the host and by the CLI, which embeds it at build time for `--version`. Its `id`, its `entryPoints` and its `barWidget.schema` keys are stored in users' `shell.json`, so changing any of them breaks existing installs. `version` changes only in the release pull request the `release` skill describes, copied from `package.json` by `pnpm release`, and `dev/sync-docs` ignores its value so a release does not stale this page.

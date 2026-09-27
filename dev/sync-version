@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Keep manifest.json's version equal to package.json's.
+
+`changeset version` bumps package.json, the package changesets knows about.
+manifest.json is what Omarchy and the CLI read, so after every bump its
+version is copied across, changing that one line and nothing else in the file.
+
+Usage:  dev/sync-version            copy package.json's version into manifest.json
+        dev/sync-version --check    fail when the two differ, write nothing
+Exit:   0 equal or copied, 1 they differ (with --check) or a file is malformed
+"""
+import json
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PACKAGE = ROOT / "package.json"
+MANIFEST = ROOT / "manifest.json"
+VERSION_LINE = re.compile(r'^(  "version": ")([^"]*)(")', re.M)
+
+
+def fail(message: str) -> int:
+    print(f"dev/sync-version: {message}", file=sys.stderr)
+    return 1
+
+
+def main() -> int:
+    check = "--check" in sys.argv[1:]
+    wanted = json.loads(PACKAGE.read_text()).get("version", "")
+    text = MANIFEST.read_text()
+    matches = list(VERSION_LINE.finditer(text))
+    if not wanted:
+        return fail("package.json has no version")
+    if len(matches) != 1:
+        return fail("manifest.json: expected one top-level `\"version\"` line")
+    current = matches[0].group(2)
+    if current == wanted:
+        print(f"versions agree: {wanted}")
+        return 0
+    if check:
+        return fail(f"manifest.json is {current} but package.json is {wanted}; run pnpm release")
+    m = matches[0]
+    updated = text[:m.start(2)] + wanted + text[m.end(2):]
+    before, after = json.loads(text), json.loads(updated)
+    before["version"] = wanted
+    if before != after:
+        return fail("manifest.json: replacing the version changed something else")
+    MANIFEST.write_text(updated)
+    print(f"manifest.json {current} -> {wanted}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

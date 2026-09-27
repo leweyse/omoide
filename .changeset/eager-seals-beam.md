@@ -1,5 +1,5 @@
 ---
-omoide: patch
+"omoide": patch
 ---
 
 fix(ui): borders, focus marks and corners look inconsistent across cards, badges and buttons

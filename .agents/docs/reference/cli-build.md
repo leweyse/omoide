@@ -2,7 +2,7 @@
 type: Reference
 title: CLI build
 description: How Service.qml compiles the CLI on the user's machine, where the binary lives, and what keeps QML and CLI from the same checkout.
-source_digest: 'sha256:6d782f32d45bb52d712d909c375f02b08704d37b818323555c0f1ff87dec950c'
+source_digest: 'sha256:2f6a86e745fdd2451a979c94cc04f51e630abbf763ae6d40cbe83436f78e8ecd'
 sources:
   - id: service
     resource: ../../../ui/Service.qml

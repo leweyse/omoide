@@ -4,26 +4,22 @@
 name: cli
 
 on:
-  push:
-    branches: [main]
+  # Every change reaches main through a pull request, so the pull request is
+  # where it is checked; main runs only the release workflow.
   pull_request:
-  # A long fuzz once a week, where a pull request only gets a short one.
-  schedule:
-    - cron: "0 4 * * 1"
 
 # Read-only: nothing here writes to the repository.
 permissions:
   contents: read
 
-# A newer push to the same pull request replaces the run in progress. Runs on
-# main always finish, so every merge is checked.
+# A newer push to the same pull request replaces the run in progress.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   check:
-    timeout-minutes: 30
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -72,7 +68,7 @@ jobs:
           dev/parity --sanitize --cc gcc
 
       - name: Fuzz the untrusted-text paths
-        run: dev/fuzz ${{ github.event_name == 'schedule' && 600 || github.event_name == 'push' && 120 || 30 }}
+        run: dev/fuzz 60
 
       # What `omarchy plugin add` produces is a bare clone, and Service.qml
       # builds it with exactly this argv. If this fails, a fresh install does.

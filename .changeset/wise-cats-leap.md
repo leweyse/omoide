@@ -1,5 +1,5 @@
 ---
-omoide: minor
+"omoide": minor
 ---
 
 feat(library,tasks): the library, tasks and events load as you scroll, however many there are
