@@ -7,18 +7,42 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A long fuzz once a week, where a pull request only gets a short one.
+  schedule:
+    - cron: "0 4 * * 1"
+
+# Read-only: nothing here writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress. Runs on
+# main always finish, so every merge is checked.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      - name: Toolchain and libraries
-        run: |
-          pacman -Syu --noconfirm --needed base-devel clang git python tzdata \
-            glib2 json-c sqlite ffmpeg
+      # Kept between runs so a run downloads only what changed. clang brings
+      # gcc and compiler-rt, which holds libFuzzer and the sanitizer runtimes.
+      - name: Cache packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/pacman/pkg
+          key: pacman-${{ github.run_id }}
+          restore-keys: pacman-
 
+      - name: Toolchain and libraries
+        run: pacman -Syu --noconfirm --needed gcc clang git python tzdata glib2 json-c sqlite
+
+      # The token stays out of .git/config while this repository's own scripts run.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -36,10 +60,11 @@ jobs:
         working-directory: cli
         run: gcc @build.rsp -Werror -fanalyzer -o /dev/null
 
+      # The shipped -Os build against every fixture. The sanitized runs below
+      # check the same fixtures under both compilers, so a plain gcc run would
+      # prove nothing they do not.
       - name: Parity with the recorded cases
-        run: |
-          dev/parity
-          dev/parity --cc gcc
+        run: dev/parity
 
       - name: Parity under ASan and UBSan
         run: |
@@ -47,7 +72,7 @@ jobs:
           dev/parity --sanitize --cc gcc
 
       - name: Fuzz the untrusted-text paths
-        run: dev/fuzz 120
+        run: dev/fuzz ${{ github.event_name == 'schedule' && 600 || github.event_name == 'push' && 120 || 30 }}
 
       # What `omarchy plugin add` produces is a bare clone, and Service.qml
       # builds it with exactly this argv. If this fails, a fresh install does.

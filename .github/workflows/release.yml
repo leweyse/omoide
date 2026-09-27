@@ -23,6 +23,7 @@ concurrency:
 jobs:
   version:
     name: Open the version pull request
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     env:
       BRANCH: changeset-release/main

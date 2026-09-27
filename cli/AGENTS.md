@@ -20,4 +20,4 @@ Any change to the CLI's surface: a subcommand, flag, output key or exit code tha
 
 ## Verify
 
-`dev/check` builds with gcc and clang under `-Werror` and runs parity. Before handing off a change to ownership or parsing, also run `dev/parity --sanitize` and `dev/fuzz`. CI adds `-fanalyzer`, parity and the sanitizers against the gcc build, and a fresh-clone build.
+`dev/check` builds with gcc and clang under `-Werror` and runs parity. Before handing off a change to ownership or parsing, also run `dev/parity --sanitize` and `dev/fuzz`. CI adds `-fanalyzer`, parity under the sanitizers with both compilers, the fuzzer, and a fresh-clone build.

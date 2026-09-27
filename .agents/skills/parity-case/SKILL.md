@@ -31,4 +31,4 @@ Never re-record everything to make a run pass. A broad `--record` with no filter
 
 ## Verify
 
-`dev/parity` for the default compiler, `dev/parity --cc gcc` for the other, and `dev/parity --sanitize` before handing off anything that touches memory. CI runs all four combinations against the same fixtures.
+`dev/parity` for the default compiler, `dev/parity --cc gcc` for the other, and `dev/parity --sanitize` before handing off anything that touches memory. CI runs the plain clang build and the sanitized build under both compilers, all against the same fixtures, so a sanitized gcc run stands in for a plain one.
