@@ -387,7 +387,8 @@ def home_file(name: str, content: str):
 
 def many_items(todos: int, events: int):
     """One memory holding more to-dos and events than any page, so a case shows
-    that counts and pages hold past the sizes a view asks for."""
+    that counts and pages hold past the sizes a view asks for. One past the caps
+    the index once had, 200 to-dos and 50 events, is enough."""
     def apply(home: Path) -> None:
         conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
         conn.execute("INSERT INTO memories (id, created_at, updated_at, title, status, ai_status) "
@@ -472,7 +473,7 @@ CASES = [
     ("state-bad-config", INDEXED + [bad_config], ["state"]),
 
     ("index", INDEXED, ["index"]),
-    ("index-many", [["migrate"], many_items(250, 60)], ["index"]),
+    ("index-many", [["migrate"], many_items(201, 51)], ["index"]),
     ("index-schema-newer", [["migrate"], set_version(9)], ["index"]),
     ("list", INDEXED, ["list"]),
     ("list-limit", INDEXED, ["list", "--limit", "2"]),
@@ -513,13 +514,13 @@ CASES = [
     ("archive-past", INDEXED, ["archive", "--group", "past"]),
     ("archive-completed", INDEXED, ["archive", "--group", "completed"]),
     ("archive-suggested", INDEXED, ["archive", "--group", "suggested"]),
-    ("archive-many", [["migrate"], many_items(250, 0)], ["archive", "--group", "open", "--limit", "100"]),
+    ("archive-many", [["migrate"], many_items(201, 0)], ["archive", "--group", "open", "--limit", "2"]),
     ("archive-bad-group", INDEXED, ["archive", "--group", "someday"]),
     ("archive-bad-cursor", INDEXED, ["archive", "--group", "open", "--after", "nope"]),
     ("archive-after-without-group", INDEXED, ["archive", "--after", "x,y"]),
     ("events", INDEXED, ["events", "--limit", "1"]),
     ("events-after", INDEXED, ["events", "--after", "2026-09-26 11:00:00,e-today"]),
-    ("events-many", [["migrate"], many_items(0, 60)], ["events", "--limit", "-1"]),
+    ("events-many", [["migrate"], many_items(0, 51)], ["events", "--limit", "2"]),
     ("events-bad-cursor", INDEXED, ["events", "--after", "nope"]),
     ("related", INDEXED, ["related", "--id", "m-shot"]),
     ("candidates", INDEXED, ["candidates", "--id", "m-shot"]),
