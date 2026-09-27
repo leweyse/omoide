@@ -27,6 +27,9 @@ LOCK = ROOT / "skills-lock.json"
 
 SKIP_DIRS = {".git", "node_modules"}
 RESERVED = {"index.md", "log.md"}
+# Written by the changesets CLI, whose headings ("Minor Changes") are fixed and
+# not ours to word, so the prose rules do not apply to it.
+GENERATED = {"CHANGELOG.md"}
 STATUS = {"draft", "stable", "deprecated"}
 DISPOSABLE = {"Roadmap", "Implementation Plan"}
 DELETION_CONDITION = re.compile(r"\b(delete|remove)\b[^.]*\b(when|after|once)\b", re.I)
@@ -319,7 +322,7 @@ def check_file(path: pathlib.Path, vendored, basenames, report: Report):
     marker = next((i for i, l in enumerate(lines) if l.strip() == EXAMPLES_MARKER), None)
     if marker is not None and marker < first_heading:
         return
-    if where not in vendored:
+    if where not in vendored and where not in GENERATED:
         check_prose(where, lines, report)
 
     if where in vendored:
