@@ -1,0 +1,6 @@
+# Comments dev/check-comments flags but that stay, because the constraint they
+# state cannot be read without the history. One per line:
+#
+#   <path>: <substring of the comment line>   # why it stays
+#
+# An entry that matches nothing fails the check, so this list cannot rot.

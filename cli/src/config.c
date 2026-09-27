@@ -6,16 +6,16 @@ static const struct {
   const char *name;
   const char *argv[5];
 } AI_PRESETS[] = {
-  { "claude",   { "claude", "-p" } },
-  { "codex",    { "codex", "exec", "--skip-git-repo-check", "-" } },
+  { "claude", { "claude", "-p" } },
+  { "codex", { "codex", "exec", "--skip-git-repo-check", "-" } },
   { "opencode", { "opencode", "run" } },
   // -p takes a value, and a bare `gemini -p` with the prompt on stdin fails
   // argument parsing. The empty value selects headless mode while leaving
   // stdin as the whole prompt; putting a screen's worth of OCR in argv would
   // publish it to `ps`.
-  { "gemini",   { "gemini", "-p", "" } },
-  { "ollama",   { "ollama", "run" } },     // model appended
-  { "aichat",   { "aichat" } },
+  { "gemini", { "gemini", "-p", "" } },
+  { "ollama", { "ollama", "run" } },   // model appended
+  { "aichat", { "aichat" } },
 };
 
 static json_object *default_ai(void) {
@@ -38,8 +38,7 @@ json_object *ai_settings(void) {
   json_object *ai = json_get(stored, "ai");
   if (!ai || !json_object_is_type(ai, json_type_object))
     return merged;
-  json_object_object_foreach(ai, key, value)
-    json_object_object_add(merged, key, json_object_get(value));
+  json_object_object_foreach(ai, key, value) json_object_object_add(merged, key, json_object_get(value));
   return merged;
 }
 
@@ -116,9 +115,10 @@ void write_ai_settings(json_object *ai) {
   json_object_object_add(config, "ai", json_object_get(ai));
   g_autofree char *dir = g_path_get_dirname(path);
   g_mkdir_with_parents(dir, 0777);
-  g_autofree char *text = g_strconcat(
-    json_object_to_json_string_ext(config, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED
-                                   | JSON_C_TO_STRING_NOSLASHESCAPE), "\n", NULL);
+  g_autofree char *text =
+      g_strconcat(json_object_to_json_string_ext(config,
+                      JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE),
+          "\n", NULL);
   g_autoptr(GError) error = NULL;
   if (!g_file_set_contents(path, text, -1, &error))
     die(1, "could not write %s: %s", path, error->message);
@@ -128,7 +128,7 @@ void write_ai_settings(json_object *ai) {
 // applies, so `install` can point a PATH entry at it.
 char *cache_bin_path(void) {
   const char *cache = g_getenv("XDG_CACHE_HOME");
-  g_autofree char *base = cache && cache[0] == '/' ? g_strdup(cache)
-                                                    : g_build_filename(g_get_home_dir(), ".cache", NULL);
+  g_autofree char *base =
+      cache && cache[0] == '/' ? g_strdup(cache) : g_build_filename(g_get_home_dir(), ".cache", NULL);
   return g_build_filename(base, "omoide", "bin", "omoide", NULL);
 }

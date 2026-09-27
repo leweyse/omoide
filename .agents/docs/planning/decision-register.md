@@ -1,0 +1,44 @@
+---
+type: Decision Register
+title: Decision register
+description: What was settled, why, and what each decision rules out.
+tags: [decisions, governance]
+sources:
+  - id: service
+    resource: ../../../Service.qml
+    title: CLI build, IPC and reminder arming
+  - id: parity
+    resource: ../../../dev/parity
+    title: The harness and its recorded fixtures
+  - id: format
+    resource: ../../../.clang-format
+    title: C formatting
+generated:
+  by: anthropic/claude-opus-5-5
+  at: '2026-09-26T00:00:00Z'
+---
+
+# Decision register
+
+One row per decision. A decision that replaces another names the one it supersedes, and the older row stays, marked superseded. Record the tempting alternative that lost, because that is what the next reader will propose.
+
+| ID | Decision | Status |
+| -- | -------- | ------ |
+| D-001 | The CLI is C, linked against libraries Omarchy already guarantees (glibc, GLib and GIO, json-c, SQLite), and compiled by `Service.qml` on the user's machine on the first shell load after an add or an update. Rejected: Zig, Go, Rust and Odin, which add a toolchain users do not have; a shell script, which cannot hold the parsing and bounds the CLI needs; committed prebuilt binaries, which tie the plugin to one architecture and one set of library versions; a Python fallback, which would keep two implementations alive. The goals were the smallest binary and an `omarchy plugin add` with no extra step. | Accepted; live since 2026-09-26 |
+| D-002 | The port kept the Python CLI's observable behavior except for four declared changes, each proved against the Python CLI before its behavior was recorded as the fixtures (D-014): a notification's headline and body come before its `--exec` argv; a custom agent command is stored as `sh -c`; an agent timeout or output flood kills the whole process group; a calendar step keeps the wall-clock time across a DST change. | Accepted |
+| D-003 | Reminders are armed inside the shell from the index it pulls and fired by the CLI, which alone decides whether an alarm is still owed. Rejected: systemd user timers, which put state outside the plugin that `uninstall` would have to find and remove, and which a user can disable without the plugin knowing. | Accepted |
+| D-004 | IPC opens windows and never acts: there is no capture function, and `compose` starts the microphone only with a ticket `capture()` issued. Rejected: a `capture` IPC function, which would let anything that can reach the shell's socket take a screenshot. | Accepted |
+| D-005 | Agent presets run with their tools off or read-only, in an empty working directory, because a capture can carry text written to steer whatever reads it. A preset flag may only become stricter without approval. `custom` runs exactly as the user wrote it. | Accepted |
+| D-006 | The agent knowledge ships inside the plugin, and Claude Code reaches it through a committed `.claude/skills` symlink and committed `CLAUDE.md` files, not through a session hook that generates them. Rejected: a Node sync hook, which would make Node a development dependency of a C and QML repository. | Accepted |
+| D-007 | Python is a development dependency only: `dev/` scripts and CI. Nothing a user runs invokes it. | Accepted |
+| D-008 | C is formatted by `clang-format` from `.clang-format`, which ships in the `clang` package users already need. The configuration was tuned against the hand-formatted code to churn the fewest lines, and the one-time reformat produced byte-identical binaries under both gcc and clang. | Accepted |
+| D-009 | qmllint runs with the host's `qs` modules resolved and with four categories off: members of `property var` objects, unqualified parent-scope lookups, and two Quickshell types whose metadata ships without qmltypes. Every other category fails the gate at zero warnings. `dev/check-types` stays alongside it, because it resolves custom component types qmllint does not. | Accepted |
+| D-010 | A code comment states a constraint that holds now; history, rationale and incidents live in this bundle. `dev/check-comments` enforces the phrasing, with an allowlist for a constraint that cannot be stated without its history. | Accepted |
+| D-011 | Every plugin surface is a centered layer-shell `PanelWindow`, as first-party Omarchy surfaces are, which is what gives reliable keyboard focus, Esc handling and theme integration. Rejected: `FloatingWindow`, which does not map under Hyprland here. The Space window is opaque, unlike Omarchy's translucent menus, because a page of text and thumbnails is unreadable over the desktop; the scrim still dims what is behind it. | Accepted |
+| D-012 | The bar mark lights for what is owed today: open to-dos due before local midnight, overdue included. A mark that small carries one bit, and "any to-do exists" stays lit for months. Rejected: a rolling window from now, which switches on partway through the day. | Accepted |
+| D-013 | Collections and links record the user's decisions, so nothing infers them. A tag that matches a collection is offered as an outlined chip and never applied, because a guess written into a collection cannot later be told apart from a deliberate filing. Rejected: auto-filing by tag, and related captures scored by shared tags and word overlap, which offered either everything or nothing. | Accepted |
+| D-014 | CLI behavior is pinned by fixtures recorded from the C CLI itself, in `dev/parity-cases/`, starting from the version that matched the Python CLI case for case. A change re-records the cases it touches, and the fixture diff is its evidence. Rejected: keeping the Python CLI as a live reference, which ages with every intentional change and turns each one into a hand-written exception. | Accepted |
+| D-015 | The QML checks (`dev/check-types`, qmllint) run locally through `dev/check`, not in CI, because they resolve against the installed Omarchy shell. Rejected: vendoring a copy of the shell's modules into CI, which would drift from what users run. | Accepted |
+| D-016 | The log (`omoide.log`) records names, ids, counts and lengths, never captured text, an agent's output, or a command line the user typed. What an agent printed on failure reaches the user through `ai_error` on the memory, not through the log. | Accepted |
+| D-017 | The shell pulls the index: a write signals `refresh`, and `Service.qml` runs `omoide index` and renders its stdout. No index file is written. Rejected: a state file the shell watched, which every write rewrote in full, the shell parsed twice per change (the watcher and the refresh), and the CLI rebuilt even with no shell running to read it; splitting that file by section, which adds files to watch and keep consistent. Accepted cost: the shell has nothing to render at load until the first pull answers. | Accepted |
+| D-018 | Memory cards are paged: the library and collection pages load them from `list` and `search` a viewport-sized page at a time, resuming from an opaque cursor, and the index no longer carries cards or facets. A card is found in SQL by choosing the page's rows first and building cards for those alone, and `idx_items_memory_open` keeps each card's to-do count from walking every open to-do. Rejected: the full-library pull, which grew with the library (about 440 ms at 5,000 memories) and capped the grid at 500 cards; a precomputed cards table, which would save half a millisecond a page and make every write keep a second copy of each card in step; an offset cursor for `list`, which repeats or skips a card when a capture lands between pages. | Accepted |

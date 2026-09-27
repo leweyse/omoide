@@ -24,8 +24,8 @@ static char *notification_binary(void) {
   if (found)
     return found;
   const char *omarchy = g_getenv("OMARCHY_PATH");
-  char *candidate = g_build_filename(omarchy && *omarchy ? omarchy : "/usr/share/omarchy",
-                                     "bin", "omarchy-notification-send", NULL);
+  char *candidate = g_build_filename(
+      omarchy && *omarchy ? omarchy : "/usr/share/omarchy", "bin", "omarchy-notification-send", NULL);
   if (g_file_test(candidate, G_FILE_TEST_IS_EXECUTABLE))
     return candidate;
   g_free(candidate);
@@ -40,8 +40,8 @@ static char *notification_binary(void) {
 // wrapper treats everything after it as the click command's argv, and rejects
 // a single word containing spaces. Passing it before the headline, as a
 // quoted string, was how every clickable toast failed without a trace.
-void notify(const char *headline, const char *body, const char *urgency,
-            const char *image, const char *const *exec_argv) {
+void notify(const char *headline, const char *body, const char *urgency, const char *image,
+    const char *const *exec_argv) {
   g_autofree char *binary = notification_binary();
   if (!binary)
     return;
@@ -60,9 +60,8 @@ void notify(const char *headline, const char *body, const char *urgency,
   }
   g_auto(GStrv) command = g_strv_builder_end(argv);
   // Fire and forget, as the toast outlives this process anyway.
-  g_spawn_async(NULL, command, NULL,
-                G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
-                NULL, NULL, NULL, NULL);
+  g_spawn_async(
+      NULL, command, NULL, G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL, NULL, NULL);
 }
 
 // What a toast runs when clicked: the Space window, opened on this memory.
@@ -73,8 +72,7 @@ GStrv open_space_argv(const char *memory_id, const char *section) {
   if (section && *section)
     json_object_object_add(payload, "section", json_object_new_string(section));
   const char *text = json_object_to_json_string_ext(payload, JSON_C_TO_STRING_PLAIN);
-  return g_strdupv((char *[]){ "omarchy-shell", "-q", IPC_TARGET, "openSpace",
-                               (char *)text, NULL });
+  return g_strdupv((char *[]){ "omarchy-shell", "-q", IPC_TARGET, "openSpace", (char *)text, NULL });
 }
 
 void shell_ipc(const char *target, const char *method, const char *argument) {

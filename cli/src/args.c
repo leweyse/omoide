@@ -3,8 +3,8 @@
 
 #include <string.h>
 
-void parse_options(const char *command, const GOptionEntry *entries,
-                   int max_positional, int *argc, char ***argv) {
+void parse_options(
+    const char *command, const GOptionEntry *entries, int max_positional, int *argc, char ***argv) {
   g_autoptr(GOptionContext) context = g_option_context_new(NULL);
   g_autofree char *summary = g_strdup_printf("omoide %s", command);
   g_option_context_set_summary(context, summary);
@@ -61,14 +61,13 @@ void require_option(const char *command, const char *flag, const char *value) {
     die(2, "%s: the following arguments are required: %s", command, flag);
 }
 
-void require_choice(const char *command, const char *what, const char *value,
-                    const char *const *choices) {
+void require_choice(const char *command, const char *what, const char *value, const char *const *choices) {
   for (size_t i = 0; choices[i]; i++)
     if (g_strcmp0(value, choices[i]) == 0)
       return;
   g_autofree char *listed = g_strjoinv("', '", (char **)choices);
-  die(2, "%s: argument %s: invalid choice: '%s' (choose from '%s')", command, what,
-      value ? value : "", listed);
+  die(2, "%s: argument %s: invalid choice: '%s' (choose from '%s')", command, what, value ? value : "",
+      listed);
 }
 
 // The first positional, or NULL. After parse_options, argv[0] is the command.

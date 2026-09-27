@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Agent Preset'
+  short_description: 'Add or change a sandboxed agent CLI preset'
+  default_prompt: 'Use $agent-preset to change this agent preset without weakening its sandbox.'

@@ -25,19 +25,19 @@ static const GTimeSpan LATE_GRACE = 30 * G_TIME_SPAN_MINUTE;
 // is one missed reminder, where a retry loop is a machine that will not stop
 // shouting.
 const char *fire_reminder(sqlite3 *db, const char *reminder_id) {
-  g_autoptr(sqlite3_stmt) row = db_query(
-    db, "SELECT r.id, r.fire_at, i.title, i.location, i.memory_id "
-        LIVE_REMINDER " AND r.id = ?", "s", reminder_id);
+  g_autoptr(sqlite3_stmt) row =
+      db_query(db, "SELECT r.id, r.fire_at, i.title, i.location, i.memory_id " LIVE_REMINDER " AND r.id = ?",
+          "s", reminder_id);
   if (!db_step(row))
     return "skipped";
 
   g_autoptr(GDateTime) fire_at = parse_iso(col_str(row, "fire_at"));
   g_autoptr(GDateTime) current = now_utc();
   if (!fire_at || g_date_time_compare(fire_at, current) > 0)
-    return "skipped";     // armed early; the next tick comes back for it
+    return "skipped";   // armed early; the next tick comes back for it
 
-  g_autoptr(sqlite3_stmt) mark = db_query(
-    db, "UPDATE reminders SET status = 'fired' WHERE id = ?", "s", reminder_id);
+  g_autoptr(sqlite3_stmt) mark =
+      db_query(db, "UPDATE reminders SET status = 'fired' WHERE id = ?", "s", reminder_id);
   db_step(mark);
 
   const GTimeSpan late = g_date_time_difference(current, fire_at);
@@ -50,8 +50,7 @@ const char *fire_reminder(sqlite3 *db, const char *reminder_id) {
   g_autoptr(GDateTime) local = g_date_time_to_local(fire_at);
   g_autofree char *when = g_date_time_format(local, "%H:%M %d %b");
   const char *location = col_str(row, "location");
-  g_autofree char *body = location && *location
-    ? g_strconcat(when, " · ", location, NULL) : g_strdup(when);
+  g_autofree char *body = location && *location ? g_strconcat(when, " · ", location, NULL) : g_strdup(when);
   g_auto(GStrv) open = open_space_argv(col_str(row, "memory_id"), NULL);
   notify(col_str(row, "title"), body, "normal", NULL, (const char *const *)open);
   return "fired";
@@ -66,8 +65,8 @@ json_object *sweep_reminders(sqlite3 *db) {
   g_autoptr(GPtrArray) due = g_ptr_array_new_with_free_func(g_free);
   g_autofree char *now = iso_now();
   {
-    g_autoptr(sqlite3_stmt) rows = db_query(
-      db, "SELECT r.id " LIVE_REMINDER " AND r.fire_at <= ? ORDER BY r.fire_at", "s", now);
+    g_autoptr(sqlite3_stmt) rows =
+        db_query(db, "SELECT r.id " LIVE_REMINDER " AND r.fire_at <= ? ORDER BY r.fire_at", "s", now);
     while (db_step(rows))
       g_ptr_array_add(due, g_strdup(col_str(rows, "id")));
   }

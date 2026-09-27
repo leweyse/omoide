@@ -9,18 +9,49 @@
 // which put such a reminder an hour out.
 #include "omoide.h"
 
-static const struct { const char *name; char unit; } UNITS[] = {
-  { "min", 'm' }, { "mins", 'm' }, { "minute", 'm' }, { "minutes", 'm' }, { "m", 'm' },
-  { "h", 'h' }, { "hr", 'h' }, { "hrs", 'h' }, { "hour", 'h' }, { "hours", 'h' },
-  { "d", 'd' }, { "day", 'd' }, { "days", 'd' },
-  { "w", 'w' }, { "week", 'w' }, { "weeks", 'w' },
+static const struct {
+  const char *name;
+  char unit;
+} UNITS[] = {
+  { "min", 'm' },
+  { "mins", 'm' },
+  { "minute", 'm' },
+  { "minutes", 'm' },
+  { "m", 'm' },
+  { "h", 'h' },
+  { "hr", 'h' },
+  { "hrs", 'h' },
+  { "hour", 'h' },
+  { "hours", 'h' },
+  { "d", 'd' },
+  { "day", 'd' },
+  { "days", 'd' },
+  { "w", 'w' },
+  { "week", 'w' },
+  { "weeks", 'w' },
 };
 
 // Searched in this order, and the first name found anywhere in the text wins.
-static const struct { const char *name; int weekday; } WEEKDAYS[] = {
-  { "monday", 1 }, { "mon", 1 }, { "tuesday", 2 }, { "tue", 2 }, { "tues", 2 },
-  { "wednesday", 3 }, { "wed", 3 }, { "thursday", 4 }, { "thu", 4 }, { "thurs", 4 },
-  { "friday", 5 }, { "fri", 5 }, { "saturday", 6 }, { "sat", 6 }, { "sunday", 7 }, { "sun", 7 },
+static const struct {
+  const char *name;
+  int weekday;
+} WEEKDAYS[] = {
+  { "monday", 1 },
+  { "mon", 1 },
+  { "tuesday", 2 },
+  { "tue", 2 },
+  { "tues", 2 },
+  { "wednesday", 3 },
+  { "wed", 3 },
+  { "thursday", 4 },
+  { "thu", 4 },
+  { "thurs", 4 },
+  { "friday", 5 },
+  { "fri", 5 },
+  { "saturday", 6 },
+  { "sat", 6 },
+  { "sunday", 7 },
+  { "sun", 7 },
 };
 
 // A matched group as a number. \d matches any Unicode digit, as it did in
@@ -45,8 +76,7 @@ static int group_number_or(GMatchInfo *match, int group, int fallback) {
   return group_number(match, group, &value) ? value : fallback;
 }
 
-static bool search(const char *pattern, GRegexCompileFlags flags, const char *text,
-                   GMatchInfo **match) {
+static bool search(const char *pattern, GRegexCompileFlags flags, const char *text, GMatchInfo **match) {
   if (g_regex_match(re(pattern, flags), text, 0, match))
     return true;
   g_clear_pointer(match, g_match_info_free);
@@ -58,7 +88,7 @@ static bool search(const char *pattern, GRegexCompileFlags flags, const char *te
 static GDateTime *at_time(GDateTime *base, int hour, int minute) {
   g_autoptr(GTimeZone) local = g_time_zone_new_local();
   return g_date_time_new(local, g_date_time_get_year(base), g_date_time_get_month(base),
-                         g_date_time_get_day_of_month(base), hour, minute, 0);
+      g_date_time_get_day_of_month(base), hour, minute, 0);
 }
 
 static GDateTime *on_date(int year, int month, int day, int hour, int minute) {
@@ -68,8 +98,7 @@ static GDateTime *on_date(int year, int month, int day, int hour, int minute) {
 
 static bool parse_clock(const char *lowered, int *hour, int *minute) {
   g_autoptr(GMatchInfo) match = NULL;
-  if (search("\\b(?:at\\s+)?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)\\b", G_REGEX_CASELESS,
-             lowered, &match)) {
+  if (search("\\b(?:at\\s+)?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)\\b", G_REGEX_CASELESS, lowered, &match)) {
     g_autofree char *half = g_match_info_fetch(match, 3);
     *hour = group_number_or(match, 1, 0) % 12 + (g_ascii_strcasecmp(half, "pm") == 0 ? 12 : 0);
     *minute = group_number_or(match, 2, 0);
@@ -110,18 +139,16 @@ GDateTime *parse_when(const char *text) {
   g_clear_pointer(&match, g_match_info_free);
 
   if (search("\\b(\\d{4})-(\\d{2})-(\\d{2})(?:[ tT](\\d{2}):(\\d{2}))?\\b", 0, text, &match))
-    return on_date(group_number_or(match, 1, 0), group_number_or(match, 2, 0),
-                   group_number_or(match, 3, 0), group_number_or(match, 4, 9),
-                   group_number_or(match, 5, 0));
+    return on_date(group_number_or(match, 1, 0), group_number_or(match, 2, 0), group_number_or(match, 3, 0),
+        group_number_or(match, 4, 9), group_number_or(match, 5, 0));
   g_clear_pointer(&match, g_match_info_free);
 
   // Day-first, matching the editor's fields and the European locale this runs
   // in. Without it "24/08/2026 09:00" fell through to the bare-clock branch and
   // resolved to the next 09:00, ignoring the date entirely.
   if (search("\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})(?:[ ,]+(\\d{1,2}):(\\d{2}))?\\b", 0, text, &match))
-    return on_date(group_number_or(match, 3, 0), group_number_or(match, 2, 0),
-                   group_number_or(match, 1, 0), group_number_or(match, 4, 9),
-                   group_number_or(match, 5, 0));
+    return on_date(group_number_or(match, 3, 0), group_number_or(match, 2, 0), group_number_or(match, 1, 0),
+        group_number_or(match, 4, 9), group_number_or(match, 5, 0));
   g_clear_pointer(&match, g_match_info_free);
 
   int hour = 0, minute = 0;

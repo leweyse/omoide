@@ -69,7 +69,10 @@ static char *resolve(const char *path) {
 void guard_paths(void) {
   const Paths *p = paths();
   g_autofree char *config_dir = g_path_get_dirname(p->config_path);
-  const struct { const char *label; const char *path; } dirs[] = {
+  const struct {
+    const char *label;
+    const char *path;
+  } dirs[] = {
     { "data", p->data_dir },
     { "state", p->state_dir },
     { "config", config_dir },
@@ -77,7 +80,9 @@ void guard_paths(void) {
   for (size_t i = 0; i < G_N_ELEMENTS(dirs); i++) {
     g_autofree char *real = resolve(dirs[i].path);
     if (g_str_has_prefix(real, "/usr/"))
-      die(1, "refusing to use %s as the %s directory: that is inside the "
-             "read-only Omarchy package tree", real, dirs[i].label);
+      die(1,
+          "refusing to use %s as the %s directory: that is inside the "
+          "read-only Omarchy package tree",
+          real, dirs[i].label);
   }
 }

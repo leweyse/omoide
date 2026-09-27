@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Agent Knowledge'
+  short_description: 'Decide where repository knowledge lives'
+  default_prompt: 'Use $agent-knowledge to move this rationale out of the comment and into the right document.'

@@ -108,8 +108,8 @@ static void stop_freeze(GSubprocess *freeze) {
 
 static bool active_workspace(int64_t *id) {
   g_autoptr(json_object) monitors = hypr_json("monitors");
-  for (size_t i = 0; json_object_is_type(monitors, json_type_array)
-                     && i < json_object_array_length(monitors); i++) {
+  for (size_t i = 0; json_object_is_type(monitors, json_type_array) && i < json_object_array_length(monitors);
+      i++) {
     json_object *monitor = json_object_array_get_idx(monitors, i);
     if (truthy(json_get(monitor, "focused")))
       return as_int(json_get(json_get(monitor, "activeWorkspace"), "id"), id);
@@ -131,8 +131,8 @@ static void window_boxes(GPtrArray *boxes) {
   int64_t workspace = 0;
   const bool known = active_workspace(&workspace);
   g_autoptr(json_object) clients = hypr_json("clients");
-  for (size_t i = 0; json_object_is_type(clients, json_type_array)
-                     && i < json_object_array_length(clients); i++) {
+  for (size_t i = 0; json_object_is_type(clients, json_type_array) && i < json_object_array_length(clients);
+      i++) {
     json_object *client = json_object_array_get_idx(clients, i);
     if (truthy(json_get(client, "hidden")) || !truthy(json_get(client, "mapped")))
       continue;
@@ -145,9 +145,9 @@ static void window_boxes(GPtrArray *boxes) {
     const int64_t h = int_of(json_object_array_get_idx(size, 1), 0);
     if (w <= 0 || h <= 0)
       continue;
-    char *box = g_strdup_printf("%" G_GINT64_FORMAT ",%" G_GINT64_FORMAT " %" G_GINT64_FORMAT
-                                "x%" G_GINT64_FORMAT, int_of(json_object_array_get_idx(at, 0), 0),
-                                int_of(json_object_array_get_idx(at, 1), 0), w, h);
+    char *box =
+        g_strdup_printf("%" G_GINT64_FORMAT ",%" G_GINT64_FORMAT " %" G_GINT64_FORMAT "x%" G_GINT64_FORMAT,
+            int_of(json_object_array_get_idx(at, 0), 0), int_of(json_object_array_get_idx(at, 1), 0), w, h);
     bool seen = false;
     for (size_t b = 0; b < boxes->len && !seen; b++)
       seen = g_str_equal(g_ptr_array_index(boxes, b), box);
@@ -159,8 +159,7 @@ static void window_boxes(GPtrArray *boxes) {
 }
 
 static double number_of(json_object *value, double fallback) {
-  return value && !json_object_is_type(value, json_type_null) ? json_object_get_double(value)
-                                                              : fallback;
+  return value && !json_object_is_type(value, json_type_null) ? json_object_get_double(value) : fallback;
 }
 
 // Rounded half to even, as Python's round() does.
@@ -174,8 +173,8 @@ static void monitor_boxes(GPtrArray *boxes) {
   int64_t workspace = 0;
   const bool known = active_workspace(&workspace);
   g_autoptr(json_object) monitors = hypr_json("monitors");
-  for (size_t i = 0; json_object_is_type(monitors, json_type_array)
-                     && i < json_object_array_length(monitors); i++) {
+  for (size_t i = 0; json_object_is_type(monitors, json_type_array) && i < json_object_array_length(monitors);
+      i++) {
     json_object *monitor = json_object_array_get_idx(monitors, i);
     if (known && int_of(json_get(json_get(monitor, "activeWorkspace"), "id"), INT64_MIN) != workspace)
       continue;
@@ -187,22 +186,22 @@ static void monitor_boxes(GPtrArray *boxes) {
       height = swap;
     }
     if (width > 0 && height > 0)
-      g_ptr_array_add(boxes, g_strdup_printf(
-        "%" G_GINT64_FORMAT ",%" G_GINT64_FORMAT " %" G_GINT64_FORMAT "x%" G_GINT64_FORMAT,
-        int_of(json_get(monitor, "x"), 0), int_of(json_get(monitor, "y"), 0), width, height));
+      g_ptr_array_add(boxes,
+          g_strdup_printf("%" G_GINT64_FORMAT ",%" G_GINT64_FORMAT " %" G_GINT64_FORMAT "x%" G_GINT64_FORMAT,
+              int_of(json_get(monitor, "x"), 0), int_of(json_get(monitor, "y"), 0), width, height));
   }
 }
 
 static char *focused_monitor_geometry(void) {
   g_autoptr(json_object) monitors = hypr_json("monitors");
-  for (size_t i = 0; json_object_is_type(monitors, json_type_array)
-                     && i < json_object_array_length(monitors); i++) {
+  for (size_t i = 0; json_object_is_type(monitors, json_type_array) && i < json_object_array_length(monitors);
+      i++) {
     json_object *monitor = json_object_array_get_idx(monitors, i);
     if (truthy(json_get(monitor, "focused")))
       return g_strdup_printf("%" G_GINT64_FORMAT ",%" G_GINT64_FORMAT " %" G_GINT64_FORMAT
-                             "x%" G_GINT64_FORMAT, int_of(json_get(monitor, "x"), 0),
-                             int_of(json_get(monitor, "y"), 0), logical(monitor, "width"),
-                             logical(monitor, "height"));
+                             "x%" G_GINT64_FORMAT,
+          int_of(json_get(monitor, "x"), 0), int_of(json_get(monitor, "y"), 0), logical(monitor, "width"),
+          logical(monitor, "height"));
   }
   return NULL;
 }
@@ -229,7 +228,7 @@ static char *pick_region(const char *mode) {
   const char *argv[] = { "slurp", "-w", "2", window ? "-r" : NULL, NULL };   // -r: whole windows
   g_auto(ProcResult) picked = proc_run(argv, input, 0);
   if (picked.status != 0)
-    return NULL;                      // cancelled with Esc or right-click
+    return NULL;   // cancelled with Esc or right-click
   g_strstrip(picked.out);
   return *picked.out ? g_steal_pointer(&picked.out) : NULL;
 }
@@ -244,7 +243,7 @@ static char *take_screenshot(const char *mode, const char *target, bool freeze) 
 
   const int lock = capture_lock();
   if (lock < 0)
-    return NULL;      // a picker is already open; leave it alone
+    return NULL;   // a picker is already open; leave it alone
   reap_stale_freeze();
 
   // Software cursors so the pointer appears in the grab, restored afterwards.
@@ -288,9 +287,8 @@ static char *ocr(const char *image) {
   if (!has("tesseract"))
     return g_strdup("");
   const char *langs = g_getenv("OMARCHY_OCR_LANGS");
-  const char *argv[] = { "tesseract", image, "stdout", "--oem", "1", "--psm", "6",
-                         "-l", langs ? langs : "eng", "--dpi", "300",
-                         "-c", "preserve_interword_spaces=1", NULL };
+  const char *argv[] = { "tesseract", image, "stdout", "--oem", "1", "--psm", "6", "-l",
+    langs ? langs : "eng", "--dpi", "300", "-c", "preserve_interword_spaces=1", NULL };
   g_auto(ProcResult) run = proc_run(argv, NULL, 60);
   if (run.status != 0)
     return g_strdup("");
@@ -303,8 +301,8 @@ static char *make_thumb(const char *image) {
     return NULL;
   g_autofree char *folder = g_path_get_dirname(image);
   char *thumb = g_build_filename(folder, "thumb.png", NULL);
-  const char *argv[] = { "ffmpeg", "-y", "-loglevel", "error", "-i", image,
-                         "-vf", "scale=640:-1:flags=lanczos", thumb, NULL };
+  const char *argv[] = { "ffmpeg", "-y", "-loglevel", "error", "-i", image, "-vf",
+    "scale=640:-1:flags=lanczos", thumb, NULL };
   g_auto(ProcResult) run = proc_run(argv, NULL, 30);
   if (run.status == 0 && g_file_test(thumb, G_FILE_TEST_EXISTS))
     return thumb;
@@ -339,10 +337,10 @@ static char *attach_image(sqlite3 *db, const char *memory_id, const char *source
   g_autofree char *id = new_id(NULL);
   g_autofree char *w = measured ? g_strdup_printf("%" G_GINT64_FORMAT, width) : NULL;
   g_autofree char *h = measured ? g_strdup_printf("%" G_GINT64_FORMAT, height) : NULL;
-  g_autoptr(sqlite3_stmt) insert = db_query(
-    db, "INSERT INTO attachments (id, memory_id, kind, rel_path, mime, bytes, width, height) "
-        "VALUES (?,?,'image',?,'image/png',?,CAST(? AS INTEGER),CAST(? AS INTEGER))",
-    "sssiss", id, memory_id, relative_to_data(target), (int64_t)st.st_size, w, h);
+  g_autoptr(sqlite3_stmt) insert = db_query(db,
+      "INSERT INTO attachments (id, memory_id, kind, rel_path, mime, bytes, width, height) "
+      "VALUES (?,?,'image',?,'image/png',?,CAST(? AS INTEGER),CAST(? AS INTEGER))",
+      "sssiss", id, memory_id, relative_to_data(target), (int64_t)st.st_size, w, h);
   db_step(insert);
   return target;
 }
@@ -352,8 +350,7 @@ static const char *const MODES[] = { "screenshot", "note", "voice", "clipboard",
 int cmd_capture(int argc, char **argv) {
   g_autofree char *mode_option = NULL;
   const GOptionEntry entries[] = {
-    { "mode", 0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_STRING, &mode_option, NULL, NULL },
-    G_OPTION_ENTRY_NULL
+    { "mode", 0, G_OPTION_FLAG_HIDDEN, G_OPTION_ARG_STRING, &mode_option, NULL, NULL }, G_OPTION_ENTRY_NULL
   };
   parse_options("capture", entries, 1, &argc, &argv);
   // The positional wins over --mode, as it did: argparse assigned it last.
@@ -376,11 +373,11 @@ int cmd_capture(int argc, char **argv) {
   g_autofree char *memory_id = new_id(NULL);
   g_autofree char *shot = NULL;
   if (g_str_equal(mode, "screenshot")) {
-    g_autofree char *capture_mode = json_get(config, "captureMode")
-      ? as_text(json_get(config, "captureMode")) : g_strdup("smart");
+    g_autofree char *capture_mode =
+        json_get(config, "captureMode") ? as_text(json_get(config, "captureMode")) : g_strdup("smart");
     json_object *freeze = json_get(config, "captureFreeze");
-    const bool freeze_on = !(json_object_is_type(freeze, json_type_boolean)
-                             && !json_object_get_boolean(freeze));
+    const bool freeze_on =
+        !(json_object_is_type(freeze, json_type_boolean) && !json_object_get_boolean(freeze));
     g_autofree char *folder = blob_dir_of(memory_id);
     g_autofree char *target = g_build_filename(folder, "capture.png", NULL);
     shot = take_screenshot(capture_mode, target, freeze_on);
@@ -390,9 +387,10 @@ int cmd_capture(int argc, char **argv) {
 
   sqlite3 *db = db_open(true);
   g_autofree char *stamp = iso_now();
-  g_autoptr(sqlite3_stmt) insert = db_query(
-    db, "INSERT INTO memories (id, created_at, updated_at, status, ai_status) "
-        "VALUES (?,?,?,'draft','none')", "sss", memory_id, stamp, stamp);
+  g_autoptr(sqlite3_stmt) insert = db_query(db,
+      "INSERT INTO memories (id, created_at, updated_at, status, ai_status) "
+      "VALUES (?,?,?,'draft','none')",
+      "sss", memory_id, stamp, stamp);
   db_step(insert);
   g_autofree char *stored = shot ? attach_image(db, memory_id, shot) : NULL;
 
@@ -430,12 +428,10 @@ int cmd_commit(int argc, char **argv) {
   g_autofree char *id = NULL;
   g_autofree char *note_arg = NULL;
   gboolean remove_image = FALSE;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the draft", "ID" },
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the draft", "ID" },
     { "note", 0, 0, G_OPTION_ARG_STRING, &note_arg, "what was typed", "TEXT" },
     { "remove-image", 0, 0, G_OPTION_ARG_NONE, &remove_image, "keep only the note", NULL },
-    G_OPTION_ENTRY_NULL
-  };
+    G_OPTION_ENTRY_NULL };
   parse_options("commit", entries, 0, &argc, &argv);
   require_option("commit", "--id", id);
   sqlite3 *db = db_open(true);
@@ -447,8 +443,8 @@ int cmd_commit(int argc, char **argv) {
   g_autofree char *note = strip_space(note_arg ? note_arg : "");
   g_autofree char *image_id = NULL, *image_rel = NULL;
   {
-    g_autoptr(sqlite3_stmt) image = db_query(
-      db, "SELECT * FROM attachments WHERE memory_id = ? AND kind = 'image'", "s", id);
+    g_autoptr(sqlite3_stmt) image =
+        db_query(db, "SELECT * FROM attachments WHERE memory_id = ? AND kind = 'image'", "s", id);
     if (db_step(image)) {
       image_id = g_strdup(col_str(image, "id"));
       image_rel = g_strdup(col_str(image, "rel_path"));
@@ -493,17 +489,17 @@ int cmd_commit(int argc, char **argv) {
   }
 
   g_autofree char *stamp = iso_now();
-  g_autoptr(sqlite3_stmt) ready = db_query(
-    db, "UPDATE memories SET status = 'ready', ai_status = ?, ocr_text = ?, updated_at = ? "
-        "WHERE id = ?", "ssss", ai_on ? "pending" : "none", ocr_text, stamp, id);
+  g_autoptr(sqlite3_stmt) ready = db_query(db,
+      "UPDATE memories SET status = 'ready', ai_status = ?, ocr_text = ?, updated_at = ? "
+      "WHERE id = ?",
+      "ssss", ai_on ? "pending" : "none", ocr_text, stamp, id);
   db_step(ready);
 
   if (image_path) {
     g_autofree char *thumb = make_thumb(image_path);
     if (thumb) {
       g_autoptr(sqlite3_stmt) update = db_query(
-        db, "UPDATE attachments SET thumb_path = ? WHERE id = ?", "ss",
-        relative_to_data(thumb), image_id);
+          db, "UPDATE attachments SET thumb_path = ? WHERE id = ?", "ss", relative_to_data(thumb), image_id);
       db_step(update);
     }
   }
@@ -527,8 +523,7 @@ int cmd_commit(int argc, char **argv) {
     created += apply_enrichment(db, id, enriched);
   } else if (ai_on) {
     g_autofree char *reason = one_line(ai_error, 500);
-    set_memory_text(db, "UPDATE memories SET ai_status = 'failed', ai_error = ? WHERE id = ?",
-                    reason, id);
+    set_memory_text(db, "UPDATE memories SET ai_status = 'failed', ai_error = ? WHERE id = ?", reason, id);
   }
 
   // Deterministic fallback. Runs whenever the model produced no to-do, so an
@@ -536,8 +531,8 @@ int cmd_commit(int argc, char **argv) {
   if (!created) {
     g_autoptr(json_object) spec = todo_from_note(note);
     if (spec) {
-      g_autofree char *block_id = add_block(db, id, "todos",
-                                            json_tokener_parse("{\"item_ids\": []}"), "user");
+      g_autofree char *block_id =
+          add_block(db, id, "todos", json_tokener_parse("{\"item_ids\": []}"), "user");
       g_autofree char *item_id = create_item(db, id, block_id, spec, "manual");
       json_object *payload = json_object_new_object();
       json_object *ids = json_object_new_array();
@@ -575,13 +570,19 @@ int cmd_commit(int argc, char **argv) {
   db_step(saved);
   // Only alarms on ACTIVE items are scheduled, so a cancelled item's reminder
   // must not be counted: it would promise a notification that never comes.
-  const int64_t pending = count(db, "SELECT COUNT(*) FROM reminders r JOIN items i ON i.id = r.item_id "
-                                    "WHERE i.memory_id = ? AND r.status = 'pending' "
-                                    "AND i.status = 'active'", id);
-  const int64_t todos = count(db, "SELECT COUNT(*) FROM items WHERE memory_id = ? AND kind = 'todo' "
-                                  "AND status = 'active' AND completed_at IS NULL", id);
-  const int64_t suggested = count(db, "SELECT COUNT(*) FROM items WHERE memory_id = ? "
-                                      "AND kind = 'todo' AND status = 'suggested'", id);
+  const int64_t pending = count(db,
+      "SELECT COUNT(*) FROM reminders r JOIN items i ON i.id = r.item_id "
+      "WHERE i.memory_id = ? AND r.status = 'pending' "
+      "AND i.status = 'active'",
+      id);
+  const int64_t todos = count(db,
+      "SELECT COUNT(*) FROM items WHERE memory_id = ? AND kind = 'todo' "
+      "AND status = 'active' AND completed_at IS NULL",
+      id);
+  const int64_t suggested = count(db,
+      "SELECT COUNT(*) FROM items WHERE memory_id = ? "
+      "AND kind = 'todo' AND status = 'suggested'",
+      id);
 
   const char *ai_status = col_str(saved, "ai_status");
   g_autofree char *body = NULL;
@@ -590,8 +591,8 @@ int cmd_commit(int argc, char **argv) {
   else if (pending)
     body = g_strdup_printf("%" G_GINT64_FORMAT " reminder%s scheduled", pending, pending != 1 ? "s" : "");
   else if (suggested)
-    body = g_strdup_printf("%" G_GINT64_FORMAT " to-do%s suggested — open to add",
-                           suggested, suggested != 1 ? "s" : "");
+    body = g_strdup_printf(
+        "%" G_GINT64_FORMAT " to-do%s suggested — open to add", suggested, suggested != 1 ? "s" : "");
   else if (todos)
     body = g_strdup_printf("%" G_GINT64_FORMAT " to-do%s added", todos, todos != 1 ? "s" : "");
   else
@@ -616,10 +617,8 @@ int cmd_commit(int argc, char **argv) {
 // an edited block survives a retry, which is what the `edited` flag is for.
 int cmd_enrich(int argc, char **argv) {
   g_autofree char *id = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
+    G_OPTION_ENTRY_NULL };
   parse_options("enrich", entries, 0, &argc, &argv);
   require_option("enrich", "--id", id);
   sqlite3 *db = db_open(true);
@@ -639,18 +638,20 @@ int cmd_enrich(int argc, char **argv) {
 
   g_autofree char *note = NULL;
   {
-    g_autoptr(sqlite3_stmt) row = db_query(
-      db, "SELECT payload FROM blocks WHERE memory_id = ? AND type = 'note' "
-          "ORDER BY position LIMIT 1", "s", id);
+    g_autoptr(sqlite3_stmt) row = db_query(db,
+        "SELECT payload FROM blocks WHERE memory_id = ? AND type = 'note' "
+        "ORDER BY position LIMIT 1",
+        "s", id);
     g_autoptr(json_object) payload = db_step(row) ? json_tokener_parse(col_str(row, "payload")) : NULL;
     const char *text = json_get_str(payload, "text");
     note = g_strdup(text ? text : "");
   }
   g_autofree char *image_path = NULL;
   {
-    g_autoptr(sqlite3_stmt) image = db_query(
-      db, "SELECT rel_path FROM attachments WHERE memory_id = ? AND kind = 'image' "
-          "ORDER BY rowid LIMIT 1", "s", id);
+    g_autoptr(sqlite3_stmt) image = db_query(db,
+        "SELECT rel_path FROM attachments WHERE memory_id = ? AND kind = 'image' "
+        "ORDER BY rowid LIMIT 1",
+        "s", id);
     if (db_step(image))
       image_path = data_path(col_str(image, "rel_path"));
   }
@@ -659,8 +660,8 @@ int cmd_enrich(int argc, char **argv) {
   // the capture owns -- the note and the image are never origin 'ai'.
   g_autoptr(GPtrArray) stale = g_ptr_array_new_with_free_func(g_free);
   {
-    g_autoptr(sqlite3_stmt) rows = db_query(
-      db, "SELECT id FROM blocks WHERE memory_id = ? AND origin = 'ai' AND edited = 0", "s", id);
+    g_autoptr(sqlite3_stmt) rows =
+        db_query(db, "SELECT id FROM blocks WHERE memory_id = ? AND origin = 'ai' AND edited = 0", "s", id);
     while (db_step(rows))
       g_ptr_array_add(stale, g_strdup(col_str(rows, "id")));
   }
@@ -673,8 +674,8 @@ int cmd_enrich(int argc, char **argv) {
   }
   renumber_blocks(db, id);
 
-  g_autoptr(sqlite3_stmt) pending = db_query(
-    db, "UPDATE memories SET ai_status = 'pending', ai_error = NULL WHERE id = ?", "s", id);
+  g_autoptr(sqlite3_stmt) pending =
+      db_query(db, "UPDATE memories SET ai_status = 'pending', ai_error = NULL WHERE id = ?", "s", id);
   db_step(pending);
   write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
@@ -686,8 +687,7 @@ int cmd_enrich(int argc, char **argv) {
     apply_enrichment(db, id, enriched);
   } else {
     g_autofree char *stored = one_line(reason, 500);
-    set_memory_text(db, "UPDATE memories SET ai_status = 'failed', ai_error = ? WHERE id = ?",
-                    stored, id);
+    set_memory_text(db, "UPDATE memories SET ai_status = 'failed', ai_error = ? WHERE id = ?", stored, id);
   }
   g_autoptr(json_object) swept = sweep_reminders(db);
   refresh_fts(db, id);

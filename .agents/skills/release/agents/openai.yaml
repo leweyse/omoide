@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Release'
+  short_description: 'Version bump and commit message'
+  default_prompt: 'Use $release to prepare this change for users and write its commit message.'

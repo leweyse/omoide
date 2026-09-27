@@ -40,8 +40,7 @@ char *blob_dir_of(const char *memory_id) {
 // triggered, and dismissing it must never destroy a finished memory. Deleting
 // a saved memory is `delete`, which asks for it explicitly.
 bool discard(sqlite3 *db, const char *memory_id, bool drafts_only) {
-  g_autoptr(sqlite3_stmt) row = db_query(
-    db, "SELECT status FROM memories WHERE id = ?", "s", memory_id);
+  g_autoptr(sqlite3_stmt) row = db_query(db, "SELECT status FROM memories WHERE id = ?", "s", memory_id);
   if (!db_step(row))
     return false;
   if (drafts_only && g_strcmp0(col_str(row, "status"), "draft") != 0)
@@ -50,8 +49,7 @@ bool discard(sqlite3 *db, const char *memory_id, bool drafts_only) {
   db_exec(db, "BEGIN");
   g_autoptr(sqlite3_stmt) del = db_query(db, "DELETE FROM memories WHERE id = ?", "s", memory_id);
   db_step(del);
-  g_autoptr(sqlite3_stmt) fts = db_query(
-    db, "DELETE FROM memories_fts WHERE memory_id = ?", "s", memory_id);
+  g_autoptr(sqlite3_stmt) fts = db_query(db, "DELETE FROM memories_fts WHERE memory_id = ?", "s", memory_id);
   db_step(fts);
   db_exec(db, "COMMIT");
 

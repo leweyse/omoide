@@ -25,7 +25,7 @@
 
 enum {
   SCHEMA_VERSION = 2,   // what this code understands
-  INDEX_VERSION = 4,    // bump when index.json's shape changes
+  INDEX_VERSION = 4,   // bump when index.json's shape changes
 };
 
 // Stamped in by the build driver in Service.qml; "local" for a hand build.
@@ -40,11 +40,10 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(sqlite3_stmt, sqlite3_finalize)
 // --- main.c
 // Parses a subcommand's options in place, leaving argv[0] and positionals.
 // A malformed command line exits 2, as argparse did.
-void parse_options(const char *command, const GOptionEntry *entries,
-                   int max_positional, int *argc, char ***argv);
+void parse_options(
+    const char *command, const GOptionEntry *entries, int max_positional, int *argc, char ***argv);
 void require_option(const char *command, const char *flag, const char *value);
-void require_choice(const char *command, const char *what, const char *value,
-                    const char *const *choices);
+void require_choice(const char *command, const char *what, const char *value, const char *const *choices);
 const char *positional(int argc, char **argv);
 
 // --- util.c
@@ -60,14 +59,14 @@ const char *plugin_version(void);
 char *one_line(const char *text, long limit);
 char *new_id(const char *prefix);   // sortable and filesystem-safe
 char *truncate_chars(const char *text, long limit);   // by character, not byte
-char *strip_space(const char *text);                  // Unicode whitespace, both ends
-char *py_float(double value);       // how Python prints a float: 45.0, 12.5
+char *strip_space(const char *text);   // Unicode whitespace, both ends
+char *py_float(double value);   // how Python prints a float: 45.0, 12.5
 char *first_line(const char *text);
-json_object *settings(void);        // the bar widget's inline settings
+json_object *settings(void);   // the bar widget's inline settings
 
 // JSON values read the way the Python CLI read them.
 bool truthy(json_object *value);
-char *as_text(json_object *value);         // str(value); "" for NULL
+char *as_text(json_object *value);   // str(value); "" for NULL
 bool as_int(json_object *value, int64_t *out);   // int(value), when it has one
 
 // --- regex.c
@@ -100,12 +99,12 @@ void log_event(const char *event, ...) G_GNUC_NULL_TERMINATED;
 // All machine-readable output goes through here, so stdout stays JSON.
 // Takes ownership of `payload`.
 void emit(json_object *payload);
-json_object *json_str(const char *value);        // NULL becomes JSON null
+json_object *json_str(const char *value);   // NULL becomes JSON null
 json_object *json_str_or_empty(const char *value);
-json_object *json_round4(double value);          // what Python's round(x, 4) prints
+json_object *json_round4(double value);   // what Python's round(x, 4) prints
 bool write_json_file(const char *path, json_object *payload);   // atomic
-json_object *json_get(json_object *object, const char *key);    // NULL if absent
-const char *json_get_str(json_object *object, const char *key); // NULL unless a string
+json_object *json_get(json_object *object, const char *key);   // NULL if absent
+const char *json_get_str(json_object *object, const char *key);   // NULL unless a string
 
 // --- db.c
 sqlite3 *db_open(bool write);
@@ -129,10 +128,10 @@ bool col_null(sqlite3_stmt *stmt, const char *name);
 
 // --- proc.c
 typedef struct {
-  int status;       // exit code, -signal when killed; -1 when it never ran
-  bool started;     // false: err says why it could not be run at all
+  int status;   // exit code, -signal when killed; -1 when it never ran
+  bool started;   // false: err says why it could not be run at all
   bool timed_out;
-  bool capped;      // proc_run_agent stopped it for printing too much
+  bool capped;   // proc_run_agent stopped it for printing too much
   char *out;
   char *err;
 } ProcResult;
@@ -145,22 +144,22 @@ ProcResult proc_run(const char *const *argv, const char *input, double timeout_s
 // For an agent: in its own process group, in `cwd`, with `env` added to the
 // environment, reading at most `cap` bytes from each stream. A timeout or the
 // cap kills the whole group, not just the process we started.
-ProcResult proc_run_agent(const char *const *argv, const char *input, double timeout_s,
-                          const char *cwd, GHashTable *env, size_t cap);
+ProcResult proc_run_agent(const char *const *argv, const char *input, double timeout_s, const char *cwd,
+    GHashTable *env, size_t cap);
 // A helper that runs until stopped (the screen freeze), and stopping it.
 typedef struct _GSubprocess GSubprocess;
 GSubprocess *proc_spawn_quiet(const char *const *argv);
 void proc_stop(GSubprocess *child, double grace_s);
 
 // --- config.c
-json_object *ai_settings(void);        // merged over the shipped defaults
+json_object *ai_settings(void);   // merged over the shipped defaults
 GStrv resolve_provider(json_object *ai);   // NULL when AI is off or unusable
 
 // --- notify.c
 char *notify_text(const char *value, long limit);
 // `exec_argv` makes the toast clickable; NULL for none.
-void notify(const char *headline, const char *body, const char *urgency,
-            const char *image, const char *const *exec_argv);
+void notify(const char *headline, const char *body, const char *urgency, const char *image,
+    const char *const *exec_argv);
 GStrv open_space_argv(const char *memory_id, const char *section);
 // omarchy-shell -q <target> <method> [argument]. Best-effort: the shell may
 // be down.
@@ -181,25 +180,25 @@ char *http_url(json_object *value);   // "" unless http(s)
 json_object *todo_from_note(const char *note);   // "remind me to ..." or NULL
 // Runs the configured agent. Returns its parsed answer, or NULL with *reason
 // saying why not.
-json_object *run_ai(const char *note, const char *ocr_text, const char *image_path,
-                    json_object *ai, char **reason);
+json_object *run_ai(
+    const char *note, const char *ocr_text, const char *image_path, json_object *ai, char **reason);
 int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enriched);
 // The command line each preset runs with, hardening included; `env` gets the
 // variables it adds. For the settings dialog as well as for run_ai.
-GStrv harden(const char *const *argv, const char *provider, bool vision,
-             const char *image_path, GHashTable *env);
+GStrv harden(
+    const char *const *argv, const char *provider, bool vision, const char *image_path, GHashTable *env);
 
 // --- dates.c
 GDateTime *parse_when(const char *text);   // "tomorrow at 3pm"; NULL, never a guess
 
 // --- items.c
-char *add_block(sqlite3 *db, const char *memory_id, const char *type,
-                json_object *payload, const char *origin);   // takes `payload`
+char *add_block(sqlite3 *db, const char *memory_id, const char *type, json_object *payload,
+    const char *origin);   // takes `payload`
 void set_block_payload(sqlite3 *db, const char *block_id, json_object *payload);
 // `spec` is borrowed: kind, title, notes, due_at, starts_at, ends_at, all_day,
 // location, map_url, remind, suggested.
-char *create_item(sqlite3 *db, const char *memory_id, const char *block_id,
-                  json_object *spec, const char *source);
+char *create_item(
+    sqlite3 *db, const char *memory_id, const char *block_id, json_object *spec, const char *source);
 void renumber_blocks(sqlite3 *db, const char *memory_id);
 void reschedule_item(sqlite3 *db, const char *item_id);
 json_object *item_payload(sqlite3 *db, sqlite3_stmt *item);

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'QML Component'
+  short_description: 'Add or restyle a QML component'
+  default_prompt: 'Use $qml-component to add or change this QML component following the plugin's layout.'

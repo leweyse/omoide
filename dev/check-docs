@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""Validate the agent knowledge: .agents/, every AGENTS.md, and the README.
+
+The rules are owned by the agent-knowledge skill; this only enforces them.
+Findings come in three tiers, and --strict (what dev/check and CI run) fails on
+all three:
+
+  conformance  frontmatter, skill names, index.md and log.md shapes
+  producer     links and paths resolve, provenance, the vendored lock, the
+               CLAUDE.md beside each AGENTS.md, nothing machine-specific
+  warning      prose tells from the unslop skill, filenames, headings
+
+Usage:  dev/check-docs [--strict]
+Exit:   0 clean, 1 findings that fail at this strictness
+"""
+import hashlib
+import json
+import os
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+BUNDLE = ROOT / ".agents" / "docs"
+SKILLS = ROOT / ".agents" / "skills"
+LOCK = ROOT / "skills-lock.json"
+
+SKIP_DIRS = {".git", "node_modules"}
+RESERVED = {"index.md", "log.md"}
+STATUS = {"draft", "stable", "deprecated"}
+DISPOSABLE = {"Roadmap", "Implementation Plan"}
+DELETION_CONDITION = re.compile(r"\b(delete|remove)\b[^.]*\b(when|after|once)\b", re.I)
+
+# Paths that name the user's machine or the Omarchy install rather than this
+# tree. Written in backticks they are instructions, not links, so they are not
+# resolved.
+EXTERNAL_PREFIXES = ("~/", "$", "/", "./", "qs.", "Ui/", "Commons/", "services/", "plugins/")
+
+# Files and directories the plugin creates on the user's machine, or reads from
+# the Omarchy install, rather than keeps in this tree. Named in backticks they
+# describe a runtime location, so there is nothing here to resolve them against.
+RUNTIME = {"index.json", "config.json", "shell.json", "memories.db", "omoide.log", "bindings.lua",
+           "shell.qml", "blobs/", "omoide/"}
+
+# The bundle ships inside every clone of the plugin.
+MACHINE_SPECIFIC = re.compile(r"/home/[a-z_][\w-]*|/run/user/\d+|/Users/\w+|/tmp/claude-\d+")
+
+# Opt-out for prose whose paths are deliberately hypothetical, such as a section
+# teaching a naming convention. Before the first heading it covers the file;
+# inside the body it covers until the next `## ` heading.
+EXAMPLES_MARKER = "<!-- check-docs: examples -->"
+
+PATH_LIKE = re.compile(r"`([^`\n]+)`")
+LINK_LIKE = re.compile(r"\]\(([^)\s]+)\)")
+BARE_FILE = re.compile(r"^\.?[A-Za-z0-9][\w.-]*\.(json|ya?ml|toml|md|qml|js|c|h|sql|txt|rsp|py)$")
+
+AI_VOCABULARY = re.compile(
+    r"\b(additionally|crucial|delve|enduring|garner|interplay|intricate|pivotal|showcase|"
+    r"tapestry|testament|underscore|utilize|leverage|facilitate|numerous|seamless(ly)?|robust)\b", re.I)
+FILLER = re.compile(
+    r"\b(in order to|due to the fact that|it is important to note|it should be noted|needless to say)\b", re.I)
+CURLY = re.compile("[‘’“”]")
+TITLE_CASE_HEADING = re.compile(r"^#{2,6} (?:[A-Z][a-z]+ ){1,}[A-Z][a-z]+\s*$")
+KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*\.md$")
+
+
+class Report:
+    def __init__(self):
+        self.conformance, self.producer, self.warning = [], [], []
+
+
+def rel(path: pathlib.Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def markdown_files():
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and d != ".claude")
+        for name in sorted(filenames):
+            if name.endswith(".md"):
+                yield pathlib.Path(dirpath) / name
+
+
+def tree_basenames():
+    names = set()
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        names.update(filenames)
+        names.update(dirnames)
+    return names
+
+
+def sha256(path: pathlib.Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_lock(report: Report):
+    if not LOCK.exists():
+        return set()
+    lock = json.loads(LOCK.read_text())
+    vendored = set()
+    for name, skill in lock.get("skills", {}).items():
+        directory = SKILLS / name
+        on_disk = {rel(p) for p in directory.rglob("*") if p.is_file()} if directory.is_dir() else set()
+        recorded = skill.get("files", {})
+        for file in sorted(on_disk - set(recorded)):
+            report.producer.append(f"{file}  is in a vendored skill but not recorded in skills-lock.json")
+        for file, digest in recorded.items():
+            vendored.add(file)
+            path = ROOT / file
+            if not path.exists():
+                report.producer.append(f"skills-lock.json  {name}: {file} does not exist")
+            elif digest != sha256(path):
+                report.producer.append(
+                    f"{file}  differs from its hash in skills-lock.json; record the adaptation "
+                    "and update the hash in the same change")
+    return vendored
+
+
+def frontmatter(text: str):
+    """The flat YAML subset the bundle uses: `key: value`, and nested blocks
+    whose only checked field is `resource:`. Anything else is not guessed at."""
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    fields, resources = {}, []
+    for line in text[4:end].split("\n"):
+        m = re.match(r"^([a-z_]+):\s*(.*)$", line)
+        if m:
+            fields[m.group(1)] = m.group(2).strip().strip("'\"")
+        m = re.match(r"^\s+(?:-\s+)?resource:\s*(\S+)", line)
+        if m:
+            resources.append(m.group(1))
+    return fields, resources
+
+
+def resolves(token: str, directory: pathlib.Path) -> bool:
+    bare = token.split("#")[0].rstrip(".,;:)")
+    if not bare:
+        return True
+    return any((base / bare).exists() for base in (directory, ROOT, BUNDLE))
+
+
+def classify(token: str) -> str:
+    if token in RUNTIME:
+        return "skip"
+    if re.search(r"[\s<>*{}…+()'\"=|]", token) or "..." in token:
+        return "skip"
+    if re.match(r"^[a-z][a-z0-9+.-]*://", token, re.I) or token.startswith(EXTERNAL_PREFIXES):
+        return "skip"
+    if token.startswith("-") or token.startswith("@"):
+        return "skip"
+    if "/" in token:
+        head = token.split("/")[0]
+        if re.match(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$", head, re.I) and not (ROOT / head).exists():
+            return "skip"   # a host without its scheme
+        return "path"
+    return "bare" if BARE_FILE.match(token) else "skip"
+
+
+def is_list_form(line: str) -> bool:
+    """An em dash that separates a term from its gloss rather than joining two
+    clauses: a table row, an index link, a bolded lead-in, a short term."""
+    t = line.strip()
+    if t.startswith("|") or re.match(r"^[-*] +\[.*\]\(.*\)", t):
+        return True
+    if not re.match(r"^([-*+]|\d+\.) ", t):
+        return False
+    body = re.sub(r"^([-*+]|\d+\.) +", "", t)
+    if re.match(r"^\*\*.+?\*\*[^—]{0,3}—", body):
+        return True
+    term = re.sub(r"`[^`]*`", "`x`", body.split("—")[0]).strip()
+    return len(term.split()) <= 6
+
+
+def check_prose(where: str, lines, report: Report):
+    fenced = examples = False
+    first_heading = next((i for i, l in enumerate(lines) if l.startswith("#")), -1)
+    for n, line in enumerate(lines, 1):
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if line.strip() == EXAMPLES_MARKER:
+            examples = True
+        elif line.startswith("## "):
+            examples = False
+        if fenced or examples:
+            continue
+        at = f"{where}:{n}"
+        if TITLE_CASE_HEADING.match(line) and n - 1 > first_heading:
+            report.warning.append(f"{at}  heading is title case, not sentence case")
+        if CURLY.search(line):
+            report.warning.append(f"{at}  curly quote")
+        if line.strip().startswith("#") or is_list_form(line):
+            continue
+        dashes = re.sub(r"`[^`]*`|\[[^\]]*\]", "", line).count("—")
+        if dashes:
+            report.warning.append(f"{at}  em dash in prose x{dashes}")
+        for pattern, label in ((AI_VOCABULARY, "AI vocabulary"), (FILLER, "filler phrase")):
+            found = sorted({m.group(0).lower() for m in pattern.finditer(line)})
+            if found:
+                report.warning.append(f"{at}  {label}: {', '.join(found)}")
+
+
+def check_concept(path: pathlib.Path, text: str, report: Report):
+    where = rel(path)
+    parsed = frontmatter(text)
+    if parsed is None:
+        report.conformance.append(f"{where}  frontmatter is missing or does not parse")
+        return
+    fields, resources = parsed
+    if not fields.get("type"):
+        report.conformance.append(f"{where}  missing a non-empty `type`")
+    if "status" in fields and fields["status"] not in STATUS:
+        report.producer.append(f"{where}  status must be draft, stable or deprecated, not `{fields['status']}`")
+    if "generated" not in fields:
+        report.producer.append(f"{where}  missing a `generated` block")
+    if fields.get("type") in DISPOSABLE and not DELETION_CONDITION.search(text):
+        report.producer.append(f"{where}  a {fields['type']} with no stated deletion condition")
+    stale = fields.get("stale_after")
+    if stale is not None and not re.match(r"^\d{4}-\d{2}-\d{2}$", stale):
+        report.producer.append(f"{where}  stale_after must be an ISO date, not `{stale}`")
+    for target in resources:
+        if not resolves(target, path.parent):
+            report.producer.append(f"{where}  frontmatter resource does not resolve  {target}")
+    if not KEBAB.match(path.name):
+        report.warning.append(f"{where}  filename is not kebab-case")
+
+
+def check_reserved(report: Report):
+    index = BUNDLE / "index.md"
+    log = BUNDLE / "log.md"
+    if not index.exists() or not log.exists():
+        report.conformance.append(".agents/docs  needs both index.md and log.md")
+        return
+
+    text = index.read_text()
+    parsed = frontmatter(text)
+    if parsed is None or set(parsed[0]) != {"okf_version"}:
+        report.conformance.append(".agents/docs/index.md  frontmatter must be exactly okf_version: '0.2'")
+    listed = set()
+    for idx in BUNDLE.rglob("index.md"):
+        for target in LINK_LIKE.findall(idx.read_text()):
+            listed.add((idx.parent / target.split("#")[0]).resolve())
+        if idx != index and frontmatter(idx.read_text()) is not None:
+            report.conformance.append(f"{rel(idx)}  only the bundle root index may declare frontmatter")
+    for doc in sorted(BUNDLE.rglob("*.md")):
+        if doc.name not in RESERVED and doc.resolve() not in listed:
+            report.producer.append(f"{rel(doc)}  is not listed in any index.md")
+
+    lines = log.read_text().split("\n")
+    if frontmatter(log.read_text()) is not None:
+        report.conformance.append(".agents/docs/log.md  carries frontmatter; it is a reserved file")
+    h1 = [l for l in lines if l.startswith("# ")]
+    if len(h1) != 1 or not lines[0].startswith("# "):
+        report.conformance.append(".agents/docs/log.md  must open with its one H1")
+    dates = []
+    for n, line in enumerate(lines, 1):
+        if line.startswith("## "):
+            if not re.match(r"^## \d{4}-\d{2}-\d{2}$", line):
+                report.conformance.append(f".agents/docs/log.md:{n}  section heading must be `## YYYY-MM-DD`")
+            else:
+                dates.append(line[3:])
+        elif line.startswith("### "):
+            report.conformance.append(f".agents/docs/log.md:{n}  entries are flat; no subsections")
+        elif re.match(r"^- ", line) and not line.startswith("- **"):
+            report.conformance.append(f".agents/docs/log.md:{n}  an entry opens with a bold lead clause")
+    if dates != sorted(dates, reverse=True) or len(dates) != len(set(dates)):
+        report.conformance.append(".agents/docs/log.md  date sections must be unique and newest first")
+
+
+def check_skills(report: Report):
+    link = ROOT / ".claude" / "skills"
+    if not link.is_symlink() or os.readlink(link) != "../.agents/skills":
+        report.producer.append(".claude/skills  must be a symlink to ../.agents/skills")
+    for skill in sorted(p for p in SKILLS.iterdir() if p.is_dir()):
+        path = skill / "SKILL.md"
+        if not path.exists():
+            report.conformance.append(f"{rel(skill)}  has no SKILL.md")
+            continue
+        parsed = frontmatter(path.read_text())
+        if parsed is None:
+            report.conformance.append(f"{rel(path)}  frontmatter is missing or does not parse")
+            continue
+        fields = parsed[0]
+        if fields.get("name") != skill.name:
+            report.conformance.append(f"{rel(path)}  name `{fields.get('name')}` does not match its directory")
+        if not fields.get("description"):
+            report.conformance.append(f"{rel(path)}  missing a description")
+    router = (ROOT / "AGENTS.md").read_text() if (ROOT / "AGENTS.md").exists() else ""
+    for skill in sorted(p.name for p in SKILLS.iterdir() if p.is_dir()):
+        if f"`{skill}`" not in router:
+            report.producer.append(f"AGENTS.md  never routes to the `{skill}` skill")
+
+
+def check_contracts(report: Report):
+    for path in sorted(ROOT.rglob("AGENTS.md")):
+        if any(part in SKIP_DIRS for part in path.parts):
+            continue
+        claude = path.with_name("CLAUDE.md")
+        if not claude.exists() or claude.read_text().strip() != "@AGENTS.md":
+            report.producer.append(f"{rel(path)}  needs a sibling CLAUDE.md containing only @AGENTS.md")
+
+
+def check_file(path: pathlib.Path, vendored, basenames, report: Report):
+    where = rel(path)
+    text = path.read_text()
+    lines = text.split("\n")
+    if path.is_relative_to(BUNDLE) and path.name not in RESERVED:
+        check_concept(path, text, report)
+
+    for n, line in enumerate(lines, 1):
+        if MACHINE_SPECIFIC.search(line):
+            report.producer.append(f"{where}:{n}  names a path on one machine; the bundle ships to every user")
+
+    first_heading = next((i for i, l in enumerate(lines) if l.startswith("#")), len(lines))
+    marker = next((i for i, l in enumerate(lines) if l.strip() == EXAMPLES_MARKER), None)
+    if marker is not None and marker < first_heading:
+        return
+    if where not in vendored:
+        check_prose(where, lines, report)
+
+    if where in vendored:
+        return
+    is_log = path.name == "log.md"
+    examples = fenced = False
+    for n, line in enumerate(lines, 1):
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if line.strip() == EXAMPLES_MARKER:
+            examples = True
+        elif line.startswith("## "):
+            examples = False
+        if examples or fenced:
+            continue
+        for token in PATH_LIKE.findall(line):
+            kind = classify(token)
+            if kind == "path" and not resolves(token, path.parent) and not is_log:
+                report.producer.append(f"{where}:{n}  unresolved path  {token}")
+            elif kind == "bare" and token not in basenames and not is_log:
+                report.warning.append(f"{where}:{n}  names no file in the tree  {token}")
+        for target in LINK_LIKE.findall(PATH_LIKE.sub("``", line)):
+            if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I) or target.startswith("#"):
+                continue
+            if not resolves(target, path.parent):
+                report.producer.append(f"{where}:{n}  broken link  {target}")
+
+
+def main() -> int:
+    strict = "--strict" in sys.argv
+    report = Report()
+    vendored = load_lock(report)
+    basenames = tree_basenames()
+    files = list(markdown_files())
+    for path in files:
+        check_file(path, vendored, basenames, report)
+    check_reserved(report)
+    check_skills(report)
+    check_contracts(report)
+
+    for label, entries in (("Conformance", report.conformance), ("Producer profile", report.producer),
+                           ("Warnings", report.warning)):
+        if entries:
+            print(f"\n{label} ({len(entries)})")
+            for entry in entries:
+                print(f"  {entry}")
+    print(f"\n{len(files)} files checked · {len(report.conformance)} conformance · "
+          f"{len(report.producer)} producer · {len(report.warning)} warnings")
+    failing = report.conformance or report.producer or (strict and report.warning)
+    return 1 if failing else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'CLI Command'
+  short_description: 'Add or change a CLI subcommand end to end'
+  default_prompt: 'Use $cli-command to add or change this subcommand, from dispatch to parity case.'

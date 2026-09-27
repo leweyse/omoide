@@ -1,27 +1,25 @@
 // Mutations: to-dos and events, alarms, collections, links, blocks, memories.
 #include "omoide.h"
 
-static void run_update(sqlite3 *db, const char *sql, const char *types, const char *a,
-                       const char *b) {
-  g_autoptr(sqlite3_stmt) stmt = types[1] ? db_query(db, sql, types, a, b)
-                                          : db_query(db, sql, types, a);
+static void run_update(sqlite3 *db, const char *sql, const char *types, const char *a, const char *b) {
+  g_autoptr(sqlite3_stmt) stmt = types[1] ? db_query(db, sql, types, a, b) : db_query(db, sql, types, a);
   db_step(stmt);
 }
 
 static int64_t reminder_count(sqlite3 *db, const char *item_id) {
-  g_autoptr(sqlite3_stmt) row = db_query(
-    db, "SELECT COUNT(*) AS n FROM reminders WHERE item_id = ?", "s", item_id);
+  g_autoptr(sqlite3_stmt) row =
+      db_query(db, "SELECT COUNT(*) AS n FROM reminders WHERE item_id = ?", "s", item_id);
   db_step(row);
   return col_int(row, "n");
 }
 
-static void insert_reminder(sqlite3 *db, const char *item_id, GDateTime *fire_at,
-                            const char *offset) {
+static void insert_reminder(sqlite3 *db, const char *item_id, GDateTime *fire_at, const char *offset) {
   g_autofree char *id = new_id(NULL);
   g_autofree char *when = iso(fire_at);
-  g_autoptr(sqlite3_stmt) insert = db_query(
-    db, "INSERT INTO reminders (id, item_id, fire_at, trigger_offset_min, status) "
-        "VALUES (?,?,?,CAST(? AS INTEGER),'pending')", "ssss", id, item_id, when, offset);
+  g_autoptr(sqlite3_stmt) insert = db_query(db,
+      "INSERT INTO reminders (id, item_id, fire_at, trigger_offset_min, status) "
+      "VALUES (?,?,?,CAST(? AS INTEGER),'pending')",
+      "ssss", id, item_id, when, offset);
   db_step(insert);
 }
 
@@ -31,24 +29,21 @@ static GDateTime *read_when(const char *text) {
   return when ? when : parse_when(text);
 }
 
-static const char *const ITEM_ACTIONS[] = { "get", "add", "edit", "promote", "complete",
-                                            "reopen", "cancel", NULL };
+static const char *const ITEM_ACTIONS[] = { "get", "add", "edit", "promote", "complete", "reopen", "cancel",
+  NULL };
 static const char *const KINDS[] = { "todo", "event", NULL };
 
 int cmd_item(int argc, char **argv) {
-  g_autofree char *id = NULL, *memory = NULL, *kind = NULL, *title = NULL, *at = NULL,
-                  *notes = NULL;
+  g_autofree char *id = NULL, *memory = NULL, *kind = NULL, *title = NULL, *at = NULL, *notes = NULL;
   gboolean clear_at = FALSE;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the item", "ID" },
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the item", "ID" },
     { "memory", 0, 0, G_OPTION_ARG_STRING, &memory, "the memory, for add", "ID" },
     { "kind", 0, 0, G_OPTION_ARG_STRING, &kind, "todo or event", "KIND" },
     { "title", 0, 0, G_OPTION_ARG_STRING, &title, NULL, "TEXT" },
     { "at", 0, 0, G_OPTION_ARG_STRING, &at, NULL, "WHEN" },
     { "notes", 0, 0, G_OPTION_ARG_STRING, &notes, NULL, "TEXT" },
     { "clear-at", 0, 0, G_OPTION_ARG_NONE, &clear_at, "drop the date, making it an undated to-do", NULL },
-    G_OPTION_ENTRY_NULL
-  };
+    G_OPTION_ENTRY_NULL };
   parse_options("item", entries, 1, &argc, &argv);
   const char *action = positional(argc, argv);
   require_option("item", "action", action);
@@ -75,8 +70,8 @@ int cmd_item(int argc, char **argv) {
     g_autoptr(GDateTime) when = at && *at ? read_when(at) : NULL;
     if (when) {
       g_autofree char *stamp = iso(when);
-      json_object_object_add(spec, g_str_equal(item_kind, "todo") ? "due_at" : "starts_at",
-                             json_object_new_string(stamp));
+      json_object_object_add(
+          spec, g_str_equal(item_kind, "todo") ? "due_at" : "starts_at", json_object_new_string(stamp));
     }
     g_autofree char *item_id = create_item(db, memory, NULL, spec, "manual");
     json_object *out = json_object_new_object();
@@ -100,8 +95,10 @@ int cmd_item(int argc, char **argv) {
       run_update(db, "UPDATE items SET completed_at = ? WHERE id = ?", "ss", stamp, id);
     } else if (g_str_equal(action, "reopen")) {
       run_update(db, "UPDATE items SET completed_at = NULL WHERE id = ?", "s", id, NULL);
-      run_update(db, "UPDATE reminders SET status = 'pending' WHERE item_id = ? "
-                     "AND status = 'cancelled'", "s", id, NULL);
+      run_update(db,
+          "UPDATE reminders SET status = 'pending' WHERE item_id = ? "
+          "AND status = 'cancelled'",
+          "s", id, NULL);
     } else if (g_str_equal(action, "cancel")) {
       run_update(db, "UPDATE items SET status = 'cancelled' WHERE id = ?", "s", id, NULL);
     } else if (g_str_equal(action, "edit")) {
@@ -114,16 +111,19 @@ int cmd_item(int argc, char **argv) {
       if (clear_at) {
         // An undated to-do is valid, so clearing has to drop the alarms with
         // it rather than leaving them pointing at nothing.
-        run_update(db, todo ? "UPDATE items SET due_at = NULL WHERE id = ?"
-                            : "UPDATE items SET starts_at = NULL WHERE id = ?", "s", id, NULL);
+        run_update(db,
+            todo ? "UPDATE items SET due_at = NULL WHERE id = ?"
+                 : "UPDATE items SET starts_at = NULL WHERE id = ?",
+            "s", id, NULL);
         run_update(db, "DELETE FROM reminders WHERE item_id = ?", "s", id, NULL);
       } else if (at && *at) {
         g_autoptr(GDateTime) when = read_when(at);
         if (!when)
           die(1, "could not read a date from: %s", at);
         g_autofree char *stamp = iso(when);
-        run_update(db, todo ? "UPDATE items SET due_at = ? WHERE id = ?"
-                            : "UPDATE items SET starts_at = ? WHERE id = ?", "ss", stamp, id);
+        run_update(db,
+            todo ? "UPDATE items SET due_at = ? WHERE id = ?" : "UPDATE items SET starts_at = ? WHERE id = ?",
+            "ss", stamp, id);
         if (!reminder_count(db, id))
           insert_reminder(db, id, when, NULL);
         reschedule_item(db, id);
@@ -140,14 +140,12 @@ static const char *const REMINDER_ACTIONS[] = { "add", "remove", "fire", NULL };
 
 int cmd_reminder(int argc, char **argv) {
   g_autofree char *id = NULL, *item_id = NULL, *at = NULL, *offset_text = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the reminder", "ID" },
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the reminder", "ID" },
     { "item", 0, 0, G_OPTION_ARG_STRING, &item_id, "the item", "ID" },
     { "at", 0, 0, G_OPTION_ARG_STRING, &at, NULL, "WHEN" },
-    { "offset", 0, 0, G_OPTION_ARG_STRING, &offset_text,
-      "minutes relative to the item's time, e.g. -30", "MIN" },
-    G_OPTION_ENTRY_NULL
-  };
+    { "offset", 0, 0, G_OPTION_ARG_STRING, &offset_text, "minutes relative to the item's time, e.g. -30",
+        "MIN" },
+    G_OPTION_ENTRY_NULL };
   parse_options("reminder", entries, 1, &argc, &argv);
   const char *action = positional(argc, argv);
   require_option("reminder", "action", action);
@@ -204,12 +202,10 @@ static char *collection_id(sqlite3 *db, const char *name) {
 
 int cmd_collection(int argc, char **argv) {
   g_autofree char *name = NULL, *to = NULL, *memory = NULL;
-  const GOptionEntry entries[] = {
-    { "name", 0, 0, G_OPTION_ARG_STRING, &name, "the collection", "NAME" },
+  const GOptionEntry entries[] = { { "name", 0, 0, G_OPTION_ARG_STRING, &name, "the collection", "NAME" },
     { "to", 0, 0, G_OPTION_ARG_STRING, &to, "the new name, for rename", "NAME" },
     { "memory", 0, 0, G_OPTION_ARG_STRING, &memory, "the memory, for add and remove", "ID" },
-    G_OPTION_ENTRY_NULL
-  };
+    G_OPTION_ENTRY_NULL };
   parse_options("collection", entries, 1, &argc, &argv);
   const char *action = positional(argc, argv);
   require_option("collection", "action", action);
@@ -220,9 +216,8 @@ int cmd_collection(int argc, char **argv) {
   g_autofree char *stamp = iso_now();
   if (g_str_equal(action, "new")) {
     g_autofree char *id = new_id(NULL);
-    g_autoptr(sqlite3_stmt) insert = db_query(
-      db, "INSERT OR IGNORE INTO collections (id, name, created_at) VALUES (?,?,?)",
-      "sss", id, name, stamp);
+    g_autoptr(sqlite3_stmt) insert = db_query(db,
+        "INSERT OR IGNORE INTO collections (id, name, created_at) VALUES (?,?,?)", "sss", id, name, stamp);
     db_step(insert);
   } else if (g_str_equal(action, "rename")) {
     g_autofree char *target = to ? strip_space(to) : g_strdup("");
@@ -231,8 +226,8 @@ int cmd_collection(int argc, char **argv) {
     g_autofree char *id = collection_id(db, name);
     if (!id)
       die(1, "no such collection: %s", name);
-    g_autoptr(sqlite3_stmt) clash = db_query(
-      db, "SELECT id FROM collections WHERE name = ? AND id != ?", "ss", target, id);
+    g_autoptr(sqlite3_stmt) clash =
+        db_query(db, "SELECT id FROM collections WHERE name = ? AND id != ?", "ss", target, id);
     if (db_step(clash))
       die(2, "a collection called '%s' already exists", target);
     run_update(db, "UPDATE collections SET name = ? WHERE id = ?", "ss", target, id);
@@ -248,17 +243,19 @@ int cmd_collection(int argc, char **argv) {
     if (!id && g_str_equal(action, "add")) {
       id = new_id(NULL);
       g_autoptr(sqlite3_stmt) insert = db_query(
-        db, "INSERT INTO collections (id, name, created_at) VALUES (?,?,?)", "sss", id, name, stamp);
+          db, "INSERT INTO collections (id, name, created_at) VALUES (?,?,?)", "sss", id, name, stamp);
       db_step(insert);
     } else if (!id) {
       die(1, "no such collection: %s", name);
     }
     if (g_str_equal(action, "add"))
-      run_update(db, "INSERT OR IGNORE INTO memory_collections (memory_id, collection_id) "
-                     "VALUES (?,?)", "ss", memory, id);
+      run_update(db,
+          "INSERT OR IGNORE INTO memory_collections (memory_id, collection_id) "
+          "VALUES (?,?)",
+          "ss", memory, id);
     else
-      run_update(db, "DELETE FROM memory_collections WHERE memory_id = ? AND collection_id = ?",
-                 "ss", memory, id);
+      run_update(
+          db, "DELETE FROM memory_collections WHERE memory_id = ? AND collection_id = ?", "ss", memory, id);
   }
   write_index(db);
   shell_ipc(IPC_TARGET, "refresh", NULL);
@@ -269,11 +266,8 @@ static const char *const LINK_ACTIONS[] = { "add", "remove", NULL };
 
 int cmd_link(int argc, char **argv) {
   g_autofree char *from = NULL, *to = NULL;
-  const GOptionEntry entries[] = {
-    { "from", 0, 0, G_OPTION_ARG_STRING, &from, NULL, "ID" },
-    { "to", 0, 0, G_OPTION_ARG_STRING, &to, NULL, "ID" },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "from", 0, 0, G_OPTION_ARG_STRING, &from, NULL, "ID" },
+    { "to", 0, 0, G_OPTION_ARG_STRING, &to, NULL, "ID" }, G_OPTION_ENTRY_NULL };
   parse_options("link", entries, 1, &argc, &argv);
   const char *action = positional(argc, argv);
   require_option("link", "action", action);
@@ -287,9 +281,8 @@ int cmd_link(int argc, char **argv) {
   const char *low = ordered ? from : to, *high = ordered ? to : from;
   if (g_str_equal(action, "add")) {
     g_autofree char *stamp = iso_now();
-    g_autoptr(sqlite3_stmt) insert = db_query(
-      db, "INSERT OR IGNORE INTO links (from_id, to_id, created_at) VALUES (?,?,?)",
-      "sss", low, high, stamp);
+    g_autoptr(sqlite3_stmt) insert = db_query(db,
+        "INSERT OR IGNORE INTO links (from_id, to_id, created_at) VALUES (?,?,?)", "sss", low, high, stamp);
     db_step(insert);
   } else {
     run_update(db, "DELETE FROM links WHERE from_id = ? AND to_id = ?", "ss", low, high);
@@ -304,11 +297,9 @@ static const char *const BLOCK_ACTIONS[] = { "set", "delete", NULL };
 // silently overwrite what the user corrected.
 int cmd_block(int argc, char **argv) {
   g_autofree char *id = NULL, *payload_text = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the block", "ID" },
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the block", "ID" },
     { "payload", 0, 0, G_OPTION_ARG_STRING, &payload_text, "the new payload, as JSON", "JSON" },
-    G_OPTION_ENTRY_NULL
-  };
+    G_OPTION_ENTRY_NULL };
   parse_options("block", entries, 1, &argc, &argv);
   const char *action = positional(argc, argv);
   require_option("block", "action", action);
@@ -331,8 +322,7 @@ int cmd_block(int argc, char **argv) {
     json_tokener_set_flags(tok, JSON_TOKENER_STRICT);
     if (!payload_text)
       die(1, "--payload must be JSON");
-    g_autoptr(json_object) payload = json_tokener_parse_ex(tok, payload_text,
-                                                           (int)strlen(payload_text));
+    g_autoptr(json_object) payload = json_tokener_parse_ex(tok, payload_text, (int)strlen(payload_text));
     // A literal null parses to no object at all, and is still valid JSON.
     if (json_tokener_get_error(tok) != json_tokener_success)
       die(1, "--payload must be JSON");
@@ -340,9 +330,10 @@ int cmd_block(int argc, char **argv) {
       if (!g_ascii_isspace(*rest))
         die(1, "--payload must be JSON");
     run_update(db, "UPDATE blocks SET payload = ?, edited = 1 WHERE id = ?", "ss",
-               payload ? json_object_to_json_string_ext(payload, JSON_C_TO_STRING_PLAIN
-                                                        | JSON_C_TO_STRING_NOSLASHESCAPE)
-                       : "null", id);
+        payload
+            ? json_object_to_json_string_ext(payload, JSON_C_TO_STRING_PLAIN | JSON_C_TO_STRING_NOSLASHESCAPE)
+            : "null",
+        id);
   }
   refresh_fts(db, memory_id);
   write_index(db);
@@ -352,10 +343,8 @@ int cmd_block(int argc, char **argv) {
 
 int cmd_delete(int argc, char **argv) {
   g_autofree char *id = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
+    G_OPTION_ENTRY_NULL };
   parse_options("delete", entries, 0, &argc, &argv);
   require_option("delete", "--id", id);
   sqlite3 *db = db_open(true);
@@ -368,12 +357,9 @@ int cmd_delete(int argc, char **argv) {
 // Edit a memory's own fields. The blocks are `block set`'s business.
 int cmd_memory(int argc, char **argv) {
   g_autofree char *id = NULL, *title = NULL, *lede = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the memory", "ID" },
     { "title", 0, 0, G_OPTION_ARG_STRING, &title, NULL, "TEXT" },
-    { "lede", 0, 0, G_OPTION_ARG_STRING, &lede, NULL, "TEXT" },
-    G_OPTION_ENTRY_NULL
-  };
+    { "lede", 0, 0, G_OPTION_ARG_STRING, &lede, NULL, "TEXT" }, G_OPTION_ENTRY_NULL };
   parse_options("memory", entries, 0, &argc, &argv);
   require_option("memory", "--id", id);
   sqlite3 *db = db_open(true);
@@ -387,14 +373,14 @@ int cmd_memory(int argc, char **argv) {
     g_autofree char *clean = strip_space(title);
     if (!*clean)
       die(2, "a memory needs a title");
-    g_autoptr(sqlite3_stmt) update = db_query(
-      db, "UPDATE memories SET title = ?, updated_at = ? WHERE id = ?", "sss", clean, stamp, id);
+    g_autoptr(sqlite3_stmt) update =
+        db_query(db, "UPDATE memories SET title = ?, updated_at = ? WHERE id = ?", "sss", clean, stamp, id);
     db_step(update);
   }
   if (lede) {
     g_autofree char *clean = strip_space(lede);
-    g_autoptr(sqlite3_stmt) update = db_query(
-      db, "UPDATE memories SET lede = ?, updated_at = ? WHERE id = ?", "sss", clean, stamp, id);
+    g_autoptr(sqlite3_stmt) update =
+        db_query(db, "UPDATE memories SET lede = ?, updated_at = ? WHERE id = ?", "sss", clean, stamp, id);
     db_step(update);
   }
   refresh_fts(db, id);

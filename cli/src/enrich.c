@@ -12,16 +12,16 @@
 // starts being a way to fill a database or the session's timer table. A
 // capture is OCR of someone else's page, so the number is not ours to trust.
 enum {
-  MAX_BLOCKS = 24,        // a real capture yields four or five
+  MAX_BLOCKS = 24,   // a real capture yields four or five
   MAX_LIST_ITEMS = 20,
   MAX_TODOS = 20,
   MAX_EVENTS = 8,
   MAX_REMINDERS = 4,
-  MAX_TITLE = 200,        // the library truncates at 80
+  MAX_TITLE = 200,   // the library truncates at 80
   MAX_LEDE = 400,
-  MAX_BODY = 4000,        // summary, text, quote, code
+  MAX_BODY = 4000,   // summary, text, quote, code
   MAX_TAG = 40,
-  MAX_TEXT = 2000,        // default ceiling for every clean_text field
+  MAX_TEXT = 2000,   // default ceiling for every clean_text field
   AGENT_OUTPUT_CAP = 1024 * 1024,   // a JSON answer that needs a megabyte is not one
 };
 
@@ -29,8 +29,7 @@ static const char *const VISION_CAPABLE[] = { "claude", "codex", "gemini", "open
 static const char *const PLAIN_MODEL[] = { "ollama", "aichat", NULL };
 // Renderer-owned labels. If a model sends one as a list heading it is dropped,
 // so headings cannot drift in wording or language between captures.
-static const char *const CANONICAL_LABELS[] = { "summary", "event date", "to-dos", "todos",
-                                                "to dos", NULL };
+static const char *const CANONICAL_LABELS[] = { "summary", "event date", "to-dos", "todos", "to dos", NULL };
 
 static const char prompt_template[] = {
 #embed "../../prompts/enrich.txt"
@@ -64,8 +63,9 @@ char *http_url(json_object *value) {
 // else's web page.
 static json_object *clean_reminders(json_object *raw) {
   json_object *out = json_object_new_array();
-  for (size_t i = 0; json_object_is_type(raw, json_type_array)
-                     && i < json_object_array_length(raw) && i < MAX_REMINDERS; i++) {
+  for (size_t i = 0;
+      json_object_is_type(raw, json_type_array) && i < json_object_array_length(raw) && i < MAX_REMINDERS;
+      i++) {
     json_object *entry = json_object_array_get_idx(raw, i);
     if (json_object_is_type(entry, json_type_object)
         && (json_object_object_get_ex(entry, "at", NULL)
@@ -143,8 +143,8 @@ static json_object *validate_blocks(json_object *raw_blocks) {
       json_object_object_add(payload, "chip", text_field(raw, "chip"));
       json_object_object_add(block, "payload", payload);
 
-    } else if (g_str_equal(kind, "summary") || g_str_equal(kind, "text")
-               || g_str_equal(kind, "quote") || g_str_equal(kind, "code")) {
+    } else if (g_str_equal(kind, "summary") || g_str_equal(kind, "text") || g_str_equal(kind, "quote")
+        || g_str_equal(kind, "code")) {
       // Not clean_text: a summary keeps its newlines. Still capped.
       json_object *text = json_get(raw, "text");
       g_autofree char *raw_text = truthy(text) ? as_text(text) : g_strdup("");
@@ -166,7 +166,8 @@ static json_object *validate_blocks(json_object *raw_blocks) {
       json_object *items = json_object_new_array();
       json_object *entries = json_get(raw, "items");
       for (size_t i = 0; json_object_is_type(entries, json_type_array)
-                         && i < json_object_array_length(entries) && i < MAX_LIST_ITEMS; i++) {
+          && i < json_object_array_length(entries) && i < MAX_LIST_ITEMS;
+          i++) {
         json_object *entry = json_object_array_get_idx(entries, i);
         g_autofree char *text = NULL, *label = NULL;
         if (json_object_is_type(entry, json_type_string)) {
@@ -193,8 +194,8 @@ static json_object *validate_blocks(json_object *raw_blocks) {
       for (size_t n = strlen(canonical); n > 0 && canonical[n - 1] == ':'; n--)
         canonical[n - 1] = '\0';
       json_object *payload = json_object_new_object();
-      json_object_object_add(payload, "heading",
-                             json_object_new_string(in_list(canonical, CANONICAL_LABELS) ? "" : heading));
+      json_object_object_add(
+          payload, "heading", json_object_new_string(in_list(canonical, CANONICAL_LABELS) ? "" : heading));
       json_object_object_add(payload, "ordered", json_object_new_boolean(truthy(json_get(raw, "ordered"))));
       json_object_object_add(payload, "items", items);
       json_object_object_add(block, "payload", payload);
@@ -203,8 +204,8 @@ static json_object *validate_blocks(json_object *raw_blocks) {
       // Every event is created active and gets an alarm, so this is the one
       // block type where the count alone decides how many timers a single
       // capture can put on the machine.
-      g_autoptr(GDateTime) starts = events < MAX_EVENTS
-        ? parse_value(either(raw, "start", "starts_at")) : NULL;
+      g_autoptr(GDateTime) starts =
+          events < MAX_EVENTS ? parse_value(either(raw, "start", "starts_at")) : NULL;
       if (!starts) {
         json_object_put(block);
         continue;
@@ -226,15 +227,16 @@ static json_object *validate_blocks(json_object *raw_blocks) {
       json_object_object_add(item, "map_url", json_object_new_string(map_url));
       json_object_object_add(item, "remind", clean_reminders(json_get(raw, "remind")));
       json_object_object_add(item, "suggested",
-                             json_object_object_get_ex(raw, "suggested", NULL)
-                               ? json_object_get(suggested) : json_object_new_boolean(true));
+          json_object_object_get_ex(raw, "suggested", NULL) ? json_object_get(suggested)
+                                                            : json_object_new_boolean(true));
       json_object_object_add(block, "item", item);
 
     } else if (g_str_equal(kind, "todos")) {
       json_object *items = json_object_new_array();
       json_object *entries = json_get(raw, "items");
       for (size_t i = 0; json_object_is_type(entries, json_type_array)
-                         && i < json_object_array_length(entries) && i < MAX_TODOS; i++) {
+          && i < json_object_array_length(entries) && i < MAX_TODOS;
+          i++) {
         json_object *entry = json_object_array_get_idx(entries, i);
         if (!json_object_is_type(entry, json_type_object))
           continue;
@@ -251,9 +253,9 @@ static json_object *validate_blocks(json_object *raw_blocks) {
         // Suggested when the flag is missing, so an under-specified response
         // errs toward scheduling nothing.
         json_object_object_add(todo, "suggested",
-                               json_object_object_get_ex(entry, "suggested", NULL)
-                                 ? json_object_get(json_get(entry, "suggested"))
-                                 : json_object_new_boolean(true));
+            json_object_object_get_ex(entry, "suggested", NULL)
+                ? json_object_get(json_get(entry, "suggested"))
+                : json_object_new_boolean(true));
         json_object_array_add(items, todo);
       }
       if (json_object_array_length(items) == 0) {
@@ -316,8 +318,7 @@ static json_object *extract_json(const char *text) {
         }
       }
     }
-    if (json_object_object_get_ex(parsed, "blocks", NULL)
-        || json_object_object_get_ex(parsed, "title", NULL))
+    if (json_object_object_get_ex(parsed, "blocks", NULL) || json_object_object_get_ex(parsed, "title", NULL))
       return parsed;
   }
   json_object_put(parsed);
@@ -355,8 +356,8 @@ static void add_args(GStrvBuilder *argv, const char *const *more) {
 // it next. These are general coding agents with a shell, so the prompt has to
 // arrive with their tools already shut off rather than relying on the model
 // to decline.
-GStrv harden(const char *const *base, const char *provider, bool vision,
-             const char *image_path, GHashTable *env) {
+GStrv harden(
+    const char *const *base, const char *provider, bool vision, const char *image_path, GHashTable *env) {
   g_autoptr(GStrvBuilder) argv = g_strv_builder_new();
   add_args(argv, base);
   g_autofree char *folder = image_path ? g_path_get_dirname(image_path) : NULL;
@@ -375,8 +376,7 @@ GStrv harden(const char *const *base, const char *provider, bool vision,
     // the shell tool is switched off outright; the sandbox stays as the
     // backstop. --ephemeral keeps a picture of the screen out of codex's
     // session files on disk.
-    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral",
-                            "-c", "features.shell_tool=false", NULL);
+    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "-i", image_path, NULL);
   } else if (g_strcmp0(provider, "gemini") == 0) {
@@ -400,7 +400,7 @@ GStrv harden(const char *const *base, const char *provider, bool vision,
       g_autoptr(json_object) config = json_object_new_object();
       json_object_object_add(config, "permission", json_object_get(deny));
       g_hash_table_insert(env, g_strdup("OPENCODE_CONFIG_CONTENT"),
-                          g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
+          g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
     }
     g_strv_builder_add(argv, "--pure");
     if (attach)
@@ -409,8 +409,7 @@ GStrv harden(const char *const *base, const char *provider, bool vision,
   return g_strv_builder_end(argv);
 }
 
-static char *build_prompt(const char *note, const char *ocr_text, const char *image_path,
-                          bool vision) {
+static char *build_prompt(const char *note, const char *ocr_text, const char *image_path, bool vision) {
   g_autoptr(GDateTime) now = now_utc();
   g_autoptr(GDateTime) local = g_date_time_to_local(now);
   g_autofree char *note_capped = truncate_chars(note ? note : "", 4000);
@@ -423,16 +422,16 @@ static char *build_prompt(const char *note, const char *ocr_text, const char *im
   g_autoptr(json_object) context = json_object_new_object();
   json_object_object_add(context, "note", json_object_new_string(note_capped));
   json_object_object_add(context, "ocr_text", json_object_new_string(ocr_capped));
-  json_object_object_add(context, "image_path",
-                         json_object_new_string(vision && image_path ? image_path : ""));
+  json_object_object_add(
+      context, "image_path", json_object_new_string(vision && image_path ? image_path : ""));
   json_object_object_add(context, "now_iso", json_object_new_string(now_iso));
   json_object_object_add(context, "now_local", json_object_new_string(now_local));
-  json_object_object_add(context, "timezone",
-                         json_object_new_string(g_date_time_get_timezone_abbreviation(local)));
+  json_object_object_add(
+      context, "timezone", json_object_new_string(g_date_time_get_timezone_abbreviation(local)));
   return g_strconcat(prompt_template, "\n\nINPUT:\n",
-                     json_object_to_json_string_ext(context, JSON_C_TO_STRING_PRETTY
-                                                    | JSON_C_TO_STRING_SPACED
-                                                    | JSON_C_TO_STRING_NOSLASHESCAPE), NULL);
+      json_object_to_json_string_ext(
+          context, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE),
+      NULL);
 }
 
 static size_t length_of(json_object *value) {
@@ -458,8 +457,8 @@ static char *count_text(size_t n) {
 
 // Enrich, or say why not. Nothing here may take a capture down with it, and
 // the reason it failed survives to the memory's error column.
-json_object *run_ai(const char *note, const char *ocr_text, const char *image_path,
-                    json_object *ai, char **reason) {
+json_object *run_ai(
+    const char *note, const char *ocr_text, const char *image_path, json_object *ai, char **reason) {
   g_auto(GStrv) resolved = resolve_provider(ai);
   if (!resolved) {
     log_event("ai.skip", "reason", "no provider resolved", NULL);
@@ -467,18 +466,17 @@ json_object *run_ai(const char *note, const char *ocr_text, const char *image_pa
     return NULL;
   }
 
-  g_autofree char *provider = truthy(json_get(ai, "provider")) ? as_text(json_get(ai, "provider"))
-                                                                : g_strdup("");
+  g_autofree char *provider =
+      truthy(json_get(ai, "provider")) ? as_text(json_get(ai, "provider")) : g_strdup("");
   const bool custom = truthy(json_get(ai, "command"));
   g_autofree char *vision_mode = as_text(json_get(ai, "visionMode"));
   const bool vision = g_str_equal(vision_mode, "image") && image_path && *image_path
-                      && (in_list(provider, VISION_CAPABLE) || custom);
+      && (in_list(provider, VISION_CAPABLE) || custom);
   const bool hardened = !custom && !in_list(provider, PLAIN_MODEL);
 
   g_autoptr(GHashTable) env = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-  g_auto(GStrv) argv = hardened
-    ? harden((const char *const *)resolved, provider, vision, image_path, env)
-    : g_strdupv(resolved);
+  g_auto(GStrv) argv = hardened ? harden((const char *const *)resolved, provider, vision, image_path, env)
+                                : g_strdupv(resolved);
 
   // An empty directory of our own, not whatever the shell happened to be
   // started in. Every provider scopes part of what it can touch to its working
@@ -489,20 +487,19 @@ json_object *run_ai(const char *note, const char *ocr_text, const char *image_pa
     g_clear_pointer(&workdir, g_free);
 
   json_object *timeout_ms = json_get(ai, "timeoutMs");
-  const double timeout = MAX(5.0, (truthy(timeout_ms) ? json_object_get_double(timeout_ms)
-                                                      : 45000.0) / 1000.0);
+  const double timeout =
+      MAX(5.0, (truthy(timeout_ms) ? json_object_get_double(timeout_ms) : 45000.0) / 1000.0);
   const gint64 started = g_get_monotonic_time();
   g_autofree char *joined = g_strjoinv(" ", argv);
   g_autofree char *timeout_text = py_float(timeout);
   g_autofree char *note_len = count_text((size_t)g_utf8_strlen(note ? note : "", -1));
   g_autofree char *ocr_len = count_text((size_t)g_utf8_strlen(ocr_text ? ocr_text : "", -1));
-  log_event("ai.start", "argv", joined, "vision", vision ? "True" : "False",
-            "timeout", timeout_text, "hardened", hardened ? "True" : "False",
-            "note_len", note_len, "ocr_len", ocr_len, NULL);
+  log_event("ai.start", "argv", joined, "vision", vision ? "True" : "False", "timeout", timeout_text,
+      "hardened", hardened ? "True" : "False", "note_len", note_len, "ocr_len", ocr_len, NULL);
 
   g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision);
-  g_auto(ProcResult) proc = proc_run_agent((const char *const *)argv, prompt, timeout,
-                                           workdir, env, AGENT_OUTPUT_CAP);
+  g_auto(ProcResult) proc =
+      proc_run_agent((const char *const *)argv, prompt, timeout, workdir, env, AGENT_OUTPUT_CAP);
   g_autofree char *seconds = seconds_since(started);
 
   if (!proc.started) {
@@ -520,8 +517,7 @@ json_object *run_ai(const char *note, const char *ocr_text, const char *image_pa
   g_autofree char *rc = g_strdup_printf("%d", proc.status);
   if (proc.capped) {
     log_event("ai.exit", "rc", rc, "seconds", seconds, "detail", "output cap", NULL);
-    *reason = g_strdup_printf("%s printed more than %dKB and was stopped", argv[0],
-                              AGENT_OUTPUT_CAP / 1024);
+    *reason = g_strdup_printf("%s printed more than %dKB and was stopped", argv[0], AGENT_OUTPUT_CAP / 1024);
     return NULL;
   }
   if (proc.status != 0) {
@@ -556,24 +552,24 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
   g_autofree char *title = clean_text(json_get(enriched, "title"), MAX_TITLE);
   g_autofree char *lede = clean_text(json_get(enriched, "lede"), MAX_LEDE);
   if (*title) {
-    g_autoptr(sqlite3_stmt) q = db_query(db, "UPDATE memories SET title = ? WHERE id = ?",
-                                         "ss", title, memory_id);
+    g_autoptr(sqlite3_stmt) q =
+        db_query(db, "UPDATE memories SET title = ? WHERE id = ?", "ss", title, memory_id);
     db_step(q);
   }
   if (*lede) {
-    g_autoptr(sqlite3_stmt) q = db_query(db, "UPDATE memories SET lede = ? WHERE id = ?",
-                                         "ss", lede, memory_id);
+    g_autoptr(sqlite3_stmt) q =
+        db_query(db, "UPDATE memories SET lede = ? WHERE id = ?", "ss", lede, memory_id);
     db_step(q);
   }
   json_object *tags = json_get(enriched, "tags");
-  for (size_t i = 0; json_object_is_type(tags, json_type_array)
-                     && i < json_object_array_length(tags) && i < 8; i++) {
+  for (size_t i = 0;
+      json_object_is_type(tags, json_type_array) && i < json_object_array_length(tags) && i < 8; i++) {
     g_autofree char *clean = clean_text(json_object_array_get_idx(tags, i), MAX_TAG);
     g_autofree char *tag = g_utf8_strdown(clean, -1);
     if (!*tag)
       continue;
-    g_autoptr(sqlite3_stmt) q = db_query(
-      db, "INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?,?)", "ss", memory_id, tag);
+    g_autoptr(sqlite3_stmt) q =
+        db_query(db, "INSERT OR IGNORE INTO tags (memory_id, tag) VALUES (?,?)", "ss", memory_id, tag);
     db_step(q);
   }
 
@@ -583,13 +579,12 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
     json_object *block = json_object_array_get_idx(blocks, i);
     const char *type = json_get_str(block, "type");
     if (g_str_equal(type, "todos")) {
-      g_autofree char *block_id = add_block(db, memory_id, "todos",
-                                            json_tokener_parse("{\"item_ids\": []}"), "ai");
+      g_autofree char *block_id =
+          add_block(db, memory_id, "todos", json_tokener_parse("{\"item_ids\": []}"), "ai");
       json_object *ids = json_object_new_array();
       json_object *items = json_get(block, "items");
       for (size_t t = 0; t < json_object_array_length(items); t++) {
-        char *item_id = create_item(db, memory_id, block_id,
-                                    json_object_array_get_idx(items, t), "ai");
+        char *item_id = create_item(db, memory_id, block_id, json_object_array_get_idx(items, t), "ai");
         json_object_array_add(ids, json_object_new_string(item_id));
         g_free(item_id);
         created++;
@@ -598,22 +593,22 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
       json_object_object_add(payload, "item_ids", ids);
       set_block_payload(db, block_id, payload);
     } else if (g_str_equal(type, "event")) {
-      g_autofree char *block_id = add_block(db, memory_id, "event",
-                                            json_tokener_parse("{\"item_id\": \"\"}"), "ai");
+      g_autofree char *block_id =
+          add_block(db, memory_id, "event", json_tokener_parse("{\"item_id\": \"\"}"), "ai");
       g_autofree char *item_id = create_item(db, memory_id, block_id, json_get(block, "item"), "ai");
       created++;
       json_object *payload = json_object_new_object();
       json_object_object_add(payload, "item_id", json_object_new_string(item_id));
       set_block_payload(db, block_id, payload);
     } else {
-      g_autofree char *block_id = add_block(db, memory_id, type,
-                                            json_object_get(json_get(block, "payload")), "ai");
+      g_autofree char *block_id =
+          add_block(db, memory_id, type, json_object_get(json_get(block, "payload")), "ai");
     }
   }
 
   // Cleared, so a reason from an earlier attempt cannot outlive it.
-  g_autoptr(sqlite3_stmt) done = db_query(
-    db, "UPDATE memories SET ai_status = 'ok', ai_error = NULL WHERE id = ?", "s", memory_id);
+  g_autoptr(sqlite3_stmt) done =
+      db_query(db, "UPDATE memories SET ai_status = 'ok', ai_error = NULL WHERE id = ?", "s", memory_id);
   db_step(done);
   return created;
 }
@@ -622,7 +617,8 @@ int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enrich
 // fires on an explicit "remind me" -- inferring intent from arbitrary prose is
 // exactly the guesswork the model is for.
 #define REMIND_PREFIX "(?i)^\\s*(?:please\\s+)?remind\\s+me\\s+(?:to\\s+|that\\s+|about\\s+)?"
-#define TRAILING_WHEN "(?i)\\b(later\\s+today|tonight|tomorrow|today|in\\s+\\d+\\s*[a-z]+|" \
+#define TRAILING_WHEN \
+  "(?i)\\b(later\\s+today|tonight|tomorrow|today|in\\s+\\d+\\s*[a-z]+|" \
   "on\\s+\\w+|at\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?|next\\s+\\w+|" \
   "mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|" \
   "fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\b"

@@ -97,8 +97,8 @@ char *strip_space(const char *text) {
 }
 
 char *one_line(const char *text, long limit) {
-  g_autofree char *clean = re_replace("[\\x{00}-\\x{08}\\x{0b}-\\x{1f}\\x{7f}-\\x{9f}]",
-                                      text ? text : "", "");
+  g_autofree char *clean =
+      re_replace("[\\x{00}-\\x{08}\\x{0b}-\\x{1f}\\x{7f}-\\x{9f}]", text ? text : "", "");
   g_autofree char *flat = re_replace("\\s+", clean, " ");
   g_strstrip(flat);
   return truncate_chars(flat, limit);
@@ -172,9 +172,7 @@ char *as_text(json_object *value) {
 bool as_int(json_object *value, int64_t *out) {
   switch (json_object_get_type(value)) {
     case json_type_boolean:
-    case json_type_int:
-      *out = json_object_get_int64(value);
-      return true;
+    case json_type_int: *out = json_object_get_int64(value); return true;
     case json_type_double: {
       const double d = json_object_get_double(value);
       if (d != d || d > 9e18 || d < -9e18)
@@ -188,8 +186,7 @@ bool as_int(json_object *value, int64_t *out) {
         memmove(text, text + 1, strlen(text));
       return g_ascii_string_to_signed(text, 10, INT64_MIN, INT64_MAX, out, NULL);
     }
-    default:
-      return false;
+    default: return false;
   }
 }
 
@@ -205,8 +202,9 @@ json_object *settings(void) {
   json_object_object_add(merged, "captureMode", json_object_new_string("smart"));
 
   const char *override = g_getenv("OMOIDE_SHELL_JSON");
-  g_autofree char *path = override && *override ? g_strdup(override)
-    : g_build_filename(g_get_home_dir(), ".config/omarchy/shell.json", NULL);
+  g_autofree char *path = override && *override
+      ? g_strdup(override)
+      : g_build_filename(g_get_home_dir(), ".config/omarchy/shell.json", NULL);
   g_autoptr(json_object) config = json_object_from_file(path);
 
   // Placed in the bar, the widget's entry lives in its section; otherwise in
@@ -216,8 +214,8 @@ json_object *settings(void) {
   const char *sections[] = { "left", "center", "right" };
   for (size_t s = 0; s < G_N_ELEMENTS(sections); s++) {
     json_object *list = json_get(layout, sections[s]);
-    for (size_t i = 0; json_object_is_type(list, json_type_array)
-                       && i < json_object_array_length(list); i++) {
+    for (size_t i = 0; json_object_is_type(list, json_type_array) && i < json_object_array_length(list);
+        i++) {
       json_object *candidate = json_object_array_get_idx(list, i);
       if (g_strcmp0(json_get_str(candidate, "id"), PLUGIN_ID) == 0) {
         entry = candidate;
@@ -227,8 +225,8 @@ json_object *settings(void) {
   }
   if (!entry) {
     json_object *plugins = json_get(config, "plugins");
-    for (size_t i = 0; json_object_is_type(plugins, json_type_array)
-                       && i < json_object_array_length(plugins); i++) {
+    for (size_t i = 0; json_object_is_type(plugins, json_type_array) && i < json_object_array_length(plugins);
+        i++) {
       json_object *candidate = json_object_array_get_idx(plugins, i);
       if (g_strcmp0(json_get_str(candidate, "id"), PLUGIN_ID) == 0)
         entry = candidate;
@@ -241,10 +239,9 @@ json_object *settings(void) {
     if (g_str_equal(key, "id"))
       continue;
     json_object *existing = json_get(merged, key);
-    if (json_object_is_type(value, json_type_object)
-        && json_object_is_type(existing, json_type_object)) {
+    if (json_object_is_type(value, json_type_object) && json_object_is_type(existing, json_type_object)) {
       json_object_object_foreach(value, inner, inner_value)
-        json_object_object_add(existing, inner, json_object_get(inner_value));
+          json_object_object_add(existing, inner, json_object_get(inner_value));
     } else {
       json_object_object_add(merged, key, json_object_get(value));
     }
@@ -265,7 +262,8 @@ const char *plugin_version(void) {
     g_autoptr(json_object) manifest = json_tokener_parse(manifest_json);
     json_object *field = NULL;
     const char *value = manifest && json_object_object_get_ex(manifest, "version", &field)
-      ? json_object_get_string(field) : NULL;
+        ? json_object_get_string(field)
+        : NULL;
     version = g_strdup(value ? value : "unknown");
   }
   return version;

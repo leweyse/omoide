@@ -19,12 +19,23 @@ static char *hypr_bindings_path(void) {
 // drew itself.
 static char *bindings_snippet(const char *accel) {
   return g_strdup_printf("o.bind(\"%s\", \"Omoide capture\",\n"
-                         "       \"omarchy-shell -q %s toggleChooser\")", accel, IPC_TARGET);
+                         "       \"omarchy-shell -q %s toggleChooser\")",
+      accel, IPC_TARGET);
 }
 
-static const struct { const char *name; int bit; } MOD_BITS[] = {
-  { "SHIFT", 1 }, { "CAPS", 2 }, { "CTRL", 4 }, { "CONTROL", 4 }, { "ALT", 8 },
-  { "MOD2", 16 }, { "MOD3", 32 }, { "SUPER", 64 }, { "MOD5", 128 },
+static const struct {
+  const char *name;
+  int bit;
+} MOD_BITS[] = {
+  { "SHIFT", 1 },
+  { "CAPS", 2 },
+  { "CTRL", 4 },
+  { "CONTROL", 4 },
+  { "ALT", 8 },
+  { "MOD2", 16 },
+  { "MOD3", 32 },
+  { "SUPER", 64 },
+  { "MOD5", 128 },
 };
 
 // Ask Hyprland what is bound rather than parsing config by hand.
@@ -53,8 +64,8 @@ static char *keybind_conflict(const char *accel) {
   if (run.status != 0)
     return NULL;
   g_autoptr(json_object) binds = json_tokener_parse(run.out);
-  for (size_t i = 0; json_object_is_type(binds, json_type_array)
-                     && i < json_object_array_length(binds); i++) {
+  for (size_t i = 0; json_object_is_type(binds, json_type_array) && i < json_object_array_length(binds);
+      i++) {
     json_object *bind = json_object_array_get_idx(binds, i);
     int64_t modmask = -1;
     if (json_get(bind, "modmask"))
@@ -66,7 +77,7 @@ static char *keybind_conflict(const char *accel) {
     g_autofree char *dispatcher = as_text(json_get(bind, "dispatcher"));
     g_autofree char *argument = as_text(json_get(bind, "arg"));
     if (strstr(argument, IPC_TARGET))
-      return NULL;      // our own binding, already installed
+      return NULL;   // our own binding, already installed
     g_autofree char *both = g_strdup_printf("%s %s", dispatcher, argument);
     return g_strstrip(g_strdup(both));
   }
@@ -79,11 +90,8 @@ static char *keybind_conflict(const char *accel) {
 int cmd_keybind(int argc, char **argv) {
   g_autofree char *accel_arg = NULL;
   gboolean as_json = FALSE;
-  const GOptionEntry entries[] = {
-    { "accel", 0, 0, G_OPTION_ARG_STRING, &accel_arg, NULL, "CHORD" },
-    { "json", 0, 0, G_OPTION_ARG_NONE, &as_json, NULL, NULL },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "accel", 0, 0, G_OPTION_ARG_STRING, &accel_arg, NULL, "CHORD" },
+    { "json", 0, 0, G_OPTION_ARG_NONE, &as_json, NULL, NULL }, G_OPTION_ENTRY_NULL };
   parse_options("keybind", entries, 0, &argc, &argv);
   const char *accel = accel_arg && *accel_arg ? accel_arg : DEFAULT_ACCEL;
   g_autofree char *snippet = bindings_snippet(accel);
@@ -105,8 +113,8 @@ int cmd_keybind(int argc, char **argv) {
   return 0;
 }
 
-static ProcResult omarchy(const char *a, const char *b, const char *c, const char *d,
-                          const char *e, const char *f) {
+static ProcResult omarchy(
+    const char *a, const char *b, const char *c, const char *d, const char *e, const char *f) {
   const char *argv[] = { "omarchy", a, b, c, d, e, f, NULL };
   return proc_run(argv, NULL, 0);
 }
@@ -138,8 +146,7 @@ static char *link_command(void) {
 int cmd_install(int argc, char **argv) {
   g_autofree char *accel = NULL;
   const GOptionEntry entries[] = {
-    { "accel", 0, 0, G_OPTION_ARG_STRING, &accel, "the chord to suggest", "CHORD" },
-    G_OPTION_ENTRY_NULL
+    { "accel", 0, 0, G_OPTION_ARG_STRING, &accel, "the chord to suggest", "CHORD" }, G_OPTION_ENTRY_NULL
   };
   parse_options("install", entries, 0, &argc, &argv);
   db_open(true);   // create + migrate the database before anything user-visible
@@ -148,13 +155,14 @@ int cmd_install(int argc, char **argv) {
     g_auto(ProcResult) enable = omarchy("plugin", "enable", PLUGIN_ID, NULL, NULL, NULL);
     if (enable.status != 0) {
       g_autofree char *why = g_strstrip(g_strdup(*enable.err ? enable.err
-                                                 : *enable.out ? enable.out : "plugin enable"));
+              : *enable.out                                  ? enable.out
+                                                             : "plugin enable"));
       die(1, "install failed (%s); rolled back", why);
     }
   }
   {
-    const char *put_argv[] = { "omarchy", "bar", "put", PLUGIN_ID, "--section", "right",
-                               "--after", "omarchy.agents", NULL };
+    const char *put_argv[] = { "omarchy", "bar", "put", PLUGIN_ID, "--section", "right", "--after",
+      "omarchy.agents", NULL };
     g_auto(ProcResult) put = proc_run(put_argv, NULL, 0);
     (void)put;
   }
@@ -179,10 +187,9 @@ int cmd_install(int argc, char **argv) {
 
 int cmd_uninstall(int argc, char **argv) {
   gboolean purge = FALSE;
-  const GOptionEntry entries[] = {
-    { "purge", 0, 0, G_OPTION_ARG_NONE, &purge, "also delete captured memories (irreversible)", NULL },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "purge", 0, 0, G_OPTION_ARG_NONE, &purge,
+                                       "also delete captured memories (irreversible)", NULL },
+    G_OPTION_ENTRY_NULL };
   parse_options("uninstall", entries, 0, &argc, &argv);
   // Before anything is disabled or deleted: this is the one command that
   // deletes, so refusing a state directory inside the package tree matters
@@ -199,14 +206,14 @@ int cmd_uninstall(int argc, char **argv) {
   const Paths *p = paths();
   // Every tree removed here is ours by construction -- see paths.c -- so
   // there is nothing to recognise before deleting it.
-  remove_tree(p->state_dir);          // derived: always removed
+  remove_tree(p->state_dir);   // derived: always removed
   g_autofree char *link = command_link_path();
   if (is_our_link(link))
     g_unlink(link);
   g_autofree char *binary = cache_bin_path();
   g_autofree char *bin_dir = g_path_get_dirname(binary);
   g_autofree char *cache_dir = g_path_get_dirname(bin_dir);
-  remove_tree(cache_dir);             // the built CLI: derived too
+  remove_tree(cache_dir);   // the built CLI: derived too
 
   bool data_removed = false;
   if (purge) {
@@ -234,7 +241,9 @@ int cmd_uninstall(int argc, char **argv) {
 // What each provider's restriction actually is, for the settings dialog, in
 // ocr and image mode. The argv shows most of it, but opencode's lives in an
 // environment variable and so does gemini's workspace trust.
-static const struct { const char *name, *ocr, *image; } RESTRICTIONS[] = {
+static const struct {
+  const char *name, *ocr, *image;
+} RESTRICTIONS[] = {
   { "claude", "tools disabled", "no tools but reading the screenshot" },
   { "codex", "shell tool off, read-only sandbox behind it", "shell tool off, read-only sandbox behind it" },
   { "gemini", "read-only mode", "read-only mode" },
@@ -246,8 +255,8 @@ static bool plain_model(const char *name) {
 }
 
 static bool vision_capable(const char *name) {
-  return g_str_equal(name, "claude") || g_str_equal(name, "codex")
-         || g_str_equal(name, "gemini") || g_str_equal(name, "opencode");
+  return g_str_equal(name, "claude") || g_str_equal(name, "codex") || g_str_equal(name, "gemini")
+      || g_str_equal(name, "opencode");
 }
 
 // argv as a line someone can read, with empty arguments made visible.
@@ -287,10 +296,9 @@ int cmd_ai_config(int argc, char **argv) {
     // The command the dialog shows is the command that runs, hardening
     // included: both come from harden(), so they cannot disagree.
     const bool plain = plain_model(name);
-    g_auto(GStrv) ocr_argv = plain ? g_strdupv((char **)preset)
-                                   : harden(preset, name, false, NULL, NULL);
-    g_auto(GStrv) image_argv = plain ? g_strdupv((char **)preset)
-                                     : harden(preset, name, true, "<capture>/screenshot.png", NULL);
+    g_auto(GStrv) ocr_argv = plain ? g_strdupv((char **)preset) : harden(preset, name, false, NULL, NULL);
+    g_auto(GStrv) image_argv =
+        plain ? g_strdupv((char **)preset) : harden(preset, name, true, "<capture>/screenshot.png", NULL);
     const char *restriction = "", *restriction_image = "";
     for (size_t r = 0; r < G_N_ELEMENTS(RESTRICTIONS); r++) {
       if (g_str_equal(RESTRICTIONS[r].name, name)) {
@@ -321,10 +329,12 @@ int cmd_ai_config(int argc, char **argv) {
   json_object *vision = json_get(current, "visionMode");
   json_object *out = json_object_new_object();
   json_object_object_add(out, "enabled", json_object_new_boolean(truthy(json_get(current, "enabled"))));
-  json_object_object_add(out, "provider", truthy(provider) ? json_object_get(provider) : json_object_new_string(""));
+  json_object_object_add(
+      out, "provider", truthy(provider) ? json_object_get(provider) : json_object_new_string(""));
   json_object_object_add(out, "command", command_for_display(json_get(current, "command")));
   json_object_object_add(out, "model", truthy(model) ? json_object_get(model) : json_object_new_string(""));
-  json_object_object_add(out, "visionMode", truthy(vision) ? json_object_get(vision) : json_object_new_string("ocr"));
+  json_object_object_add(
+      out, "visionMode", truthy(vision) ? json_object_get(vision) : json_object_new_string("ocr"));
   json_object_object_add(out, "timeoutMs", json_object_new_int64(timeout));
   json_object_object_add(out, "providers", providers);
   json_object_object_add(out, "resolved", json_object_new_boolean(resolved != NULL));
@@ -337,15 +347,12 @@ static const char *const VISION_MODES[] = { "ocr", "image", NULL };
 int cmd_setup_ai(int argc, char **argv) {
   g_autofree char *provider_arg = NULL, *command = NULL, *model = NULL, *vision = NULL;
   gboolean disable = FALSE;
-  const GOptionEntry entries[] = {
-    { "provider", 0, 0, G_OPTION_ARG_STRING, &provider_arg, NULL, "NAME" },
-    { "command", 0, 0, G_OPTION_ARG_STRING, &command,
-      "the command for a custom provider, run with sh -c", "COMMAND" },
+  const GOptionEntry entries[] = { { "provider", 0, 0, G_OPTION_ARG_STRING, &provider_arg, NULL, "NAME" },
+    { "command", 0, 0, G_OPTION_ARG_STRING, &command, "the command for a custom provider, run with sh -c",
+        "COMMAND" },
     { "model", 0, 0, G_OPTION_ARG_STRING, &model, NULL, "MODEL" },
     { "vision", 0, 0, G_OPTION_ARG_STRING, &vision, "ocr or image", "MODE" },
-    { "disable", 0, 0, G_OPTION_ARG_NONE, &disable, NULL, NULL },
-    G_OPTION_ENTRY_NULL
-  };
+    { "disable", 0, 0, G_OPTION_ARG_NONE, &disable, NULL, NULL }, G_OPTION_ENTRY_NULL };
   parse_options("setup-ai", entries, 0, &argc, &argv);
   if (vision)
     require_choice("setup-ai", "--vision", vision, VISION_MODES);
@@ -403,15 +410,18 @@ int cmd_setup_ai(int argc, char **argv) {
     // tool restrictions apply.
     fputs("omoide: a custom command is run as given. Omoide cannot switch off its tools,\n"
           "        and a capture is OCR of whatever was on screen. Add your agent's own\n"
-          "        read-only or no-tools flag to --command.\n", stderr);
+          "        read-only or no-tools flag to --command.\n",
+        stderr);
   } else if (is_ai_preset(provider)) {
     json_object_object_add(current, "provider", json_object_new_string(provider));
     json_object_object_add(current, "command", json_object_new_array());
     if (!has(provider))
       die(1, "%s is not on PATH", provider);
     if (!plain_model(provider))
-      fprintf(stderr, "omoide: %s runs with its tools switched off and an empty working "
-                      "directory.\n", provider);
+      fprintf(stderr,
+          "omoide: %s runs with its tools switched off and an empty working "
+          "directory.\n",
+          provider);
   } else {
     die(1, "unknown provider: %s", provider);
   }

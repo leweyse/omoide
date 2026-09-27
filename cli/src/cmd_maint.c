@@ -49,8 +49,7 @@ static bool commit_running(const char *memory_id) {
 static int64_t sweep_stalled(sqlite3 *db) {
   g_autoptr(GPtrArray) pending = g_ptr_array_new_with_free_func(g_free);
   {
-    g_autoptr(sqlite3_stmt) rows = db_query(
-      db, "SELECT id FROM memories WHERE ai_status = 'pending'", NULL);
+    g_autoptr(sqlite3_stmt) rows = db_query(db, "SELECT id FROM memories WHERE ai_status = 'pending'", NULL);
     while (db_step(rows))
       g_ptr_array_add(pending, g_strdup(col_str(rows, "id")));
   }
@@ -59,8 +58,8 @@ static int64_t sweep_stalled(sqlite3 *db) {
     const char *id = g_ptr_array_index(pending, i);
     if (commit_running(id))
       continue;
-    g_autoptr(sqlite3_stmt) mark = db_query(
-      db, "UPDATE memories SET ai_status = 'failed' WHERE id = ?", "s", id);
+    g_autoptr(sqlite3_stmt) mark =
+        db_query(db, "UPDATE memories SET ai_status = 'failed' WHERE id = ?", "s", id);
     db_step(mark);
     g_autofree char *pidfile = commit_pidfile(id);
     g_unlink(pidfile);
@@ -79,8 +78,8 @@ static int64_t sweep_drafts(sqlite3 *db) {
   g_autofree char *cutoff = iso(before);
   g_autoptr(GPtrArray) stale = g_ptr_array_new_with_free_func(g_free);
   {
-    g_autoptr(sqlite3_stmt) rows = db_query(
-      db, "SELECT id FROM memories WHERE status = 'draft' AND created_at < ?", "s", cutoff);
+    g_autoptr(sqlite3_stmt) rows =
+        db_query(db, "SELECT id FROM memories WHERE status = 'draft' AND created_at < ?", "s", cutoff);
     while (db_step(rows))
       g_ptr_array_add(stale, g_strdup(col_str(rows, "id")));
   }
@@ -105,10 +104,8 @@ int cmd_sweep(int argc, char **argv) {
 
 int cmd_discard(int argc, char **argv) {
   g_autofree char *id = NULL;
-  const GOptionEntry entries[] = {
-    { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the draft", "ID" },
-    G_OPTION_ENTRY_NULL
-  };
+  const GOptionEntry entries[] = { { "id", 0, 0, G_OPTION_ARG_STRING, &id, "the draft", "ID" },
+    G_OPTION_ENTRY_NULL };
   parse_options("discard", entries, 0, &argc, &argv);
   require_option("discard", "--id", id);
   sqlite3 *db = db_open(true);

@@ -161,8 +161,8 @@ static void on_chunk(GObject *source, GAsyncResult *result, gpointer data) {
 }
 
 static void read_next(Reader *reader) {
-  g_input_stream_read_bytes_async(reader->stream, 65536, G_PRIORITY_DEFAULT,
-                                  reader->agent->cancel, on_chunk, reader);
+  g_input_stream_read_bytes_async(
+      reader->stream, 65536, G_PRIORITY_DEFAULT, reader->agent->cancel, on_chunk, reader);
 }
 
 static void on_written(GObject *source, GAsyncResult *result, gpointer data) {
@@ -197,11 +197,11 @@ static void kill_group(GSubprocess *child) {
   g_subprocess_force_exit(child);
 }
 
-ProcResult proc_run_agent(const char *const *argv, const char *input, double timeout_s,
-                          const char *cwd, GHashTable *env, size_t cap) {
+ProcResult proc_run_agent(const char *const *argv, const char *input, double timeout_s, const char *cwd,
+    GHashTable *env, size_t cap) {
   ProcResult result = { .status = -1 };
   g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
-    G_SUBPROCESS_FLAGS_STDIN_PIPE | G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
+      G_SUBPROCESS_FLAGS_STDIN_PIPE | G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
   if (cwd)
     g_subprocess_launcher_set_cwd(launcher, cwd);
   if (env) {
@@ -228,14 +228,16 @@ ProcResult proc_run_agent(const char *const *argv, const char *input, double tim
 
   g_autoptr(GCancellable) cancel = g_cancellable_new();
   Agent agent = {
-    .context = context, .cancel = cancel, .cap = cap, .streams_open = 2,
-    .out = g_byte_array_new(), .err = g_byte_array_new(),
+    .context = context,
+    .cancel = cancel,
+    .cap = cap,
+    .streams_open = 2,
+    .out = g_byte_array_new(),
+    .err = g_byte_array_new(),
   };
   g_autoptr(GBytes) stdin_bytes = g_bytes_new(input ? input : "", input ? strlen(input) : 0);
-  g_output_stream_write_all_async(g_subprocess_get_stdin_pipe(child),
-                                  g_bytes_get_data(stdin_bytes, NULL),
-                                  g_bytes_get_size(stdin_bytes), G_PRIORITY_DEFAULT,
-                                  cancel, on_written, NULL);
+  g_output_stream_write_all_async(g_subprocess_get_stdin_pipe(child), g_bytes_get_data(stdin_bytes, NULL),
+      g_bytes_get_size(stdin_bytes), G_PRIORITY_DEFAULT, cancel, on_written, NULL);
   Reader *out = g_new0(Reader, 1);
   *out = (Reader){ &agent, g_subprocess_get_stdout_pipe(child), agent.out };
   Reader *err = g_new0(Reader, 1);
@@ -290,8 +292,7 @@ ProcResult proc_run_agent(const char *const *argv, const char *input, double tim
 // --- helpers that run until stopped
 
 GSubprocess *proc_spawn_quiet(const char *const *argv) {
-  return g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_STDOUT_SILENCE
-                                 | G_SUBPROCESS_FLAGS_STDERR_SILENCE, NULL);
+  return g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, NULL);
 }
 
 static void on_stopped(GObject *source, GAsyncResult *result, gpointer data) {

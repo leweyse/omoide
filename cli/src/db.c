@@ -26,8 +26,7 @@ static const struct {
   { 2, migration_002 },
 };
 
-static_assert(G_N_ELEMENTS(MIGRATIONS) == SCHEMA_VERSION,
-              "SCHEMA_VERSION must match the last migration");
+static_assert(G_N_ELEMENTS(MIGRATIONS) == SCHEMA_VERSION, "SCHEMA_VERSION must match the last migration");
 
 static void exec_or_die(sqlite3 *db, const char *sql, const char *what) {
   char *error = NULL;
@@ -66,8 +65,7 @@ bool db_step(sqlite3_stmt *stmt) {
   if (rc == SQLITE_ROW)
     return true;
   if (rc != SQLITE_DONE)
-    die(1, "database error: %s\n  in: %s", sqlite3_errmsg(sqlite3_db_handle(stmt)),
-        sqlite3_sql(stmt));
+    die(1, "database error: %s\n  in: %s", sqlite3_errmsg(sqlite3_db_handle(stmt)), sqlite3_sql(stmt));
   return false;
 }
 
@@ -157,20 +155,20 @@ static void close_db(void) {
 sqlite3 *db_open(bool write) {
   guard_paths();
   const Paths *p = paths();
-  if (g_mkdir_with_parents(p->data_dir, 0777) != 0
-      || g_mkdir_with_parents(p->blob_dir, 0777) != 0
+  if (g_mkdir_with_parents(p->data_dir, 0777) != 0 || g_mkdir_with_parents(p->blob_dir, 0777) != 0
       || g_mkdir_with_parents(p->state_dir, 0777) != 0)
     die(1, "could not create %s: %s", p->data_dir, g_strerror(errno));
 
   // Search is built on FTS5. Arch's SQLite has it; a build without it would
   // only fail later, at the first query that touches the index.
   if (!sqlite3_compileoption_used("ENABLE_FTS5"))
-    die(1, "this system's SQLite (%s) was built without FTS5, which Omoide "
-           "needs for search", sqlite3_libversion());
+    die(1,
+        "this system's SQLite (%s) was built without FTS5, which Omoide "
+        "needs for search",
+        sqlite3_libversion());
 
   sqlite3 *db = NULL;
-  if (sqlite3_open_v2(p->db_path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
-                      NULL) != SQLITE_OK)
+  if (sqlite3_open_v2(p->db_path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL) != SQLITE_OK)
     die(1, "could not open %s: %s", p->db_path, sqlite3_errmsg(db));
   open_db = db;
   atexit(close_db);
@@ -182,9 +180,11 @@ sqlite3 *db_open(bool write) {
   if (version > SCHEMA_VERSION) {
     // A rolled-back checkout writing against a schema it does not understand
     // corrupts data silently. Fail loudly instead.
-    die(3, "database schema is v%d but this version of the plugin only "
-           "understands v%d. Update the plugin, or move %s aside. Refusing to "
-           "write.", version, SCHEMA_VERSION, p->db_path);
+    die(3,
+        "database schema is v%d but this version of the plugin only "
+        "understands v%d. Update the plugin, or move %s aside. Refusing to "
+        "write.",
+        version, SCHEMA_VERSION, p->db_path);
   }
 
   if (version < SCHEMA_VERSION && write)

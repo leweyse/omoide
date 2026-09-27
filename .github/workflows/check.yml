@@ -1,0 +1,23 @@
+# The half of dev/check that needs no Omarchy install and no C build: the agent
+# knowledge, the comment policy, and C formatting. cli.yml owns the builds and
+# parity. The QML checks need /usr/share/omarchy/shell, which this container
+# does not have, so they run locally through dev/check.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed clang git python
+
+      - uses: actions/checkout@v4
+
+      - name: Knowledge, comments and formatting
+        run: dev/check --no-shell --no-cli

@@ -36,8 +36,8 @@ json_object *json_round4(double value) {
 // Temp file and rename, so a watcher never sees a half-written file.
 bool write_json_file(const char *path, json_object *payload) {
   g_autofree char *text = g_strconcat(
-    json_object_to_json_string_ext(payload, JSON_C_TO_STRING_PRETTY
-                                   | JSON_C_TO_STRING_NOSLASHESCAPE), "\n", NULL);
+      json_object_to_json_string_ext(payload, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE), "\n",
+      NULL);
   return g_file_set_contents(path, text, -1, NULL);
 }
 
@@ -51,6 +51,5 @@ json_object *json_get(json_object *object, const char *key) {
 
 const char *json_get_str(json_object *object, const char *key) {
   json_object *value = json_get(object, key);
-  return value && json_object_is_type(value, json_type_string)
-    ? json_object_get_string(value) : NULL;
+  return value && json_object_is_type(value, json_type_string) ? json_object_get_string(value) : NULL;
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Maintainability Review'
+  short_description: 'Evidence-led cleanup and review'
+  default_prompt: 'Use $maintainability-review to review this change and implement only evidence-backed improvements.'
