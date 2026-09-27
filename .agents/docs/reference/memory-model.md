@@ -2,6 +2,7 @@
 type: Reference
 title: Memory model
 description: Memories, blocks, items, reminders, tags, collections and links, as stored and as rendered.
+source_digest: 'sha256:b5e9113e350bf76dfb450394e7de60dc76d99a98184425143ddfed2d561f1018'
 sources:
   - id: schema
     resource: ../../../sql/migrations/001-initial.sql
@@ -47,6 +48,7 @@ Items are the to-dos and events a memory holds, referenced from a `todos` or `ev
 - **Titles are cleaned and bounded** when created, whoever wrote them.
 - A dated event with no requested alarm gets a default one before it starts. An inferred to-do gets none until promoted, and an explicit dated to-do gets one at its due time.
 - A to-do is completed, reopened or cancelled through `item`; a cancelled item is hidden from every view but kept.
+- **Open** means `active` and not completed; suggested, completed and cancelled items are not open. The groups are the `OPEN_TODO` family of predicates in `cli/src/omoide.h`, shared by `archive --group` and the index's counts, and a memory count means ready memories, never drafts.
 
 ## Reminders
 
@@ -59,4 +61,4 @@ A reminder belongs to an item. It is either absolute, at a fixed time, or relati
 
 ## What QML sees
 
-The index `omoide index` prints carries counts, open to-dos, suggestions, upcoming events, collections, today's digest, and the live alarms. It carries no memory cards: the library and a collection page load theirs a page at a time with `list` or `search`, through `ui/components/PagedMemories.qml`, and their chips come from `facets`. A detail page asks for links and block bodies with `show` and `related`. Each list in the index is capped in `build_index`, so a view must not treat the length of one as the total; `memoryCount` and a page's `pageInfo.total` are totals.
+The index `omoide index` prints carries counts (memories, events, and the to-dos in each Tasks group), today's digest, the collections, and every live alarm. Every count is taken in SQL over all the items, so none depends on a list's length. It carries no list a view scrolls through: the library and a collection page load cards with `list` or `search`, the Tasks tabs and For you load to-dos with `archive --group`, and the carousel loads events with `events`, each a page at a time through `ui/components/PagedList.qml`. Chips come from `facets`, and a detail page asks for links and block bodies with `show` and `related`.

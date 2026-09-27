@@ -2,6 +2,7 @@
 type: Reference
 title: Reminders
 description: How an alarm is armed inside the shell from the pulled index and fired, once, by the CLI.
+source_digest: 'sha256:26345d607dca916a09a5eb45555cb97e88cebfe2b23945c03ac43ba58f7b2ae2'
 sources:
   - id: service
     resource: ../../../ui/Service.qml
@@ -20,7 +21,7 @@ Read this before changing how or when a notification fires. Reminders need nothi
 
 ## The split
 
-- **The shell decides when to ask.** The index the shell pulls lists live alarms by id and time, and nothing else, so no model-written text reaches a timer. `armAlarms()` in `Service.qml` runs on every index change and on its own timer. It fires anything already due and sleeps until the next one, never longer than a fixed tick, which doubles as catch-up after a suspend or a clock jump. It relies on `Service.qml` being kept loaded.
+- **The shell decides when to ask.** The index the shell pulls lists live alarms by id and time, and nothing else, so no model-written text reaches a timer. `armAlarms()` in `Service.qml` runs on every index change and on its own timer. It fires anything already due and sleeps until the next one, never longer than a fixed tick, which doubles as catch-up after a suspend or a clock jump. It relies on `Service.qml` being kept loaded. The index lists every live alarm, earliest first; an alarm is an id and a time, so the list stays small.
 - **The CLI decides whether it is owed.** `reminder fire` marks the row fired before it notifies, so an alarm fires at most once however often the shell asks. An alarm that comes due while the machine was off still arrives, unless it is later than the grace window in `cli/src/reminders.c`, in which case it expires without a toast.
 
 The shell never judges lateness, and the CLI never schedules. Keep it that way: two owners of "is this still owed" would disagree after a suspend.

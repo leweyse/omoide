@@ -1,0 +1,531 @@
+#!/usr/bin/env python3
+"""Record what a change does for users, and turn those records into a release.
+
+A changeset is a Markdown file in .changeset/, named with three random words,
+holding a semver bump, a conventional-commit title and an optional body:
+
+    ---
+    omoide: patch
+    ---
+
+    feat(library): collections can be renamed from the collection page
+
+The title is `type(scope): what changed`, with a type from TYPES; the scope
+names the part of the product and is left out only for a change across all of
+it. The bump follows the type: `feat` is minor, every other type patch or none,
+and major, which only the owner decides, goes with any type. Title and body land in CHANGELOG.md verbatim. `omoide: none` marks a change
+that ships nothing a user would notice; its title is optional and never reaches
+the changelog. The changesets skill owns how a title and body are written.
+
+A change counts as user-facing, and needs a changeset, when it touches a file
+under ui/, cli/ or sql/, or manifest.json. Three things do not count: an
+AGENTS.md or CLAUDE.md anywhere, cli/fuzz/ (not in the user's build), and a
+manifest.json whose only difference is `version`, which is what a release does.
+
+Usage:  dev/changeset add --bump <patch|minor|major|none> [--body TEXT] [title]
+            write a new changeset; the title is required unless the bump is none
+        dev/changeset status [--since <ref>]
+            list pending changesets and the version they would produce. With
+            --since, also fail when a user-facing file changed between the merge
+            base of <ref> and the working tree, but no changeset was added there
+        dev/changeset version
+            apply every pending changeset: bump manifest.json's version by the
+            highest bump, prepend a section to CHANGELOG.md, delete the files.
+            With only `none` changesets pending it changes nothing
+        dev/changeset selftest
+            run add, status and version in throwaway git repositories
+Exit:   0 done, 1 a changeset is malformed or --since found a change without
+        one, 2 usage error
+"""
+import datetime
+import json
+import os
+import pathlib
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PENDING = ROOT / ".changeset"
+MANIFEST = ROOT / "manifest.json"
+CHANGELOG = ROOT / "CHANGELOG.md"
+
+BUMPS = ("none", "patch", "minor", "major")
+HEADINGS = (("major", "Major"), ("minor", "Minor"), ("patch", "Patch"))
+USER_FACING = ("ui/", "cli/", "sql/")
+NOT_USER_FACING = ("cli/fuzz/",)
+AGENT_FILES = ("AGENTS.md", "CLAUDE.md")
+
+# The package the bump applies to, as a changeset names it; quoted or not.
+PACKAGE = "omoide"
+CHANGESET = re.compile(r"\A---\n'?" + PACKAGE + r"'?: *([a-z]+) *\n---\n(.*)\Z", re.S)
+TYPES = ("feat", "fix", "refactor", "docs", "chore")
+TITLE = re.compile(r"^(" + "|".join(TYPES) + r")(\([a-z][a-z0-9-]*(,[a-z][a-z0-9-]*)*\))?: \S.*$")
+
+# The names `changeset add` picks from: <adjective>-<noun>-<verb>.md. A name
+# says nothing about the change, so one topic never looks like it already has
+# a changeset.
+ADJECTIVES = ("brave", "bright", "calm", "clever", "cool", "eager", "fair", "gentle", "happy", "honest",
+              "kind", "lazy", "lucky", "mighty", "neat", "odd", "proud", "quiet", "rare", "shy", "silly",
+              "smart", "soft", "swift", "tall", "tidy", "warm", "wise", "young", "zesty")
+NOUNS = ("apes", "bats", "bees", "birds", "cats", "clouds", "crabs", "deer", "dogs", "ducks", "eels",
+         "foxes", "frogs", "geese", "hawks", "hills", "kites", "lions", "moles", "moths", "owls", "pans",
+         "plums", "rivers", "seals", "snails", "stars", "trees", "waves", "wolves")
+VERBS = ("act", "bake", "beam", "bloom", "bow", "clap", "dance", "dream", "drift", "fly", "glow", "grin",
+         "hide", "hum", "jump", "kneel", "laugh", "leap", "melt", "nap", "play", "roam", "rest", "sing",
+         "sleep", "smile", "swim", "talk", "turn", "wave")
+VERSION_LINE = re.compile(r'^(  "version": ")([^"]*)(")', re.M)
+SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+
+
+class Malformed(Exception):
+    pass
+
+
+def usage(message: str) -> int:
+    print(f"dev/changeset: {message}", file=sys.stderr)
+    print("usage: dev/changeset add --bump <patch|minor|major|none> [--body TEXT] [title]\n"
+          "       dev/changeset status [--since <ref>]\n"
+          "       dev/changeset version\n"
+          "       dev/changeset selftest", file=sys.stderr)
+    return 2
+
+
+def title_error(title: str):
+    """Why a title is not `type(scope): what changed`, or None when it is."""
+    if "\n" in title:
+        return "the title is one line"
+    if not TITLE.match(title):
+        return (f"`{title}` is not `type(scope): what changed`, with a type from "
+                f"{', '.join(TYPES)} and a lowercase scope")
+    return None
+
+
+def bump_error(bump: str, title: str):
+    """Why a bump does not suit its title's type, or None when it does."""
+    kind = TITLE.match(title).group(1)
+    if bump == "major":
+        return None
+    if kind == "feat" and bump != "minor":
+        return f"a feat is a minor bump, not {bump}"
+    if kind != "feat" and bump == "minor":
+        return f"a {kind} is a patch or none bump; minor is for a feat"
+    return None
+
+
+def parse(path: pathlib.Path):
+    """(bump, title, body) of one changeset file."""
+    m = CHANGESET.match(path.read_text())
+    if not m:
+        raise Malformed(f"{path.name}: expected `---`, `{PACKAGE}: <bump>`, `---`, then the title")
+    bump, text = m.group(1), m.group(2).strip()
+    if bump not in BUMPS:
+        raise Malformed(f"{path.name}: bump is one of {', '.join(BUMPS)}, not `{bump}`")
+    title, _, body = text.partition("\n")
+    title, body = title.strip(), body.strip()
+    if bump != "none" and not title:
+        raise Malformed(f"{path.name}: a {bump} bump needs a title for the changelog")
+    if title and title_error(title):
+        raise Malformed(f"{path.name}: {title_error(title)}")
+    if title and bump_error(bump, title):
+        raise Malformed(f"{path.name}: {bump_error(bump, title)}")
+    return bump, title, body
+
+
+def pending():
+    """Every changeset, parsed, in filename order."""
+    if not PENDING.is_dir():
+        return []
+    return [(path, *parse(path)) for path in sorted(PENDING.glob("*.md"))]
+
+
+def current_version(text: str) -> str:
+    version = json.loads(text).get("version", "")
+    if not SEMVER.match(version):
+        raise Malformed(f"manifest.json: version `{version}` is not MAJOR.MINOR.PATCH")
+    return version
+
+
+def bumped(version: str, bump: str) -> str:
+    major, minor, patch = (int(n) for n in SEMVER.match(version).groups())
+    if bump == "major":
+        return f"{major + 1}.0.0"
+    if bump == "minor":
+        return f"{major}.{minor + 1}.0"
+    if bump == "patch":
+        return f"{major}.{minor}.{patch + 1}"
+    return version
+
+
+def highest(changesets) -> str:
+    return max((bump for _, bump, _, _ in changesets), key=BUMPS.index, default="none")
+
+
+def with_version(text: str, version: str) -> str:
+    """manifest.json with its top-level version replaced and every other byte kept."""
+    matches = list(VERSION_LINE.finditer(text))
+    if len(matches) != 1:
+        raise Malformed("manifest.json: expected one top-level `\"version\"` line")
+    m = matches[0]
+    out = text[:m.start(2)] + version + text[m.end(2):]
+    before, after = json.loads(text), json.loads(out)
+    before["version"] = version
+    if before != after:
+        raise Malformed("manifest.json: replacing the version changed something else")
+    return out
+
+
+def cmd_add(args) -> int:
+    bump = None
+    body = ""
+    words = []
+    it = iter(args)
+    for arg in it:
+        if arg == "--bump":
+            bump = next(it, None)
+        elif arg.startswith("--bump="):
+            bump = arg.split("=", 1)[1]
+        elif arg == "--body":
+            body = next(it, "") or ""
+        elif arg.startswith("--body="):
+            body = arg.split("=", 1)[1]
+        elif arg.startswith("-"):
+            return usage(f"unknown option {arg}")
+        else:
+            words.append(arg)
+    if bump not in BUMPS:
+        return usage("add needs --bump with one of " + ", ".join(BUMPS))
+    title = " ".join(words).strip()
+    if bump != "none" and not title:
+        return usage(f"a {bump} bump needs a title for the changelog")
+    if title and title_error(title):
+        return usage(title_error(title))
+    if title and bump_error(bump, title):
+        return usage(bump_error(bump, title))
+    PENDING.mkdir(exist_ok=True)
+    while True:
+        name = "-".join(secrets.choice(words) for words in (ADJECTIVES, NOUNS, VERBS))
+        path = PENDING / f"{name}.md"
+        if not path.exists():
+            break
+    text = f"\n{title}\n" if title else ""
+    if body.strip():
+        text += f"\n{body.strip()}\n"
+    path.write_text(f"---\n{PACKAGE}: {bump}\n---\n{text}")
+    print(path.relative_to(ROOT).as_posix())
+    return 0
+
+
+def git(*args) -> str:
+    return subprocess.run(["git", "-C", str(ROOT), *args], check=True, capture_output=True,
+                          text=True).stdout
+
+
+def user_facing(path: str, base: str) -> bool:
+    if path.rsplit("/", 1)[-1] in AGENT_FILES or path.startswith(NOT_USER_FACING):
+        return False
+    if path == "manifest.json":
+        try:
+            old = json.loads(git("show", f"{base}:manifest.json"))
+            new = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else None
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            return True
+        if new is None:
+            return True
+        old.pop("version", None)
+        new.pop("version", None)
+        return old != new
+    return path.startswith(USER_FACING)
+
+
+def gate(ref: str) -> int:
+    try:
+        base = git("merge-base", ref, "HEAD").strip()
+    except subprocess.CalledProcessError as e:
+        print(f"dev/changeset: no merge base between {ref} and HEAD: {e.stderr.strip()}", file=sys.stderr)
+        return 2
+    changed = {}
+    for line in git("diff", "--name-status", "--no-renames", base).splitlines():
+        status, _, path = line.partition("\t")
+        changed[path] = status[0]
+    for path in git("ls-files", "--others", "--exclude-standard").splitlines():
+        changed[path] = "A"
+    added = sorted(p for p, s in changed.items()
+                   if s == "A" and p.startswith(".changeset/") and p.endswith(".md"))
+    facing = sorted(p for p in changed if user_facing(p, base))
+    if added:
+        print(f"since {ref}: changeset added ({', '.join(added)})")
+        return 0
+    if not facing:
+        print(f"since {ref}: no user-facing file changed, so no changeset is needed")
+        return 0
+    print(f"since {ref}: these user-facing files changed, but no changeset was added:")
+    for path in facing:
+        print(f"  {path}")
+    print("run dev/changeset add --bump <patch|minor|major|none> \"type(scope): what changed\"; "
+          "the changesets skill says how to write it")
+    return 1
+
+
+def cmd_status(args) -> int:
+    since = None
+    it = iter(args)
+    for arg in it:
+        if arg == "--since":
+            since = next(it, None)
+            if since is None:
+                return usage("--since needs a git ref")
+        elif arg.startswith("--since="):
+            since = arg.split("=", 1)[1]
+        else:
+            return usage(f"unknown argument {arg}")
+    try:
+        changesets = pending()
+        version = current_version(MANIFEST.read_text())
+    except Malformed as e:
+        print(f"dev/changeset: {e}", file=sys.stderr)
+        return 1
+    if not changesets:
+        print(f"no pending changesets; the version stays {version}")
+    else:
+        print(f"{len(changesets)} pending:")
+        for path, bump, title, _ in changesets:
+            print(f"  {bump:<5}  {path.name}  {title or '(no title)'}")
+        bump = highest(changesets)
+        if bump == "none":
+            print(f"nothing to release; the version stays {version}")
+        else:
+            print(f"next version: {bumped(version, bump)} ({bump})")
+    return gate(since) if since is not None else 0
+
+
+def cmd_version(args) -> int:
+    if args:
+        return usage(f"version takes no arguments, got {' '.join(args)}")
+    try:
+        changesets = pending()
+        text = MANIFEST.read_text()
+        version = current_version(text)
+    except Malformed as e:
+        print(f"dev/changeset: {e}", file=sys.stderr)
+        return 1
+    if not changesets:
+        print(f"no pending changesets; nothing to do, the version stays {version}")
+        return 0
+    bump = highest(changesets)
+    if bump == "none":
+        print(f"only `none` changesets are pending; nothing to release, the version stays {version}")
+        return 0
+    new = bumped(version, bump)
+    try:
+        manifest = with_version(text, new)
+    except Malformed as e:
+        print(f"dev/changeset: {e}", file=sys.stderr)
+        return 1
+
+    section = [f"## {new} - {datetime.date.today().isoformat()}", ""]
+    for kind, heading in HEADINGS:
+        lines = []
+        # By title, not by the random filename, so a release reads the same
+        # however its files were named.
+        for _, b, title, body in sorted(changesets, key=lambda c: c[2]):
+            if b != kind:
+                continue
+            lines.append(f"- {title}")
+            # The body stays under its title, indented so Markdown keeps it in
+            # the same list item.
+            lines += [f"  {line}" if line.strip() else "" for line in body.splitlines()]
+        if lines:
+            section += [f"### {heading}", "", *lines, ""]
+    log = CHANGELOG.read_text() if CHANGELOG.exists() else "# Changelog\n"
+    at = re.search(r"^## ", log, re.M)
+    if at:
+        log = log[:at.start()] + "\n".join(section) + "\n" + log[at.start():]
+    else:
+        log = log.rstrip("\n") + "\n\n" + "\n".join(section)
+
+    MANIFEST.write_text(manifest)
+    CHANGELOG.write_text(log)
+    for path, _, _, _ in changesets:
+        path.unlink()
+    print(f"version {version} -> {new} ({bump}), from {len(changesets)} changesets; "
+          "manifest.json and CHANGELOG.md updated")
+    return 0
+
+
+def selftest(args) -> int:
+    """Run this script, copied into throwaway repositories, and compare what it did."""
+    if args:
+        return usage(f"selftest takes no arguments, got {' '.join(args)}")
+    failures = []
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    manifest = MANIFEST.read_text()
+    version = current_version(manifest)
+    today = datetime.date.today().isoformat()
+
+    def expect(name, condition, detail=""):
+        if not condition:
+            failures.append(f"{name}{': ' + detail if detail else ''}")
+
+    def repo(tmp: pathlib.Path) -> pathlib.Path:
+        path = pathlib.Path(tempfile.mkdtemp(dir=tmp))
+        (path / "dev").mkdir()
+        shutil.copy(__file__, path / "dev" / "changeset")
+        (path / "manifest.json").write_text(manifest)
+        (path / "ui").mkdir()
+        (path / "ui" / "A.qml").write_text("Item {}\n")
+        sh(path, "git", "init", "-q", "-b", "main")
+        sh(path, "git", "add", "-A")
+        sh(path, "git", "commit", "-q", "-m", "base")
+        return path
+
+    def read(path):
+        return path.read_text() if path.exists() else ""
+
+    def sh(cwd, *argv):
+        return subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True)
+
+    def tool(cwd, *argv):
+        return sh(cwd, sys.executable, "dev/changeset", *argv)
+
+    def commit(cwd, message="change"):
+        sh(cwd, "git", "add", "-A")
+        sh(cwd, "git", "commit", "-q", "-m", message)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = pathlib.Path(tmp)
+
+        r = repo(tmp)
+        out = tool(r, "version")
+        expect("version with nothing pending exits 0", out.returncode == 0, out.stderr)
+        expect("version with nothing pending says so", "nothing to do" in out.stdout, out.stdout)
+        expect("version with nothing pending leaves the manifest",
+               (r / "manifest.json").read_text() == manifest)
+        expect("version with nothing pending writes no changelog", not (r / "CHANGELOG.md").exists())
+
+        out = tool(r, "add", "--bump", "none")
+        expect("add none without a summary", out.returncode == 0, out.stderr)
+        out = tool(r, "version")
+        expect("none alone bumps nothing", (r / "manifest.json").read_text() == manifest, out.stdout)
+        expect("none alone writes no changelog", not (r / "CHANGELOG.md").exists())
+        expect("none alone keeps its changeset", len(list((r / ".changeset").glob("*.md"))) == 1)
+
+        expect("add refuses a missing title", tool(r, "add", "--bump", "patch").returncode == 2)
+        expect("add refuses an unknown bump", tool(r, "add", "--bump", "huge", "fix: x").returncode == 2)
+        expect("add refuses an untyped title", tool(r, "add", "--bump", "patch", "Fixed a thing.").returncode == 2)
+        expect("add refuses an unknown type", tool(r, "add", "--bump", "patch", "perf(ui): x").returncode == 2)
+        expect("add refuses a feat that is not minor",
+               tool(r, "add", "--bump", "patch", "feat(ui): x can be done").returncode == 2)
+        expect("add refuses a minor that is not a feat",
+               tool(r, "add", "--bump", "minor", "fix(ui): x broke").returncode == 2)
+        out = tool(r, "add", "--bump", "patch", "fix(ui): the first thing broke")
+        expect("add names the file with three words",
+               re.fullmatch(r"\.changeset/[a-z]+-[a-z]+-[a-z]+\.md", out.stdout.strip()) is not None, out.stdout)
+        tool(r, "add", "--bump", "minor", "--body", "Only on the library page.", "feat(library): a thing can be added")
+        tool(r, "add", "--bump", "patch", "fix(ui): the second thing broke")
+        major, minor, _ = (int(n) for n in SEMVER.match(version).groups())
+        want = f"{major}.{minor + 1}.0"
+        out = tool(r, "status")
+        expect("status names the next version", f"next version: {want} (minor)" in out.stdout, out.stdout)
+        out = tool(r, "version")
+        expect("version exits 0", out.returncode == 0, out.stderr)
+        after = (r / "manifest.json").read_text()
+        expect("highest bump wins", json.loads(after)["version"] == want, json.loads(after)["version"])
+        expect("only the version changes in the manifest",
+               after == manifest.replace(f'"version": "{version}"', f'"version": "{want}"', 1))
+        diff = sh(r, "git", "diff", "--numstat", "manifest.json").stdout.split()
+        expect("the manifest diff is one line", diff[:2] == ["1", "1"], " ".join(diff))
+        log = read(r / "CHANGELOG.md")
+        expect("the changelog has the section",
+               log == f"# Changelog\n\n## {want} - {today}\n\n### Minor\n\n- feat(library): a thing can be added\n"
+                      "  Only on the library page.\n\n"
+                      "### Patch\n\n- fix(ui): the first thing broke\n- fix(ui): the second thing broke\n", log)
+        expect("version consumes every changeset, none included",
+               not list((r / ".changeset").glob("*.md")))
+
+        commit(r, "release")
+        tool(r, "add", "--bump", "major", "refactor: the old thing is gone")
+        tool(r, "version")
+        again = read(r / "CHANGELOG.md")
+        expect("a new section is prepended above the last one",
+               again.startswith(f"# Changelog\n\n## {major + 1}.0.0 - {today}\n\n### Major\n\n"
+                                "- refactor: the old thing is gone\n\n## ") and again.endswith(log[len("# Changelog\n\n"):]),
+               again)
+
+        (r / ".changeset").mkdir(exist_ok=True)
+        (r / ".changeset" / "bad.md").write_text("---\nomoide: patch\n---\n\nnot a typed title\n")
+        out = tool(r, "status")
+        expect("status fails on a malformed changeset", out.returncode == 1, out.stdout)
+        (r / ".changeset" / "bad.md").write_text("---\nbump: patch\n---\n\nfix(ui): x broke\n")
+        out = tool(r, "status")
+        expect("status refuses a changeset for another package", out.returncode == 1, out.stdout)
+        (r / ".changeset" / "bad.md").write_text("---\n'omoide': patch\n---\n\nfix(ui): x broke\n")
+        out = tool(r, "status")
+        expect("status accepts the package quoted", out.returncode == 0, out.stderr)
+        (r / ".changeset" / "bad.md").unlink()
+
+        i = repo(tmp)
+        (i / "CHANGELOG.md").write_text("# Changelog\n\nIntro.\n")
+        tool(i, "add", "--bump", "patch", "fix(ui): a thing broke")
+        tool(i, "version")
+        got = read(i / "CHANGELOG.md")
+        expect("the first section goes below the intro",
+               got == f"# Changelog\n\nIntro.\n\n## {major}.{minor}.{int(version.split('.')[2]) + 1} - {today}"
+                      "\n\n### Patch\n\n- fix(ui): a thing broke\n", got)
+
+        g = repo(tmp)
+        sh(g, "git", "switch", "-q", "-c", "topic")
+        out = tool(g, "status", "--since", "main")
+        expect("gate passes with no change", out.returncode == 0, out.stdout)
+        (g / "ui" / "A.qml").write_text("Item { id: a }\n")
+        commit(g)
+        out = tool(g, "status", "--since", "main")
+        expect("gate fails on a user-facing change without a changeset", out.returncode == 1, out.stdout)
+        expect("gate names the file", "ui/A.qml" in out.stdout, out.stdout)
+        tool(g, "add", "--bump", "patch", "fix(ui): a thing broke")
+        out = tool(g, "status", "--since", "main")
+        expect("gate passes on an uncommitted changeset", out.returncode == 0, out.stdout)
+        commit(g)
+        out = tool(g, "status", "--since", "main")
+        expect("gate passes once the changeset is committed", out.returncode == 0, out.stdout)
+
+        d = repo(tmp)
+        sh(d, "git", "switch", "-q", "-c", "topic")
+        (d / "dev" / "notes").write_text("x\n")
+        (d / "ui" / "AGENTS.md").write_text("x\n")
+        commit(d)
+        out = tool(d, "status", "--since", "main")
+        expect("gate ignores dev/ and AGENTS.md", out.returncode == 0, out.stdout)
+        (d / "manifest.json").write_text(manifest.replace(f'"version": "{version}"', '"version": "9.9.9"'))
+        commit(d)
+        out = tool(d, "status", "--since", "main")
+        expect("gate ignores a version-only manifest change", out.returncode == 0, out.stdout)
+        (d / "manifest.json").write_text(manifest.replace('"name": "', '"name": "x', 1))
+        commit(d)
+        out = tool(d, "status", "--since", "main")
+        expect("gate counts any other manifest change", out.returncode == 1, out.stdout)
+
+    for failure in failures:
+        print(f"FAIL  {failure}")
+    print(f"selftest: {'ok' if not failures else f'{len(failures)} failed'}")
+    return 1 if failures else 0
+
+
+def main() -> int:
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0 if len(sys.argv) >= 2 else 2
+    commands = {"add": cmd_add, "status": cmd_status, "version": cmd_version, "selftest": selftest}
+    command = commands.get(sys.argv[1])
+    if command is None:
+        return usage(f"unknown command {sys.argv[1]}")
+    return command(sys.argv[2:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

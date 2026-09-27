@@ -100,7 +100,7 @@ okf_version: '0.2'
 
 Date headings use `YYYY-MM-DD`. Entries are flat prose; the bold leading action is conventional.
 
-Links are ordinary Markdown and express directed, untyped relationships. A `references/` directory may mirror external material or contain run instructions and code as concepts, but its name is conventional rather than required.
+Links are ordinary Markdown and express directed, untyped relationships. A directory named references may mirror external material or contain run instructions and code as concepts, but its name is conventional rather than required.
 
 ## Attested computations
 

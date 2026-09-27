@@ -2,6 +2,7 @@
 type: Reference
 title: Keyboard model
 description: How the Space window routes keys between the rail, the page and overlays, and the contract every page implements.
+source_digest: 'sha256:45d735546269ade65505cee290b1b4081d42c3438af75fc7381fbb0c605edafc'
 sources:
   - id: space
     resource: ../../../ui/surfaces/SpaceWindow.qml
@@ -44,6 +45,8 @@ The host's `PanelKeyCatcher` emits both `returnRequested` and `activateRequested
 
 ## The page contract
 
-A page exposes `regionCount`, `region`, `focusFirst()` and `pageKey(event)`. Tab cycles `region`. `pageKey` returns false for a key the page did not use, which is how Left at the left edge returns to the rail without any page knowing the rail exists. A page that also has a search field exposes `focusInput()`.
+A page exposes `regionCount`, `region`, `focusFirst()` and `pageKey(event)`. Tab cycles `region`. `pageKey` returns false for a key the page did not use, which is how Left at the left edge returns to the rail without any page knowing the rail exists. In a paged list, the key that would step past the last loaded row asks for the next page and keeps the cursor where it is. A page that also has a search field exposes `focusInput()`.
+
+Coming back to a page resumes it. For you, Library and Tasks stay loaded once visited and are only hidden, so each keeps its cursor, scroll, loaded pages, search and chip; a memory or a collection loads fresh. A page that can resume exposes `focusResume()`, which keeps the cursor on what was last touched while that is still there and falls back to `focusFirst()` otherwise; the window calls it, when it exists, whenever the keyboard enters the page. A click counts as a touch, so the card or row a click opened is the one highlighted on return. Whatever holds the cursor is kept on screen: moving into a section scrolls the page to show it, a row or card as much as the collections row or the chips.
 
 A page draws its cursor only while `hasKeyboard` is true, and the window gives the keyboard to the rail or to the page, never both. Entering a region must seed its cursor explicitly, because setting `region` to its current value fires no change handler. Every card is focusable even when Enter does nothing on it, because the arrow keys are also how a page scrolls, and vertical keys cross section boundaries so a page reads as one column.

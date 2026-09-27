@@ -2,6 +2,7 @@
 type: Reference
 title: Omarchy host
 description: How the Omarchy shell finds, loads, reloads and exposes the plugin, and the IPC surface users bind.
+source_digest: 'sha256:88404ac2f8997833fd0ce14c06338e5f0541aa36707228f5a44e8743deee1e16'
 sources:
   - id: manifest
     resource: ../../../manifest.json
@@ -23,12 +24,12 @@ Read this before changing `manifest.json`, an entry point, the IPC handler, or a
 
 ## Loading
 
-The shell scans the top-level directories of the user's plugins folder for a `manifest.json`, validates it, and loads a third-party plugin only when the user's `shell.json` references it; a bar placement counts. The manifest names two entry points:
+The shell scans the top-level directories of the user's plugins folder for a `manifest.json`, validates it, and loads a third-party plugin only when the user's `shell.json` references it; a bar placement counts. The manifest names two entry points, both under `ui/`. The host accepts an entry point in a subfolder and rejects one that is absolute or contains `..`:
 
-- **`Service.qml`** is created once, with no parent, and kept across plugin reloads because the manifest sets `keepLoaded`. The host injects `omarchyPath`, `shell`, and `manifest` if the instance declares them. Anything that must exist once lives here: the IPC target, the CLI build, the index watcher, reminder timers, and the loaders for the Space window, the compose overlay and settings.
-- **`BarWidget.qml`** extends the host's `BarWidget` and is created once per monitor. It reaches the service through `bar.shell.serviceFor("leweyse.omoide")`, which returns only this plugin's own service, and writes its settings back through `bar.shell.updateEntryInline`.
+- **`ui/Service.qml`** is created once, with no parent, and kept across plugin reloads because the manifest sets `keepLoaded`. The host injects `omarchyPath`, `shell`, and `manifest` if the instance declares them. Anything that must exist once lives here: the IPC target, the CLI build, the index pull on `refresh`, reminder timers, and the loaders for the Space window, the compose overlay and settings.
+- **`ui/BarWidget.qml`** extends the host's `BarWidget` and is created once per monitor. It reaches the service through `bar.shell.serviceFor("leweyse.omoide")`, which returns only this plugin's own service, and writes its settings back through `bar.shell.updateEntryInline`.
 
-The host strips `__sourceDir` from a third-party manifest before handing it over. The plugin therefore resolves its own directory from `Qt.resolvedUrl` in `Service.qml`, never from the manifest.
+The host strips `__sourceDir` from a third-party manifest before handing it over. The plugin therefore resolves its own root from `Qt.resolvedUrl("..")` in `ui/Service.qml`, one level above the file, never from the manifest.
 
 ## Reloading
 
@@ -56,4 +57,4 @@ Read the handler for the current list and the argument each takes. Two propertie
 
 ## Manifest
 
-`manifest.json` is read by the host and by the CLI, which embeds it at build time for `--version`. Its `id`, its `entryPoints` and its `barWidget.schema` keys are stored in users' `shell.json`, so changing any of them breaks existing installs. `version` is bumped by the `release` skill and by nothing else.
+`manifest.json` is read by the host and by the CLI, which embeds it at build time for `--version`. Its `id`, its `entryPoints` and its `barWidget.schema` keys are stored in users' `shell.json`, so changing any of them breaks existing installs. `version` changes only through `dev/changeset version`, in the release pull request the `release` skill describes, and `dev/sync-docs` ignores its value so a release does not stale this page.

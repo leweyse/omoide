@@ -1,0 +1,67 @@
+# Keeps one pull request open that applies every pending changeset: the version
+# bump in manifest.json, the new CHANGELOG.md section, and the consumed files.
+# Merging it is the release. Nothing here pushes to main.
+#
+# The repository setting "Allow GitHub Actions to create and approve pull
+# requests" must be on, or `gh pr create` is refused. A pull request opened
+# with GITHUB_TOKEN starts no other workflow, so check.yml and cli.yml do not
+# run on it until someone pushes to the branch or closes and reopens it.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Open the version pull request
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: changeset-release/main
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # With only `none` changesets, or none at all, the tree stays clean and
+      # the steps below do nothing.
+      - name: Apply pending changesets
+        id: apply
+        run: |
+          dev/changeset version
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the release branch
+        if: steps.apply.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add -A
+          git commit -q -m "chore: bump version"
+          git push --force origin "$BRANCH"
+
+      - name: Open or update the pull request
+        if: steps.apply.outputs.changed == 'true'
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
+          {
+            echo "Merging this releases $version to everyone who runs \`omarchy plugin update\`."
+            echo
+            awk '/^## /{n++} n==1' CHANGELOG.md
+          } > "$RUNNER_TEMP/body.md"
+          number=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[].number' | head -n 1)
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "chore: bump version" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base main --title "chore: bump version" --body-file "$RUNNER_TEMP/body.md"
+          fi

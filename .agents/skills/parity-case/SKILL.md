@@ -11,13 +11,13 @@ description: Add or change a dev/parity case, the harness that pins every CLI be
 
 Each entry in `CASES` is `(name, seeds, argv)`. The harness builds a fresh home, runs the seeds (CLI argv lists, or functions on the home such as `seed_library` or `write_config(...)`), runs `argv` once, and compares exit code, stdout, the index `omoide index` prints afterwards, `config.json`, every row, the log, the files left behind and every call to a stubbed program against `dev/parity-cases/<name>.json`. A case without a fixture fails, and so does a fixture without a case.
 
-Every program the CLI might run is a stub from `STUBBED` that records its argv, stdin, working directory and environment. Add a program the CLI newly runs to `STUBBED`; an unstubbed program runs for real and makes the case depend on the machine.
+Every program the CLI might run is a stub from `STUBBED` that records its argv, stdin, working directory and environment. The CLI's `PATH` holds only the stubs and the few real programs `REAL` names (`sh`, for a custom agent command), so a program in neither is not found and the case fails instead of running something on this machine. Add a program the CLI newly runs to `STUBBED`, which is also what `dev/capabilities.lock` will ask you to justify.
 
 ## Add a case
 
-1. Name it `<subcommand>-<situation>`, next to that subcommand's other cases. The name selects it: `dev/parity <filter>`.
-2. Seed the smallest state that exercises the behavior, reusing an existing seed where one fits.
-3. Run `dev/parity <name> --dump` and read what the CLI did. A case whose dump shows nothing interesting tests nothing.
+1. Name it `<subcommand>-<situation>`, next to that subcommand's other cases. A filter selects every case whose name contains it, so `dev/parity memory-pin` also runs `memory-pin-and-unpin`.
+2. Seed the smallest state that exercises the behavior, reusing an existing seed where one fits. The seeds are the functions `CASES` already uses, such as `seed_library`, the `seed_v<N>` databases, `set_version` and `write_config`; read them in `dev/parity` before writing another.
+3. Run `dev/parity <name> --dump` and read what the CLI did, rows and index included. A case whose dump shows nothing interesting tests nothing. A case on `seed_library` dumps the whole seeded database, so read the rows the command touched and the change in the rest.
 4. Record it with `dev/parity --record <name>`, then read the new fixture. Recording writes down whatever the code does, correct or not, so the fixture is only as good as that reading.
 5. Cover the failure path too: a missing record, a bad flag, a refused state. Exit codes are part of the contract.
 

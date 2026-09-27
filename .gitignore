@@ -8,6 +8,9 @@
 *~
 .*.sw[a-p]
 
+# Python bytecode. The dev/ scripts write none, and none belongs here.
+__pycache__/
+
 # Qt caches, in case a tool is ever pointed at this directory. The real ones
 # live in ~/.cache/quickshell/qmlcache.
 *.qmlc

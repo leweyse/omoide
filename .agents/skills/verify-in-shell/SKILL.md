@@ -11,8 +11,8 @@ The shell being restarted is the user's live desktop. Form a hypothesis, check i
 
 | Edited | Picks up with |
 | ------ | ------------- |
-| `BarWidget.qml`, `ui/dialogs/ActionMenu.qml`, other files a widget loads fresh | the plugin watcher, a second or so after saving |
-| `Service.qml`, anything under `ui/components/` or `ui/common/`, anything a kept surface loaded | `omarchy-restart-shell` only; the watcher logs "reloading" and keeps rendering the old code |
+| `ui/BarWidget.qml`, `ui/dialogs/ActionMenu.qml`, other files a widget loads fresh | the plugin watcher, a second or so after saving |
+| `ui/Service.qml`, anything under `ui/surfaces/`, `ui/components/` or `ui/common/`, anything a kept surface loaded | `omarchy-restart-shell` only; the watcher logs "reloading" and keeps rendering the old code |
 | `cli/`, `sql/`, `cli/prompts/`, `manifest.json` | a shell restart, which rebuilds the CLI because the source id changed |
 
 The trap is a batch touching both rows: the widget reloads, the component does not, and the result looks half-applied. When in doubt, restart; it takes about ten seconds to come back.

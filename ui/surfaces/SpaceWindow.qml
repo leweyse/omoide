@@ -25,6 +25,22 @@ Item {
   property var service: null
   property bool opened: false
   property string section: "foryou"
+  // The page on screen. Keys, Esc and the focus rules go to it.
+  readonly property var page: root.section === "library" ? libraryLoader.item
+                            : root.section === "todos" ? tasksLoader.item
+                            : root.section === "foryou" ? forYouLoader.item
+                            : viewLoader.item
+  // Set once and never cleared: a section, once visited, stays loaded.
+  property bool visitedForYou: false
+  property bool visitedLibrary: false
+  property bool visitedTasks: false
+  function markVisited() {
+    if (root.section === "foryou") root.visitedForYou = true
+    if (root.section === "library") root.visitedLibrary = true
+    if (root.section === "todos") root.visitedTasks = true
+  }
+  onSectionChanged: root.markVisited()
+  Component.onCompleted: root.markVisited()
   property string memoryId: ""
   property string collectionName: ""
 
@@ -106,7 +122,7 @@ Item {
     root.inContent = true
     root.railCursor = root.sectionIndex()
     root.restoreFocus()
-    root.focusPageFirst()
+    root.focusPage()
   }
 
   // Candidates for the link picker. Filtered by the CLI, so typing narrows the
@@ -139,7 +155,7 @@ Item {
     var out = []
     var idx = root.service ? root.service.index : null
     var all = (idx && idx.collections) || []
-    var page = viewLoader.item
+    var page = root.page
     var mine = (page && page.memory && page.memory.collections) || []
     for (var i = 0; i < all.length; i++) {
       var taken = false
@@ -195,7 +211,7 @@ Item {
   // The title the open detail page loaded, since only that page's menu asks.
   // The menu is owned by the window and only has the id.
   function memoryTitle(id) {
-    var page = viewLoader.item
+    var page = root.page
     var memory = page && page.memory
     if (memory && memory.id === id) return memory.title || ""
     return ""
@@ -248,7 +264,7 @@ Item {
     // navigation was a sidebar click, Enter on a row, Ctrl+N, or a link in
     // the content. Left or Shift+Tab is the one-key way back to the rail.
     root.inContent = true
-    root.focusPageFirst()
+    root.focusPage()
     root.restoreFocus()
   }
 
@@ -270,7 +286,7 @@ Item {
       // The page gets first refusal. Library's filter chips are a drill-in, and
       // Esc there has to leave the chips -- if unwind() ran first it would shut
       // the whole dialog instead, one rung too many.
-      var esc = viewLoader.item
+      var esc = root.page
       if (root.inContent && esc && esc.pageKey && esc.pageKey(event)) return true
       return root.unwind()
     }
@@ -296,8 +312,8 @@ Item {
       // moment the section changes.
       root.goTo("library")
       Qt.callLater(function () {
-        if (viewLoader.item && viewLoader.item.focusInput)
-          viewLoader.item.focusInput()
+        if (root.page && root.page.focusInput)
+          root.page.focusInput()
       })
       return true
     }
@@ -341,25 +357,29 @@ Item {
         root.goTo(root.sections[root.railCursor].id)
       else {
         root.inContent = true
-        root.focusPageFirst()
+        root.focusPage()
       }
       return true
     }
     return false
   }
 
-  // Entering a page puts its cursor on the first item. A page you have entered
-  // with nothing highlighted is exactly the invisible mode this model exists to
-  // avoid. callLater because changing section swaps the loaded component.
-  function focusPageFirst() {
+  // Entering a page always leaves something highlighted: a page you have
+  // entered with nothing lit is the invisible mode this model exists to avoid.
+  // A page that can resume puts the cursor back on what was last touched; one
+  // that cannot, or has nothing left there, starts at its first item.
+  // callLater because changing section swaps the page on screen.
+  function focusPage() {
     Qt.callLater(function () {
-      if (viewLoader.item && viewLoader.item.focusFirst)
-        viewLoader.item.focusFirst()
+      var page = root.page
+      if (!page) return
+      if (page.focusResume) page.focusResume()
+      else if (page.focusFirst) page.focusFirst()
     })
   }
 
   function contentKey(event) {
-    var page = viewLoader.item
+    var page = root.page
 
     // Tab cycles the page's regions. What a region IS belongs to the page; all
     // this does is count them and move the index. The page lands its own cursor
@@ -957,8 +977,8 @@ Item {
           onOpenMemory: function (id) { root.openMemory(id) }
         }
 
-        Loader {
-          id: viewLoader
+        Item {
+          id: pageArea
           anchors.top: titleBar.bottom
           // The WHOLE gap under the page title, not an addition to one. Views
           // carry no top inset of their own, so the gap is the same at rest and
@@ -968,13 +988,72 @@ Item {
           anchors.left: rail.right
           anchors.right: parent.right
 
-          sourceComponent: {
-            switch (root.section) {
-            case "library": return libraryView
-            case "todos":      return archiveView
-            case "detail":     return detailView
-            case "collection": return collectionView
-            default:        return forYouView
+          // The three sections stay loaded once visited and are only hidden, so
+          // coming back to one finds it as it was left: the cursor on what was
+          // last touched, the scroll, the pages loaded, the search and the
+          // chip. A memory or a collection loads fresh each time.
+          Loader {
+            id: forYouLoader
+            anchors.fill: parent
+            active: root.visitedForYou
+            visible: root.section === "foryou"
+            sourceComponent: forYouView
+          }
+          Loader {
+            id: libraryLoader
+            anchors.fill: parent
+            active: root.visitedLibrary
+            visible: root.section === "library"
+            sourceComponent: libraryView
+          }
+          Loader {
+            id: tasksLoader
+            anchors.fill: parent
+            active: root.visitedTasks
+            visible: root.section === "todos"
+            sourceComponent: archiveView
+          }
+          Loader {
+            id: viewLoader
+            anchors.fill: parent
+            active: root.section === "detail" || root.section === "collection"
+            sourceComponent: root.section === "detail" ? detailView : collectionView
+          }
+        }
+
+        // A library written by a newer build cannot be read at all, so the
+        // pages would only show emptiness. Said once, over the page area, with
+        // the one thing that fixes it.
+        Rectangle {
+          anchors.fill: pageArea
+          visible: root.service ? root.service.libraryTooNew : false
+          color: Color.popups.background
+
+          MouseArea { anchors.fill: parent }
+
+          Column {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - Style.spacing.panelPadding * 2, Style.space(460))
+            spacing: Style.spacing.lg
+
+            Text {
+              width: parent.width
+              text: "This library was saved by a newer version of Omoide."
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              color: Color.popups.text
+              font.family: Style.font.resolvedFamily
+              font.pixelSize: Style.font.subtitle
+            }
+
+            Text {
+              width: parent.width
+              text: "Update the plugin with omarchy plugin update leweyse.omoide, then restart the shell."
+              wrapMode: Text.WordWrap
+              horizontalAlignment: Text.AlignHCenter
+              color: Color.muted
+              font.family: Style.font.resolvedFamily
+              font.pixelSize: Style.font.body
             }
           }
         }
@@ -1017,6 +1096,7 @@ Item {
     id: collectionView
     CollectionDetail {
       service: root.service
+      hasKeyboard: root.inContent
       collectionName: root.collectionName
       onOpenMemory: function (id) { root.openMemory(id) }
       onMenuRequested: function (sceneX, sceneY) {

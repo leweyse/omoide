@@ -84,7 +84,7 @@ Keep every memory-safety check: lengths, caps on output read from a process, ari
 
   | Directory | Holds | May import |
   | --------- | ----- | ---------- |
-  | root | `Service.qml`, `BarWidget.qml`, `Cli.qml`, `MemoryModel.js` | anything |
+  | `ui/` | `Service.qml`, `BarWidget.qml`, `Cli.qml`, `MemoryModel.js` | anything |
   | `ui/common/` | design primitives with no knowledge of memories | `qs.*` only |
   | `ui/components/` | domain cards and rows reused across pages | `ui/common/`, `MemoryModel.js` |
   | `ui/blocks/` | one renderer per memory block type, each extending `BlockCard` | `ui/common/`, `ui/components/`, `MemoryModel.js` |

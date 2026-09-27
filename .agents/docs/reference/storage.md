@@ -2,6 +2,7 @@
 type: Reference
 title: Storage
 description: Every path the plugin reads, writes or deletes, how each is derived, and what uninstall may remove.
+source_digest: 'sha256:63f9da9734af7e7ac7edbfbc4f2be189bc4ca70d5d4e44f34526e36ec6a39910'
 sources:
   - id: paths
     resource: ../../../cli/src/paths.c
@@ -29,12 +30,12 @@ Read this before adding a file, moving one, or changing anything that deletes. E
 | Directory | Holds | Owned by |
 | --------- | ----- | -------- |
 | `$XDG_DATA_HOME/omoide` | `memories.db`, and `blobs/<memory id>/` with each capture and its thumbnail | the CLI |
-| `$XDG_STATE_HOME/omoide` | the log, lock and pid files, the agent's empty working directory, a backup taken during a migration | the CLI; everything here is rebuildable |
+| `$XDG_STATE_HOME/omoide` | the log, lock and pid files, the agent's empty working directory, a `VACUUM INTO` snapshot taken before a migration and deleted once it succeeds | the CLI; everything here is rebuildable |
 | `$XDG_CONFIG_HOME/omoide/config.json` | the agent settings | the CLI writes only the `ai` key and keeps any other key it finds |
 | `$XDG_CACHE_HOME/omoide/bin` | the compiled CLI and its stable symlink | `Service.qml` |
 | `~/.local/bin/omoide` | a symlink to the cached CLI, created by `install` | the CLI, only when the path is absent or already its own link |
 
-The plugin also reads the user's `shell.json` for the bar widget's settings and writes nothing else. `paths()` in `cli/src/paths.c` derives every CLI path; `Service.qml` derives its own copies of the data, state and cache roots.
+The plugin never writes the user's `shell.json` itself. The bar widget saves its settings through the host, and `install` and `uninstall` enable or disable the plugin and place the bar icon by running `omarchy`, which edits it. `paths()` in `cli/src/paths.c` derives every CLI path; `Service.qml` derives only the cache root, for the CLI it builds, by the same rule.
 
 ## Rules that keep deletion safe
 
@@ -45,7 +46,7 @@ The plugin also reads the user's `shell.json` for the bar widget's settings and 
 
 ## What uninstall removes
 
-Always the state directory, the cache directory, and `~/.local/bin/omoide` if it is still the plugin's own link. With `--purge`, also the data directory and `config.json`. It never touches the user's `bindings.lua`, their `shell.json`, or the plugin checkout.
+Always the state directory, the whole `$XDG_CACHE_HOME/omoide` (the compiled CLI with it), and `~/.local/bin/omoide` if it is still the plugin's own link. With `--purge`, also the data directory and `config.json`. It also disables the plugin through `omarchy plugin disable`. It never touches the user's `bindings.lua` or the plugin checkout, and never edits `shell.json` directly.
 
 ## Adding a path
 

@@ -11,6 +11,9 @@ import "../components"
 Flickable {
   id: root
 
+  // Whether this page holds the keyboard. The window gives it to the rail or
+  // the page, never both, so the page draws its cursor only while it holds it.
+  property bool hasKeyboard: true
   property var service: null
   property string collectionName: ""
 
@@ -19,7 +22,7 @@ Flickable {
 
   // The collection's captures, a page at a time, sized and loaded the way the
   // library loads its own.
-  PagedMemories {
+  PagedList {
     id: pages
     service: root.service
     args: root.collectionName.length ? ["list", "--collection", root.collectionName] : []
@@ -30,7 +33,7 @@ Flickable {
     }
   }
 
-  readonly property var memories: pages.memories
+  readonly property var memories: pages.rows
 
   function maybeLoadMore() {
     if (root.contentY + root.height * 2 >= root.contentHeight)
@@ -172,6 +175,7 @@ Flickable {
     }
 
     MasonryGrid {
+      cursorActive: root.hasKeyboard
       id: grid
       width: parent.width
       items: root.memories

@@ -54,14 +54,18 @@
    "events": 0,
    "todos": 0
   },
-  "events": [],
+  "eventCount": 0,
   "failedCount": 0,
   "generatedAt": "2026-09-26T10:00:00Z",
   "memoryCount": 0,
   "pendingCount": 0,
-  "suggestions": [],
-  "todos": [],
-  "version": 5,
+  "todoCounts": {
+   "completed": 0,
+   "past": 0,
+   "suggested": 0,
+   "upcoming": 0
+  },
+  "version": 6,
   "voiceAvailable": true
  },
  "log": [],

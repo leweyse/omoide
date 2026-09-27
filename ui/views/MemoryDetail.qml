@@ -495,8 +495,8 @@ Flickable {
       memory: root.memory
       service: root.service
       cursorId: root.blockCursor
-      cursorActive: root.region === 0 && root.todoCursor < 0
-      rowCursor: root.todoCursor
+      cursorActive: root.hasKeyboard && root.region === 0 && root.todoCursor < 0
+      rowCursor: root.hasKeyboard ? root.todoCursor : -1
       only: ["image"]
       // The action buttons float over this block's top-right corner, so the
       // capture keeps clear of them. Both sides, so the picture stays centred
@@ -579,8 +579,8 @@ Flickable {
       memory: root.memory
       service: root.service
       cursorId: root.blockCursor
-      cursorActive: root.region === 0 && root.todoCursor < 0
-      rowCursor: root.todoCursor
+      cursorActive: root.hasKeyboard && root.region === 0 && root.todoCursor < 0
+      rowCursor: root.hasKeyboard ? root.todoCursor : -1
       only: ["event"]
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
@@ -616,8 +616,8 @@ Flickable {
       memory: root.memory
       service: root.service
       cursorId: root.blockCursor
-      cursorActive: root.region === 0 && root.todoCursor < 0
-      rowCursor: root.todoCursor
+      cursorActive: root.hasKeyboard && root.region === 0 && root.todoCursor < 0
+      rowCursor: root.hasKeyboard ? root.todoCursor : -1
       except: ["image", "event"]
       onChanged: { root.reload(); if (root.service) root.service.refresh() }
       onOpenItem: function (item) { if (item) root.openItem(item.id) }
@@ -632,7 +632,7 @@ Flickable {
 
     RelatedCaptures {
       id: related
-      cursor: root.region === 1 ? root.relatedCursor : -1
+      cursor: root.hasKeyboard && root.region === 1 ? root.relatedCursor : -1
       // The chip inside this section asks; the page relays to the window, which
       // owns the dialog.
       onLinkRequested: root.linkRequested()

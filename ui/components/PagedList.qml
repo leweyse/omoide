@@ -1,24 +1,29 @@
 import QtQuick
 
-// Memory cards a page at a time, from `list` or `search`, which both answer
-// with `pageInfo` and resume from its `endCursor`.
+// Rows a page at a time, from any CLI read that answers with `pageInfo` and
+// resumes from its `endCursor`: `list` and `search` for memory cards,
+// `archive --group` for to-dos, `events` for the carousel.
 //
-// Non-visual: a page owns one, points `args` at the query it shows, and binds
-// its grid to `memories`. Only the latest request is ever applied, so a chip
-// switched mid-load never lands the previous chip's page.
+// Non-visual: a view owns one, points `args` at the query it shows, and binds
+// to `rows`. Only the latest request is ever applied, so a chip or tab switched
+// mid-load never lands the previous one's page.
 QtObject {
   id: root
 
   property var service: null
-  // The query without paging: ["list"], ["list", "--collection", name] or
-  // ["search", "--q", text]. An empty list shows nothing and asks for nothing.
+  // The query without paging, such as ["list"], ["search", "--q", text],
+  // ["archive", "--group", "open"] or ["events"]. An empty list shows nothing
+  // and asks for nothing.
   property var args: []
+  // The key the rows arrive under. `list` answers under `memories`, `search`
+  // under `results`, `archive` under `items` and `events` under `events`.
+  property string listKey: "memories"
   // A chip id, "" for none.
   property string facet: ""
   // Cards per request; the page sizes it to fill its viewport and then some.
   property int pageSize: 24
 
-  property var memories: []
+  property var rows: []
   property int total: 0
   property bool hasNextPage: false
   property bool loading: false
@@ -36,9 +41,15 @@ QtObject {
   // A changed query starts over, once its bindings have settled: a page that
   // reloaded from its own change handler would read the previous chip or
   // query, and a search and a chip changing together cost one reload, not two.
-  onArgsChanged: Qt.callLater(root.reload)
-  onFacetChanged: Qt.callLater(root.reload)
-  Component.onCompleted: Qt.callLater(root.reload)
+  // A timer rather than Qt.callLater, because it dies with this object: a
+  // view replaced the moment it was created must not reload after it is gone.
+  property Timer settle: Timer {
+    interval: 0
+    onTriggered: root.reload()
+  }
+  onArgsChanged: root.settle.restart()
+  onFacetChanged: root.settle.restart()
+  Component.onCompleted: root.settle.restart()
 
   function query(extra) {
     var command = root.args.slice()
@@ -50,7 +61,7 @@ QtObject {
   // A fresh first page, for a new query or chip.
   function reload() {
     root.token++
-    root.memories = []
+    root.rows = []
     root.total = 0
     root.hasNextPage = false
     root.endCursor = ""
@@ -74,7 +85,7 @@ QtObject {
   function refreshLoaded() {
     if (!root.service || !root.args.length) return
     root.token++
-    root.fetch(Math.max(root.pageSize, root.memories.length), "", false)
+    root.fetch(Math.max(root.pageSize, root.rows.length), "", false)
   }
 
   function fetch(limit, after, append) {
@@ -89,9 +100,9 @@ QtObject {
       root.loading = false
       root.appending = false
       if (code !== 0 || !json) return
-      var page = json.memories || json.results || []
+      var page = json[root.listKey] || []
       var info = json.pageInfo || {}
-      root.memories = append ? root.memories.concat(page) : page
+      root.rows = append ? root.rows.concat(page) : page
       root.total = info.total || 0
       root.hasNextPage = info.hasNextPage === true
       root.endCursor = info.endCursor || ""

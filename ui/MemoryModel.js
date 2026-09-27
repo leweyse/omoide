@@ -18,12 +18,6 @@ function parseDate(iso) {
   return isNaN(parsed.getTime()) ? null : parsed
 }
 
-function sameDay(a, b) {
-  return a.getFullYear() === b.getFullYear()
-      && a.getMonth() === b.getMonth()
-      && a.getDate() === b.getDate()
-}
-
 function dayOffset(target, reference) {
   var a = new Date(target.getFullYear(), target.getMonth(), target.getDate())
   var b = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate())
@@ -67,21 +61,6 @@ function formatRange(startIso, endIso, allDay) {
     text += " - " + pad(end.getHours()) + ":" + pad(end.getMinutes())
   }
   return text
-}
-
-// Which archive group a to-do belongs in.
-//
-// Derived from the item's own due date and completion ONLY. A reminder that
-// already fired says nothing about whether the to-do is done, so an overdue
-// item stays in "past" until it is checked off rather than disappearing the
-// moment its notification arrived.
-function archiveGroup(todo, now) {
-  if (!todo) return "anytime"
-  if (todo.completedAt) return "completed"
-  var due = parseDate(todo.dueAt)
-  if (!due) return "anytime"
-  return due.getTime() >= (now ? new Date(now).getTime() : Date.now())
-       ? "upcoming" : "past"
 }
 
 // The digest line. Computed, never generated: it is arithmetic, and it has to
@@ -374,7 +353,6 @@ if (typeof module !== "undefined") {
     formatWhen: formatWhen,
     dateBadge: dateBadge,
     formatRange: formatRange,
-    archiveGroup: archiveGroup,
     digestLine: digestLine,
     balanceColumns: balanceColumns,
     stepList: stepList,
@@ -392,7 +370,6 @@ if (typeof module !== "undefined") {
     suggestCollections: suggestCollections,
     parseDate: parseDate,
     dateParts: dateParts,
-    toCliWhen: toCliWhen,
-    sameDay: sameDay
+    toCliWhen: toCliWhen
   }
 }

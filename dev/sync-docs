@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Pin each concept to the files it describes.
+
+A reference concept, under .agents/docs/reference, that lists local files in
+`sources` carries a `source_digest`: a sha256 over those files' paths and
+contents. When one of the files changes, the digest goes stale and --check
+fails, so a change to the code cannot land without someone revisiting the
+document that describes it. Re-pinning is the last step of that revisit, never
+a way to make the check pass.
+
+manifest.json is hashed with its `version` value blanked. dev/changeset bumps
+it on every release, and no concept states it, so a release alone never makes
+a concept stale.
+
+Only reference concepts describe how the code works. The standard and the
+planning registers cite their sources as provenance, and a routine edit to one
+of those files does not make them untrue, so they carry no digest.
+
+Usage:  dev/sync-docs            re-pin every digest
+        dev/sync-docs --check    report stale or missing digests, write nothing
+Exit:   0 current, 1 stale (with --check)
+"""
+import hashlib
+import pathlib
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+REFERENCE = ROOT / ".agents" / "docs" / "reference"
+SKIP_DIRS = {".git", "node_modules"}
+MANIFEST = ROOT / "manifest.json"
+VERSION_VALUE = re.compile(rb'^(  "version": ")[^"]*(")', re.M)
+
+RESOURCE = re.compile(r"^\s+(?:-\s+)?resource:\s*(\S+)", re.M)
+DIGEST = re.compile(r"^source_digest: '(sha256:[0-9a-f]{64})'\n", re.M)
+
+
+def frontmatter(text: str):
+    """The frontmatter's span, or None when the document has none."""
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---", 3)
+    return (4, end) if end != -1 else None
+
+
+def source_paths(doc: pathlib.Path, head: str):
+    """The local files and directories `sources` names; URLs pin nothing."""
+    paths = []
+    for target in RESOURCE.findall(head):
+        if "://" in target:
+            continue
+        path = (doc.parent / target).resolve()
+        if path.exists():
+            paths.append(path)
+    return paths
+
+
+def files_under(path: pathlib.Path):
+    if path.is_file():
+        return [path]
+    return sorted(p for p in path.rglob("*") if p.is_file() and not SKIP_DIRS & set(p.parts))
+
+
+def digest_of(paths) -> str:
+    h = hashlib.sha256()
+    for file in sorted({f for p in paths for f in files_under(p)}):
+        h.update(file.relative_to(ROOT).as_posix().encode())
+        h.update(b"\0")
+        data = file.read_bytes()
+        h.update(VERSION_VALUE.sub(rb"\1\2", data, count=1) if file == MANIFEST else data)
+    return "sha256:" + h.hexdigest()
+
+
+def pinned(text: str, doc: pathlib.Path) -> str:
+    """The document with its digest current, added before `sources:` if absent."""
+    span = frontmatter(text)
+    if span is None:
+        return text
+    head = text[span[0]:span[1]]
+    paths = source_paths(doc, head)
+    if not paths:
+        return text
+    line = f"source_digest: '{digest_of(paths)}'\n"
+    if DIGEST.search(head):
+        return text[:span[0]] + DIGEST.sub(line, head, count=1) + text[span[1]:]
+    at = head.find("\nsources:")
+    if at == -1:
+        return text
+    at += 1
+    return text[:span[0]] + head[:at] + line + head[at:] + text[span[1]:]
+
+
+def main() -> int:
+    check = "--check" in sys.argv[1:]
+    drifted = []
+    for doc in sorted(REFERENCE.rglob("*.md")):
+        before = doc.read_text()
+        after = pinned(before, doc)
+        if after == before:
+            continue
+        drifted.append(doc.relative_to(ROOT).as_posix())
+        if not check:
+            doc.write_text(after)
+    if not drifted:
+        print("digests: every reference concept is pinned to its current sources")
+        return 0
+    print(("stale: revisit each document, then run dev/sync-docs" if check else "re-pinned:")
+          + "".join(f"\n  {d}" for d in drifted))
+    return 1 if check else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

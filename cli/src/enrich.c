@@ -21,6 +21,8 @@ enum {
   MAX_BODY = 4000,   // summary, text, quote, code
   MAX_TAG = 40,
   MAX_TEXT = 2000,   // default ceiling for every clean_text field
+  MAX_PROMPT_NOTE = 4000,   // the user's note, as the prompt quotes it
+  MAX_PROMPT_OCR = 8000,   // OCR text, as the prompt quotes it
   AGENT_OUTPUT_CAP = 1024 * 1024,   // a JSON answer that needs a megabyte is not one
 };
 
@@ -410,10 +412,10 @@ GStrv harden(
 static char *build_prompt(const char *note, const char *ocr_text, const char *image_path, bool vision) {
   g_autoptr(GDateTime) now = now_utc();
   g_autoptr(GDateTime) local = g_date_time_to_local(now);
-  g_autofree char *note_capped = truncate_chars(note ? note : "", 4000);
+  g_autofree char *note_capped = truncate_chars(note ? note : "", MAX_PROMPT_NOTE);
   // Capped like the note. A clipboard capture decides how long these are, and
   // the full text is on the memory either way.
-  g_autofree char *ocr_capped = truncate_chars(vision ? "" : (ocr_text ? ocr_text : ""), 8000);
+  g_autofree char *ocr_capped = truncate_chars(vision ? "" : (ocr_text ? ocr_text : ""), MAX_PROMPT_OCR);
   g_autofree char *now_iso = iso(local);
   g_autofree char *now_local = g_date_time_format(local, "%A %d %B %Y, %H:%M");
 

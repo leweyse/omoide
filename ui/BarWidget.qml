@@ -26,7 +26,8 @@ BarWidget {
 
   readonly property bool capturing: service ? service.capturing : false
   readonly property bool working: enriching > 0
-  readonly property bool broken: !working && failed > 0
+  readonly property bool tooNew: service ? service.libraryTooNew : false
+  readonly property bool broken: !working && (failed > 0 || tooNew)
 
   // Capturing outranks everything: it is the only state the user is actively
   // waiting on. Then enrichment, then a failure worth noticing.
@@ -113,6 +114,8 @@ BarWidget {
     if (root.working)
       return "Omoide — enriching " + root.enriching + " capture"
            + (root.enriching === 1 ? "" : "s")
+    if (root.tooNew)
+      return "Omoide — this library needs a newer Omoide; update the plugin"
     if (root.broken)
       return "Omoide — " + root.failed + " capture"
            + (root.failed === 1 ? "" : "s") + " could not be enriched"

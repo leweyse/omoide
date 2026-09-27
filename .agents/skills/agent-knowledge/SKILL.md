@@ -1,6 +1,6 @@
 ---
 name: agent-knowledge
-description: Decide where a piece of knowledge lives in this repository and write it there, instead of in a code comment. Covers moving rationale and history out of comments, directory contracts (`AGENTS.md`), the decision register, open questions, the log, placement and filenames under `.agents/`, the register these documents are written in, and vendoring a skill into `skills-lock.json`. Do not use for the bundle's format rules (frontmatter, reserved files, provenance), which are `open-knowledge-format`, for what kind of document something is, which is `diataxis-docs`, or for how a result is reported to a human, which is `evidence-first`.
+description: Decide where a piece of knowledge lives in this repository and write it there, instead of in a code comment. Covers moving rationale and history out of comments, directory contracts (`AGENTS.md`), the decision register, open questions, the log, placement and filenames under `.agents/`, the register these documents are written in, and adopting a skill from another repository. Do not use for the bundle's format rules (frontmatter, reserved files, provenance), which are `open-knowledge-format`, for what kind of document something is, which is `diataxis-docs`, or for how a result is reported to a human, which is `evidence-first`.
 ---
 
 # Agent knowledge
@@ -32,6 +32,10 @@ The default is not to create a file. A fact belongs in the concept that already 
 
 Read [references/naming.md](references/naming.md) before adding, renaming, or moving a file, because a path is a concept's identity.
 
+## Keeping a concept current
+
+A reference concept under `.agents/docs/reference` that lists local files in `sources` is pinned to them by a `source_digest`, and `dev/sync-docs --check` fails when one of those files changes. That failure means a document may now be wrong. Revisit it, fix what the change made untrue, and only then run `dev/sync-docs` to re-pin. Re-pinning without reading the document turns the check into a formality. When a concept starts describing another file, add the file to `sources` so the pin covers it.
+
 ## Directory contracts
 
 A directory's `AGENTS.md` holds the invariants that bind any edit in that directory, and nothing else. It opens with its trigger, names what may not change without approval, and points at the reference concept for how things work there. A sibling `CLAUDE.md` containing only `@AGENTS.md` makes Claude Code load it when files in that directory are read; `dev/check-docs` requires the pair.
@@ -42,7 +46,9 @@ A skill lives at `.agents/skills/<name>/SKILL.md` and reaches Claude Code throug
 
 A skill owns a procedure. It points at the standard or contract that owns the rules it applies instead of restating them.
 
-A skill copied from elsewhere is recorded in `skills-lock.json`: its source, the hash of the source `SKILL.md`, the hash of every file as it stands here, and each local adaptation. Its prose keeps its author's register, and `dev/check-docs` skips it. Changing a vendored file means recording the adaptation and updating its hash in the same change; the check fails on a hash that does not match, and on a file in the skill that the lock does not list.
+A skill taken from another repository is adopted, not vendored: it lives here as a local skill, passes the local checks, and depends on no upstream that could move or vanish. When its license asks for the notice to travel with copies, the notice goes in a `LICENSE` beside its `SKILL.md`. Do not add a remote source to `skills-lock.json`.
+
+A skill mirrored from the user's own Claude Code skills is recorded in `skills-lock.json`: its source, the hash of the source `SKILL.md`, the hash of every file as it stands here, and each local adaptation. Its prose keeps its author's register, and `dev/check-docs` skips it. Changing a vendored file means recording the adaptation and updating its hash in the same change; the check fails on a hash that does not match, and on a file in the skill that the lock does not list.
 
 ## Register
 

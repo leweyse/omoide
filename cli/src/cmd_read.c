@@ -390,11 +390,101 @@ int cmd_search(int argc, char **argv) {
   return 0;
 }
 
-// The To-do archive: one query, grouped by time and completion. Grouping never
-// consults a reminder's state. A fired alarm says nothing about whether the
-// to-do is done, so it stays in Past until checked off.
+// One page of the items `where` selects, in `key` order and then by id, so the
+// cursor, "<key>,<id>", resumes exactly where the page ended however many items
+// arrive in between. `where` may name ?1, which is bound to now. `entry` builds
+// each row; `name` is the key the items print under.
+typedef json_object *(*ItemEntry)(sqlite3 *db, sqlite3_stmt *row);
+
+static void item_page(sqlite3 *db, const char *command, const char *where, const char *key, bool ascending,
+    int limit, const char *after, ItemEntry entry, const char *name) {
+  g_autofree char *after_key = NULL, *after_id = NULL;
+  if (after) {
+    const char *comma = strchr(after, ',');
+    if (!comma || comma == after || !comma[1])
+      die(2, "%s: argument --after: not a cursor: '%s'", command, after);
+    after_key = g_strndup(after, (gsize)(comma - after));
+    after_id = g_strdup(comma + 1);
+  }
+  g_autofree char *now = iso_now();
+  const char *dir = ascending ? "ASC" : "DESC";
+  g_autofree char *sql = g_strdup_printf("SELECT *, %s AS page_key FROM items WHERE %s "
+                                         "AND (?2 IS NULL OR (%s, id) %s (?2, ?3)) "
+                                         "ORDER BY %s %s, id %s LIMIT ?4",
+      key, where, key, ascending ? ">" : "<", key, dir, dir);
+  const int64_t fetch = limit < 0 ? -1 : (int64_t)limit + 1;
+  g_autoptr(sqlite3_stmt) rows = db_query(db, sql, "sssi", now, after_key, after_id, fetch);
+
+  json_object *items = json_object_new_array();
+  bool more = false;
+  g_autofree char *first = NULL, *last = NULL;
+  while (db_step(rows)) {
+    if (limit >= 0 && (int64_t)json_object_array_length(items) == limit) {
+      more = true;
+      break;
+    }
+    g_autofree char *cursor = g_strdup_printf("%s,%s", col_str(rows, "page_key"), col_str(rows, "id"));
+    if (!first)
+      first = g_strdup(cursor);
+    g_free(last);
+    last = g_steal_pointer(&cursor);
+    json_object_array_add(items, entry(db, rows));
+  }
+
+  // Bound only when the predicate names it: SQLite refuses a parameter the
+  // statement does not have.
+  g_autofree char *count_sql = g_strdup_printf("SELECT COUNT(*) AS n FROM items WHERE %s", where);
+  g_autoptr(sqlite3_stmt) total =
+      strstr(where, "?1") ? db_query(db, count_sql, "s", now) : db_query(db, count_sql, NULL);
+  db_step(total);
+
+  json_object *out = json_object_new_object();
+  json_object_object_add(out, name, items);
+  json_object_object_add(
+      out, "pageInfo", page_info(col_int(total, "n"), json_str(first), json_str(last), more));
+  emit(out);
+}
+
+static json_object *todo_row(sqlite3 *db, sqlite3_stmt *row) {
+  (void)db;
+  return item_entry(row);
+}
+
+// Undated sorts last: `~` follows every digit.
+#define BY_DUE "COALESCE(datetime(due_at), '~')"
+
+// The To-do archive. With --group, one page of that group, as the Tasks tabs
+// and For you load it; without, every group in full, as it always printed.
+// Grouping never consults a reminder's state. A fired alarm says nothing about
+// whether the to-do is done, so it stays in Past until checked off.
 int cmd_archive(int argc, char **argv) {
-  parse_options("archive", NULL, 0, &argc, &argv);
+  int limit = 50;
+  g_autofree char *group = NULL, *after = NULL;
+  const GOptionEntry entries[] = { { "group", 0, 0, G_OPTION_ARG_STRING, &group, "one page of this group",
+                                       "open|upcoming|past|completed|suggested" },
+    { "limit", 0, 0, G_OPTION_ARG_INT, &limit, "at most this many, with --group", "N" },
+    { "after", 0, 0, G_OPTION_ARG_STRING, &after, "the page after this cursor, with --group", "CURSOR" },
+    G_OPTION_ENTRY_NULL };
+  parse_options("archive", entries, 0, &argc, &argv);
+  if (group) {
+    static const char *const GROUPS[] = { "open", "upcoming", "past", "completed", "suggested", NULL };
+    require_choice("archive", "--group", group, GROUPS);
+    sqlite3 *db = db_open(false);
+    // Open is For you's list, soonest due first; the tabs are newest first.
+    if (g_str_equal(group, "open"))
+      item_page(db, "archive", OPEN_TODO, BY_DUE, true, limit, after, todo_row, "items");
+    else if (g_str_equal(group, "upcoming"))
+      item_page(db, "archive", UPCOMING_TODO, "created_at", false, limit, after, todo_row, "items");
+    else if (g_str_equal(group, "past"))
+      item_page(db, "archive", PAST_TODO, "created_at", false, limit, after, todo_row, "items");
+    else if (g_str_equal(group, "completed"))
+      item_page(db, "archive", COMPLETED_TODO, "created_at", false, limit, after, todo_row, "items");
+    else
+      item_page(db, "archive", SUGGESTED_TODO, "created_at", false, limit, after, todo_row, "items");
+    return 0;
+  }
+  if (after)
+    die(2, "archive: argument --after: needs --group");
   sqlite3 *db = db_open(false);
   g_autoptr(GDateTime) current = now_utc();
 
@@ -438,6 +528,20 @@ int cmd_archive(int argc, char **argv) {
   json_object_object_add(out, "past", past);
   json_object_object_add(out, "completed", completed);
   emit(out);
+  return 0;
+}
+
+// The events carousel, a page at a time, soonest first.
+int cmd_events(int argc, char **argv) {
+  int limit = 50;
+  g_autofree char *after = NULL;
+  const GOptionEntry entries[] = { { "limit", 0, 0, G_OPTION_ARG_INT, &limit, "at most this many", "N" },
+    { "after", 0, 0, G_OPTION_ARG_STRING, &after, "the page after this cursor", "CURSOR" },
+    G_OPTION_ENTRY_NULL };
+  parse_options("events", entries, 0, &argc, &argv);
+  sqlite3 *db = db_open(false);
+  item_page(db, "events", LIVE_EVENT, "COALESCE(datetime(starts_at), '~')", true, limit, after, event_entry,
+      "events");
   return 0;
 }
 

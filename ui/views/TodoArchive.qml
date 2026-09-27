@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Ui
 import "../MemoryModel.js" as Model
 import "../common"
+import "../components"
 
-// Upcoming / Past / Anytime / Completed.
+// Upcoming / Past / Completed, with the agent's suggestions under Upcoming.
 //
 // Grouping is derived from the item's own due date and completion, never from
 // a reminder's state: an alarm that already fired says nothing about whether
@@ -22,9 +23,27 @@ Flickable {
   signal openMemory(string id)
   signal openItem(string id)
 
-  property var groups: ({ suggested: [], upcoming: [], past: [], completed: [] })
   // Which tab is showing. Upcoming, because that is what you came to look at.
   property string tab: "upcoming"
+
+  // The tab's tasks and, on Upcoming, the agent's suggestions, each a page at
+  // a time. The tab counts come from the index, which counts every item.
+  PagedList {
+    id: tabPages
+    service: root.service
+    args: ["archive", "--group", root.tab]
+    listKey: "items"
+    pageSize: 40
+  }
+  PagedList {
+    id: suggestionPages
+    service: root.service
+    args: root.tab === "upcoming" ? ["archive", "--group", "suggested"] : []
+    listKey: "items"
+    pageSize: 20
+  }
+  readonly property var tabRows: tabPages.rows
+  readonly property var todoCounts: (root.service && root.service.index.todoCounts) || ({})
 
   // --- keyboard ------------------------------------------------------------
   //
@@ -32,7 +51,7 @@ Flickable {
   // them; the arrows stay inside one.
 
   readonly property var tabOrder: ["upcoming", "past", "completed"]
-  readonly property var suggestions: root.groups.suggested || []
+  readonly property var suggestions: suggestionPages.rows
   readonly property bool hasSuggestions:
     root.tab === "upcoming" && root.suggestions.length > 0
 
@@ -41,13 +60,13 @@ Flickable {
   property int cursor: -1
 
   readonly property var regionRows:
-    root.region === 1 ? root.suggestions : (root.groups[root.tab] || [])
+    root.region === 1 ? root.suggestions : root.tabRows
 
   // Explicit index, not a read of `regionRows`: that is a binding on `region`,
   // and reading it inside region's own change handler can return the region
   // just left.
   function rowsFor(i) {
-    return i === 1 ? root.suggestions : (root.groups[root.tab] || [])
+    return i === 1 ? root.suggestions : root.tabRows
   }
 
   // Tab lands on the target region's FIRST row, not the last position in it:
@@ -60,6 +79,25 @@ Flickable {
 
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
+  // Coming back to the page: the row last touched keeps the cursor while it is
+  // still there, and the page scrolls to it; otherwise the first row takes it.
+  function focusResume() {
+    if (root.cursor >= 0 && root.cursor < root.rowsFor(root.region).length) {
+      root.ensureVisible()
+      return
+    }
+    root.focusFirst()
+  }
+
+  // A click is a touch: the clicked row takes the cursor, so coming back to the
+  // page lands on it.
+  function touch(region, id) {
+    root.region = region
+    var rows = root.rowsFor(region)
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].id === id) { root.cursor = i; break }
+  }
+
   function focusFirst() {
     // Upcoming can be empty while suggestions are not; land on whichever has
     // rows so entering the page always lights something up.
@@ -87,7 +125,11 @@ Flickable {
     if (event.key === Qt.Key_Down || event.key === Qt.Key_Up) {
       var moved = Model.stepList(root.regionRows.length, root.cursor,
                                  event.key === Qt.Key_Down ? 1 : -1)
-      if (moved === null) return true   // at an end: swallow, do not exit
+      if (moved === null) {
+        // At the end of what is loaded: ask for the next page and stay put.
+        if (event.key === Qt.Key_Down) (root.region === 1 ? suggestionPages : tabPages).loadMore()
+        return true
+      }
       root.cursor = moved
       root.ensureVisible()
       return true
@@ -114,10 +156,7 @@ Flickable {
   function toggleCursor() {
     var args = Model.todoAction(root.regionRows[root.cursor])
     if (!args || !root.service) return
-    root.service.call(args, function () {
-      root.reload()
-      root.service.refresh()
-    })
+    root.service.call(args, function () { root.service.refresh() })
   }
 
   function ensureVisible() {
@@ -145,41 +184,52 @@ Flickable {
 
   PageWheel { page: root }
 
-  // True once `archive` has answered. Until then the list is drawn as
-  // placeholder rows; a re-fetch after an edit keeps the rows it has.
-  property bool loaded: false
+  // True once the tab's first page has answered. Until then the list is drawn
+  // as placeholder rows; a re-fetch after an edit keeps the rows it has.
+  readonly property bool loaded: tabPages.loaded
 
-  function reload() {
-    if (!service) return
-    service.call(["archive"], function (code, json) {
-      if (!root) return
-      if (json) root.groups = json
-      root.loaded = true
-      // Ticking a task removes it from Upcoming, so the index the cursor held
-      // can now be past the end.
-      if (root.cursor >= root.regionRows.length)
-        root.cursor = root.regionRows.length - 1
-      // The suggestions card can disappear entirely while focus is in it.
-      if (root.region >= root.regionCount) {
-        root.region = 0
-        root.cursor = root.rowsFor(0).length > 0 ? 0 : -1
-      }
-      // The rows arrive AFTER the page is entered, so the first-item focus that
-      // ran on entry found an empty list. Seed it now that there is one.
-      if (root.cursor < 0 && root.regionRows.length > 0) root.cursor = 0
-    })
+  // Rows replaced under the cursor: ticking a task removes it from Upcoming,
+  // and the suggestions card can disappear while focus is in it.
+  function settleCursor() {
+    if (root.cursor >= root.regionRows.length)
+      root.cursor = root.regionRows.length - 1
+    if (root.region >= root.regionCount) {
+      root.region = 0
+      root.cursor = root.rowsFor(0).length > 0 ? 0 : -1
+    }
+    // The rows arrive AFTER the page is entered, so the first-item focus that
+    // ran on entry found an empty list. Seed it now that there is one.
+    if (root.cursor < 0 && root.regionRows.length > 0) root.cursor = 0
   }
-
-  Component.onCompleted: reload()
+  Connections {
+    target: tabPages
+    function onRowsChanged() { root.settleCursor() }
+  }
+  Connections {
+    target: suggestionPages
+    function onRowsChanged() { root.settleCursor() }
+  }
 
   // The item editor is a separate surface, so a delete or a completion made
   // there has to reach this list somehow. Every mutation makes the service pull
-  // a new index, so its index changing is the general "data moved" signal. The two surfaces need no direct wiring.
+  // a new index, so its index changing is the general "data moved" signal.
   Connections {
     target: root.service
-    function onIndexChanged() { root.reload() }
+    function onIndexChanged() {
+      tabPages.refreshLoaded()
+      suggestionPages.refreshLoaded()
+    }
   }
 
+  // The next page while a viewport of rows is still below: the tab's tasks
+  // first, then the suggestions under them.
+  function maybeLoadMore() {
+    if (root.contentY + root.height * 2 < root.contentHeight) return
+    if (tabPages.hasNextPage) tabPages.loadMore()
+    else suggestionPages.loadMore()
+  }
+  onContentYChanged: root.maybeLoadMore()
+  onContentHeightChanged: root.maybeLoadMore()
 
   Column {
     id: layout
@@ -207,7 +257,7 @@ Flickable {
           // with its own heading, so counting them here would promise more
           // tasks than the first card holds.
           label: modelData.label
-          count: (root.groups[modelData.key] || []).length
+          count: root.todoCounts[modelData.key] || 0
           selected: root.tab === modelData.key
           foreground: Color.popups.text
           background: Color.popups.background
@@ -258,11 +308,11 @@ Flickable {
     TaskGroup {
       id: tasksGroup
       width: parent.width
-      rows: root.groups[root.tab] || []
+      rows: root.tabRows
       cursor: root.hasKeyboard && root.region === 0 ? root.cursor : -1
       service: root.service
-      onChanged: { root.reload(); if (root.service) root.service.refresh() }
-      onOpenItem: function (id) { root.openItem(id) }
+      onChanged: if (root.service) root.service.refresh()
+      onOpenItem: function (id) { root.touch(0, id); root.openItem(id) }
     }
 
     // The agent's proposals, in a card of their own. Kept apart from the list
@@ -280,14 +330,14 @@ Flickable {
       rows: root.suggestions
       cursor: root.hasKeyboard && root.region === 1 ? root.cursor : -1
       service: root.service
-      onChanged: { root.reload(); if (root.service) root.service.refresh() }
-      onOpenItem: function (id) { root.openItem(id) }
+      onChanged: if (root.service) root.service.refresh()
+      onOpenItem: function (id) { root.touch(1, id); root.openItem(id) }
     }
 
     Text {
-      visible: root.loaded && (root.groups[root.tab] || []).length === 0
+      visible: root.loaded && root.tabRows.length === 0
                && !(root.tab === "upcoming"
-                    && (root.groups.suggested || []).length > 0)
+                    && (root.todoCounts.suggested || 0) > 0)
       width: parent.width
       text: root.tab === "upcoming" ? "Nothing coming up."
             : (root.tab === "past" ? "Nothing overdue."

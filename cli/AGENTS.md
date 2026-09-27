@@ -16,8 +16,8 @@ Read this before changing anything under `cli/`. This code is compiled on every 
 
 ## Approval required
 
-A subcommand, flag, output key or exit code that is removed or changes meaning; a path; a sandbox flag; a new program the CLI runs. See [the CLI contract](../.agents/docs/reference/cli-contract.md) and [enrichment](../.agents/docs/reference/enrichment.md).
+Any change to the CLI's surface: a subcommand, flag, output key or exit code that is added, removed or changes meaning. A new call site that deletes, runs a program or writes outside `paths()`. A path; a sandbox flag; a new program the CLI runs. `dev/cli-surface.lock` and `dev/capabilities.lock` record the approved state, and `dev/check` fails until a change to either is written into them, so the lock diff is what the owner approves. See [the CLI contract](../.agents/docs/reference/cli-contract.md) and [enrichment](../.agents/docs/reference/enrichment.md).
 
 ## Verify
 
-`dev/check` builds with gcc and clang under `-Werror` and runs parity. Before handing off a change to ownership or parsing, also run `dev/parity --sanitize` and `dev/fuzz`. CI adds `-fanalyzer` and a fresh-clone build.
+`dev/check` builds with gcc and clang under `-Werror` and runs parity. Before handing off a change to ownership or parsing, also run `dev/parity --sanitize` and `dev/fuzz`. CI adds `-fanalyzer`, parity and the sanitizers against the gcc build, and a fresh-clone build.

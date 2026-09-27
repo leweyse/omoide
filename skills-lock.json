@@ -1,43 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "diataxis-docs": {
-      "source": "pmndrs/glyph",
-      "sourceType": "github",
-      "skillPath": ".agents/skills/diataxis-docs/SKILL.md",
-      "computedHash": "520606606e83a3643b87899b29783498b30007bbdf416c9b9959604c67d809f9",
-      "files": {
-        ".agents/skills/diataxis-docs/SKILL.md": "520606606e83a3643b87899b29783498b30007bbdf416c9b9959604c67d809f9",
-        ".agents/skills/diataxis-docs/agents/openai.yaml": "60f85dd8410e01124df4e1c7b0ef1b03ecce656f6c21befc877ee112b9c3ef53",
-        ".agents/skills/diataxis-docs/references/framework.md": "11953e4d88efa09bc15d01ca46271a96ec94e106fb21429b748f566354558e07"
-      },
-      "adaptations": []
-    },
-    "evidence-first": {
-      "source": "pmndrs/glyph",
-      "sourceType": "github",
-      "skillPath": ".agents/skills/evidence-first/SKILL.md",
-      "computedHash": "1c3a0e825b280de599910827e20e8e977f451a4528b8637fe2da358d116004c3",
-      "files": {
-        ".agents/skills/evidence-first/SKILL.md": "1c3a0e825b280de599910827e20e8e977f451a4528b8637fe2da358d116004c3",
-        ".agents/skills/evidence-first/agents/openai.yaml": "b3e602ae10a05ab0e889668d16d0593a4669ad306ecc385f3f01ea7327f39378"
-      },
-      "adaptations": []
-    },
-    "open-knowledge-format": {
-      "source": "pmndrs/glyph",
-      "sourceType": "github",
-      "skillPath": ".agents/skills/open-knowledge-format/SKILL.md",
-      "computedHash": "64d9e0ca620ca209da4f7f92985635dae01f896962949409d11ee5777b75a1f4",
-      "files": {
-        ".agents/skills/open-knowledge-format/SKILL.md": "1472e1e6611e5aee4471360a3d6a7ee86a997bc4d682f234e5517efe61406715",
-        ".agents/skills/open-knowledge-format/agents/openai.yaml": "abdf32d50b870306db69cee6d40755ffc1cbfd190be979cd6456b3785015d3b6",
-        ".agents/skills/open-knowledge-format/references/okf-v0.2.md": "35308bcb27d0d8de162fd8ceb345b8f0628a643295a35bf42a8d796eb24ae3eb"
-      },
-      "adaptations": [
-        "Validate and the v0.1 migration step name dev/check-docs; the Node validator, its package-digest scripts and the Workspace Package paragraph are not vendored"
-      ]
-    },
     "unslop": {
       "source": "Claude Code user skill",
       "sourceType": "user",

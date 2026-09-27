@@ -26,7 +26,7 @@
 
 enum {
   SCHEMA_VERSION = 3,   // what this code understands
-  INDEX_VERSION = 5,   // bump when the shape of what `index` prints changes
+  INDEX_VERSION = 6,   // bump when the shape of what `index` prints changes
 };
 
 // Limits that more than one file enforces.
@@ -132,6 +132,15 @@ bool col_null(sqlite3_stmt *stmt, const char *name);
   "FROM reminders r JOIN items i ON i.id = r.item_id " \
   "WHERE r.status = 'pending' AND i.status = 'active' " \
   "AND i.completed_at IS NULL"
+// The item groups every reader shares, so a page and the count the index
+// gives for it cannot disagree. `?1` is now, as UTC ISO text; datetime() reads
+// every stored form, so no comparison depends on how a time was written.
+#define OPEN_TODO "kind = 'todo' AND status = 'active' AND completed_at IS NULL"
+#define UPCOMING_TODO OPEN_TODO " AND (due_at IS NULL OR datetime(due_at) >= datetime(?1))"
+#define PAST_TODO OPEN_TODO " AND datetime(due_at) < datetime(?1)"
+#define COMPLETED_TODO "kind = 'todo' AND status = 'active' AND completed_at IS NOT NULL"
+#define SUGGESTED_TODO "kind = 'todo' AND status = 'suggested'"
+#define LIVE_EVENT "kind = 'event' AND status = 'active'"
 
 // --- proc.c
 typedef struct {
@@ -177,6 +186,8 @@ json_object *memory_card(sqlite3 *db, sqlite3_stmt *memory);
 json_object *aspect_of(sqlite3_stmt *attachment);
 void refresh_fts(sqlite3 *db, const char *memory_id);   // NULL: all of them
 json_object *build_index(sqlite3 *db);
+json_object *event_entry(sqlite3 *db, sqlite3_stmt *row);   // an event as the carousel shows it
+json_object *item_entry(sqlite3_stmt *row);   // a to-do as a task row shows it
 // The filter chips over the whole library: id, label, group and count.
 json_object *facet_vocabulary(sqlite3 *db);
 // What a memory is, from what it holds, for a row aliased `m`. memory_kind()
@@ -255,6 +266,7 @@ int cmd_list(int argc, char **argv);
 int cmd_show(int argc, char **argv);
 int cmd_search(int argc, char **argv);
 int cmd_archive(int argc, char **argv);
+int cmd_events(int argc, char **argv);
 int cmd_related(int argc, char **argv);
 int cmd_candidates(int argc, char **argv);
 int cmd_reindex(int argc, char **argv);

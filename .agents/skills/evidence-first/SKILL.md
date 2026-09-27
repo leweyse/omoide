@@ -1,6 +1,6 @@
 ---
 name: evidence-first
-description: Shape human-facing engineering communication—including chat updates and final answers, reports, reviews, handoffs, debugging or benchmark summaries, PR and issue prose, READMEs, and technical documentation—around clear claims, measured support, explicit gaps, and scoped decisions. Use whenever Codex presents engineering work, evidence, or findings to a human; let document-specific frameworks retain their purpose and structure.
+description: Shape human-facing engineering communication (chat updates and final answers, reports, reviews, handoffs, debugging or benchmark summaries, PR and issue prose, READMEs, and technical documentation) around clear claims, measured support, explicit gaps, and scoped decisions. Use whenever an agent presents engineering work, evidence, or findings to a human; let document-specific frameworks retain their purpose and structure.
 ---
 
 # Working orientation
@@ -21,7 +21,7 @@ Depart from these defaults whenever audience, medium, or task calls for a cleare
 
 # Prefer the smallest useful artifact
 
-Simple claims often need only prose. Code, a table, a measurement block, or a diagram earns its place when it materially clarifies behavior, comparison, structure, or evidence—not merely as an alternative to writing a paragraph.
+Simple claims often need only prose. Code, a table, a measurement block, or a diagram earns its place when it materially clarifies behavior, comparison, structure, or evidence, not merely as an alternative to writing a paragraph.
 
 # Reader questions for report-like outputs
 

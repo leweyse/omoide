@@ -375,9 +375,9 @@ int backfill_dimensions(sqlite3 *db) {
   return filled;
 }
 
-// --- index.json
+// --- index
 
-static json_object *event_entry(sqlite3 *db, sqlite3_stmt *row) {
+json_object *event_entry(sqlite3 *db, sqlite3_stmt *row) {
   const char *memory_id = col_str(row, "memory_id");
   g_autofree char *domain = source_domain(db, memory_id);
   g_autoptr(sqlite3_stmt) thumb = db_query(db,
@@ -400,14 +400,15 @@ static json_object *event_entry(sqlite3 *db, sqlite3_stmt *row) {
   return event;
 }
 
-static json_object *todo_entry(sqlite3_stmt *row, bool suggestion) {
+json_object *item_entry(sqlite3_stmt *row) {
   json_object *todo = json_object_new_object();
   json_object_object_add(todo, "id", json_str(col_str(row, "id")));
   json_object_object_add(todo, "memoryId", json_str(col_str(row, "memory_id")));
   json_object_object_add(todo, "title", json_str(col_str(row, "title")));
   json_object_object_add(todo, "dueAt", json_str(col_str(row, "due_at")));
-  json_object_object_add(todo, "completedAt", suggestion ? NULL : json_str(col_str(row, "completed_at")));
+  json_object_object_add(todo, "completedAt", json_str(col_str(row, "completed_at")));
   json_object_object_add(todo, "status", json_str(col_str(row, "status")));
+  json_object_object_add(todo, "createdAt", json_str(col_str(row, "created_at")));
   return todo;
 }
 
@@ -445,55 +446,7 @@ static json_object *collection_entries(sqlite3 *db) {
 }
 
 // Entries due by the end of the local day and not done.
-static int64_t due_today(json_object *entries, const char *key, GDateTime *today_end) {
-  int64_t count = 0;
-  for (size_t i = 0; i < json_object_array_length(entries); i++) {
-    json_object *entry = json_object_array_get_idx(entries, i);
-    g_autoptr(GDateTime) when = parse_iso(json_get_str(entry, key));
-    if (when && g_date_time_compare(when, today_end) <= 0 && !json_get_str(entry, "completedAt"))
-      count++;
-  }
-  return count;
-}
-
 json_object *build_index(sqlite3 *db) {
-
-  json_object *events = json_object_new_array();
-  {
-    g_autoptr(sqlite3_stmt) rows = db_query(db,
-        "SELECT i.*, m.title AS memory_title FROM items i "
-        "JOIN memories m ON m.id = i.memory_id "
-        "WHERE i.kind = 'event' AND i.status = 'active' "
-        "ORDER BY i.starts_at LIMIT 50",
-        NULL);
-    while (db_step(rows))
-      json_object_array_add(events, event_entry(db, rows));
-  }
-
-  // Open ones only: the bar badge counts this list, and a completed to-do is
-  // not owed.
-  json_object *todos = json_object_new_array();
-  {
-    g_autoptr(sqlite3_stmt) rows = db_query(db,
-        "SELECT * FROM items WHERE kind = 'todo' AND status = 'active' "
-        "AND completed_at IS NULL ORDER BY due_at IS NULL, due_at LIMIT 200",
-        NULL);
-    while (db_step(rows))
-      json_object_array_add(todos, todo_entry(rows, false));
-  }
-
-  // Its own list: the bar badge and the digest count what the user has
-  // accepted, and a suggestion is not that yet.
-  json_object *suggestions = json_object_new_array();
-  {
-    g_autoptr(sqlite3_stmt) rows = db_query(db,
-        "SELECT * FROM items WHERE kind = 'todo' AND status = 'suggested' "
-        "ORDER BY created_at DESC LIMIT 200",
-        NULL);
-    while (db_step(rows))
-      json_object_array_add(suggestions, todo_entry(rows, true));
-  }
-
   // The end of the local day: whoever reads the digest means their midnight.
   g_autoptr(GDateTime) now = now_utc();
   g_autoptr(GDateTime) local = g_date_time_to_local(now);
@@ -507,17 +460,38 @@ json_object *build_index(sqlite3 *db) {
       NULL);
   db_step(counts);
 
+  // Counted in SQL, never from a list, so every number holds however many
+  // items there are. The lists themselves are paged by `archive --group` and
+  // `events`.
+  g_autofree char *now_text = iso(now);
+  g_autofree char *today_end_text = iso(today_end);
+  g_autoptr(sqlite3_stmt) items = db_query(db,
+      "SELECT SUM(" UPCOMING_TODO ") AS upcoming, SUM(" PAST_TODO ") AS past, "
+      "SUM(" COMPLETED_TODO ") AS completed, SUM(" SUGGESTED_TODO ") AS suggested, "
+      "SUM(" OPEN_TODO " AND datetime(due_at) <= datetime(?2)) AS todos_today, "
+      "SUM(" LIVE_EVENT ") AS events, "
+      "SUM(" LIVE_EVENT " AND datetime(starts_at) <= datetime(?2)) AS events_today FROM items",
+      "ss", now_text, today_end_text);
+  db_step(items);
+
   json_object *digest = json_object_new_object();
-  json_object_object_add(digest, "events", json_object_new_int64(due_today(events, "startsAt", today_end)));
-  json_object_object_add(digest, "todos", json_object_new_int64(due_today(todos, "dueAt", today_end)));
+  json_object_object_add(digest, "events", json_object_new_int64(col_int(items, "events_today")));
+  json_object_object_add(digest, "todos", json_object_new_int64(col_int(items, "todos_today")));
+
+  // One count per Tasks tab; the open to-dos are upcoming and past together.
+  json_object *todo_counts = json_object_new_object();
+  json_object_object_add(todo_counts, "upcoming", json_object_new_int64(col_int(items, "upcoming")));
+  json_object_object_add(todo_counts, "past", json_object_new_int64(col_int(items, "past")));
+  json_object_object_add(todo_counts, "completed", json_object_new_int64(col_int(items, "completed")));
+  json_object_object_add(todo_counts, "suggested", json_object_new_int64(col_int(items, "suggested")));
 
   json_object *alarms = json_object_new_array();
   {
     // The id and the time, nothing else. The shell hands the id straight back
-    // to `reminder fire`, so no text a model wrote travels through index.json
+    // to `reminder fire`, so no text a model wrote travels through the index
     // to reach a toast.
     g_autoptr(sqlite3_stmt) rows =
-        db_query(db, "SELECT r.id, r.fire_at " LIVE_REMINDER " ORDER BY r.fire_at LIMIT 200", NULL);
+        db_query(db, "SELECT r.id, r.fire_at " LIVE_REMINDER " ORDER BY r.fire_at", NULL);
     while (db_step(rows)) {
       json_object *alarm = json_object_new_object();
       json_object_object_add(alarm, "id", json_str(col_str(rows, "id")));
@@ -534,12 +508,11 @@ json_object *build_index(sqlite3 *db) {
   json_object_object_add(index, "voiceAvailable", json_object_new_boolean(has("voxtype")));
   json_object_object_add(index, "pendingCount", json_object_new_int64(col_int(counts, "pending")));
   json_object_object_add(index, "failedCount", json_object_new_int64(col_int(counts, "failed")));
-  // Every ready memory, not the length of the capped card list.
+  // Every ready memory, counted in SQL.
   json_object_object_add(index, "memoryCount", json_object_new_int64(col_int(counts, "ready")));
+  json_object_object_add(index, "eventCount", json_object_new_int64(col_int(items, "events")));
+  json_object_object_add(index, "todoCounts", todo_counts);
   json_object_object_add(index, "digest", digest);
-  json_object_object_add(index, "events", events);
-  json_object_object_add(index, "todos", todos);
-  json_object_object_add(index, "suggestions", suggestions);
   json_object_object_add(index, "collections", collection_entries(db));
   // What the shell arms its timer against. Last, because it is the only key
   // here the shell acts on rather than renders.

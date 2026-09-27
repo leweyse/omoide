@@ -554,7 +554,8 @@ int cmd_commit(int argc, char **argv) {
         g_free(fallback);
         fallback = g_date_time_format(local, "Screenshot %d %b %H:%M");
       }
-      g_autofree char *capped = truncate_chars(fallback, 120);
+      enum { MAX_FALLBACK_TITLE = 120 };   // the note's first line, or the time
+      g_autofree char *capped = truncate_chars(fallback, MAX_FALLBACK_TITLE);
       set_memory_text(db, "UPDATE memories SET title = ? WHERE id = ?", capped, id);
     }
   }

@@ -4,6 +4,8 @@
 #
 #   dev/check              everything
 #   dev/check --no-cli     skip the C builds and parity, for a QML or docs change
+#   dev/check --no-docs    skip the docs and digest checks, which CI runs as a
+#                          job of their own
 #   dev/check --no-shell   skip the QML checks, which need the Omarchy shell
 #                          installed; CI passes this and says so, because a QML
 #                          check that silently skipped would read as a pass
@@ -16,11 +18,12 @@ cd "$root" || exit 1
 
 shell_dir=/usr/share/omarchy/shell
 qmllint=/usr/lib/qt6/bin/qmllint
-run_cli=1 run_shell=1
+run_cli=1 run_shell=1 run_docs=1
 for arg in "$@"; do
   case $arg in
     --no-cli) run_cli=0 ;;
     --no-shell) run_shell=0 ;;
+    --no-docs) run_docs=0 ;;
     *) echo "dev/check: unknown option $arg" >&2; exit 2 ;;
   esac
 done
@@ -63,8 +66,17 @@ build() {
   return $status
 }
 
-step docs dev/check-docs --strict
+if [[ $run_docs == 1 ]]; then
+  step docs dev/check-docs --strict
+  step digests dev/sync-docs --check
+fi
 step comments dev/check-comments --strict
+# The CLI's approved surface and its power over the machine. Read from
+# source and fixtures, so they need no build and run under every flag.
+step surface dev/cli-surface
+step capabilities dev/capabilities
+step changesets dev/changeset status
+step changeset-selftest dev/changeset selftest
 step format clang-format --dry-run --Werror cli/src/*.c cli/src/*.h cli/fuzz/*.c
 
 if [[ $run_shell == 1 ]]; then

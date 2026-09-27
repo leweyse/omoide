@@ -2,6 +2,7 @@
 type: Reference
 title: Enrichment
 description: How a capture reaches an agent, how each agent CLI is sandboxed, and how its reply is trusted.
+source_digest: 'sha256:15e1b1f5be1e63dd70b6a3fe5417f68165852774cae9af2c9645861e288ba2c8'
 sources:
   - id: enrich
     resource: ../../../cli/src/enrich.c
@@ -29,7 +30,7 @@ Read this before changing a provider preset, a sandbox flag, the prompt, or how 
 A capture is a transcription of whatever was on screen. That can include a paragraph written to be read by whatever processes it next. The plugin assumes it will, and therefore:
 
 - the prompt tells the model that OCR text and the image are data, not instructions;
-- every preset runs with its tools off or read-only, in an empty working directory;
+- every preset runs with its tools off or read-only, in the empty `agent-cwd` under the state directory, or in the caller's directory if that one cannot be created;
 - the reply is parsed as data, bounded, and validated before anything is stored;
 - no model-written text reaches a notification or a shell command unescaped.
 
@@ -37,7 +38,7 @@ The prompt is not the defense. It helps a well-behaved model; the sandbox and th
 
 ## Providers
 
-`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on.
+`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on. It is the authority on each preset's flags. One exception loosens a sandbox: with vision on, claude is given its file-reading tool, scoped to the capture's folder, because that is how it reads the image.
 
 Some presets have no such flag and run as plain models. A `custom` command is stored as `sh -c` with the user's text and run exactly as written; the settings card tells the user to add their agent's own read-only flag. Adding a preset, or changing a flag, is a change to what an untrusted page can make a user's agent do. The `agent-preset` skill covers it, and a flag may only become stricter without approval.
 

@@ -118,6 +118,16 @@ elif name == "tesseract":
 elif name == "ffmpeg":
     record()
     shutil.copy(args[args.index("-i") + 1], args[-1])
+elif name == "ffprobe":
+    # What `-show_entries stream=width,height -of csv=p=0:s=x` prints for a PNG,
+    # read from its header: nothing here is measured by the machine's ffprobe.
+    record()
+    with open(args[-1], "rb") as image:
+        head = image.read(24)
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        print(f"{int.from_bytes(head[16:20], 'big')}x{int.from_bytes(head[20:24], 'big')}")
+    else:
+        sys.exit(1)
 elif name == "hyprctl":
     record()
     if args[:2] == ["monitors", "-j"]:
@@ -158,7 +168,12 @@ else:
 
 STUBBED = ["omarchy-notification-send", "omarchy-shell", "omarchy", "hyprctl", "hyprpicker",
            "slurp", "grim", "tesseract", "ffmpeg", "gum",
-           "agent", "claude", "codex", "opencode", "gemini"]
+           "agent", "claude", "codex", "opencode", "gemini", "voxtype", "ffprobe"]
+# Real programs a case may run, by name. The CLI's PATH is the stub directory
+# alone, so a program in neither list is not found and the case fails rather
+# than running something on this machine. `sh` runs a custom agent command,
+# which the user writes and the CLI runs as `sh -c`.
+REAL = ["sh"]
 STUB_DIR: Path | None = None   # set in main()
 DUMPING = False                # set in main()
 
@@ -369,6 +384,27 @@ def home_file(name: str, content: str):
     return apply
 
 
+def many_items(todos: int, events: int):
+    """One memory holding more to-dos and events than any page, so a case shows
+    that counts and pages hold past the sizes a view asks for."""
+    def apply(home: Path) -> None:
+        conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
+        conn.execute("INSERT INTO memories (id, created_at, updated_at, title, status, ai_status) "
+                     "VALUES ('m-many', '2026-09-20T10:00:00Z', '2026-09-20T10:00:00Z', 'Many', 'ready', 'ok')")
+        for n in range(todos):
+            conn.execute("INSERT INTO items (id, memory_id, kind, title, due_at, created_at) "
+                         "VALUES (?, 'm-many', 'todo', ?, ?, ?)",
+                         (f"t-{n:03d}", f"To-do {n}", f"2026-10-{1 + n % 28:02d}T09:00:00Z",
+                          f"2026-09-{1 + n % 25:02d}T10:{n % 60:02d}:00Z"))
+        for n in range(events):
+            conn.execute("INSERT INTO items (id, memory_id, kind, title, starts_at, created_at) "
+                         "VALUES (?, 'm-many', 'event', ?, ?, '2026-09-20T10:00:00Z')",
+                         (f"e-{n:03d}", f"Event {n}", f"2026-11-{1 + n % 28:02d}T18:{n % 60:02d}:00Z"))
+        conn.commit()
+        conn.close()
+    return apply
+
+
 def set_version(version: int):
     def apply(home: Path) -> None:
         conn = sqlite3.connect(home / ".local/share/omoide/memories.db")
@@ -435,6 +471,7 @@ CASES = [
     ("state-bad-config", INDEXED + [bad_config], ["state"]),
 
     ("index", INDEXED, ["index"]),
+    ("index-many", [["migrate"], many_items(250, 60)], ["index"]),
     ("index-schema-newer", [["migrate"], set_version(9)], ["index"]),
     ("list", INDEXED, ["list"]),
     ("list-limit", INDEXED, ["list", "--limit", "2"]),
@@ -468,6 +505,21 @@ CASES = [
     ("facets-search-punctuation-only", INDEXED, ["facets", "--q", "!!"]),
     ("facets-collection-missing", INDEXED, ["facets", "--collection", "Nope"]),
     ("archive", INDEXED, ["archive"]),
+    ("archive-open", INDEXED, ["archive", "--group", "open", "--limit", "2"]),
+    ("archive-open-after", INDEXED, ["archive", "--group", "open", "--limit", "2",
+                                     "--after", "2026-09-26 15:00:00,t-today"]),
+    ("archive-upcoming", INDEXED, ["archive", "--group", "upcoming"]),
+    ("archive-past", INDEXED, ["archive", "--group", "past"]),
+    ("archive-completed", INDEXED, ["archive", "--group", "completed"]),
+    ("archive-suggested", INDEXED, ["archive", "--group", "suggested"]),
+    ("archive-many", [["migrate"], many_items(250, 0)], ["archive", "--group", "open", "--limit", "100"]),
+    ("archive-bad-group", INDEXED, ["archive", "--group", "someday"]),
+    ("archive-bad-cursor", INDEXED, ["archive", "--group", "open", "--after", "nope"]),
+    ("archive-after-without-group", INDEXED, ["archive", "--after", "x,y"]),
+    ("events", INDEXED, ["events", "--limit", "1"]),
+    ("events-after", INDEXED, ["events", "--after", "2026-09-26 11:00:00,e-today"]),
+    ("events-many", [["migrate"], many_items(0, 60)], ["events", "--limit", "-1"]),
+    ("events-bad-cursor", INDEXED, ["events", "--after", "nope"]),
     ("related", INDEXED, ["related", "--id", "m-shot"]),
     ("candidates", INDEXED, ["candidates", "--id", "m-shot"]),
     ("candidates-query", INDEXED, ["candidates", "--id", "m-note", "--q", "voice"]),
@@ -682,7 +734,7 @@ def reap_orphans() -> None:
 def env_for(home: Path) -> dict:
     env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_")}
     env.update(HOME=str(home), TZ=TZ, OMOIDE_NOW=NOW, OMOIDE_TEST_IDS="1", LC_ALL="C.UTF-8",
-               PATH=f"{STUB_DIR}:{os.environ['PATH']}")
+               PATH=str(STUB_DIR))
     return env
 
 
@@ -835,10 +887,16 @@ def main() -> int:
         tmp = Path(tmp)
         STUB_DIR = tmp / "stubs"
         STUB_DIR.mkdir()
-        (STUB_DIR / "stub").write_text(STUB)
+        # By absolute path: nothing else is on PATH to find python3 with.
+        (STUB_DIR / "stub").write_text(STUB.replace("#!/usr/bin/env python3", f"#!{sys.executable}", 1))
         (STUB_DIR / "stub").chmod(0o755)
         for name in STUBBED:
             (STUB_DIR / name).symlink_to("stub")
+        for name in REAL:
+            found = shutil.which(name)
+            if not found:
+                sys.exit(f"dev/parity: {name} is not installed, and cases need it")
+            (STUB_DIR / name).symlink_to(found)
         cli = [str(build_c(args.cc, tmp, args.sanitize))]
 
         for name, seeds, argv in CASES:
@@ -861,8 +919,7 @@ def main() -> int:
                             "db": dump_db(home), **side_effects(cli, home)}, home)
 
             if args.dump:
-                shown = {k: v for k, v in result.items() if k not in ("db", "index")}
-                print(json.dumps(shown, ensure_ascii=False, indent=1))
+                print(json.dumps(result, ensure_ascii=False, indent=1))
 
             path = fixture_path(name)
             if args.record:

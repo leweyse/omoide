@@ -9,7 +9,7 @@ Navigation for everything under `.agents/docs`. Every document appears here once
 ## Start here
 
 - [Repository guidance](../../AGENTS.md) — the router every session loads: guardrails, skills, and the gate.
-- [Architecture](reference/architecture.md) — the two halves and the three channels between them. Every reference below assumes it.
+- [Architecture](reference/architecture.md) — the two halves and the four channels between them. Every reference below assumes it.
 
 ## Engineering
 

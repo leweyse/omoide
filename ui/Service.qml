@@ -28,10 +28,6 @@ Item {
   readonly property string binDir: cacheHome + "/omoide/bin"
   readonly property string binPath: binDir + "/omoide"
 
-  // The same root paths() derives in cli/src/paths.c. Not .local/share/omarchy,
-  // which is a symlink to the read-only package tree.
-  readonly property string dataHome: xdg("XDG_DATA_HOME", "/.local/share") + "/omoide"
-
   // As xdg() in cli/src/paths.c: a variable counts only when it is absolute,
   // so QML and the CLI always agree on where the files are.
   function xdg(name, fallback) {
@@ -42,40 +38,23 @@ Item {
   // Everything the bar and the Space window render comes from this snapshot,
   // pulled from the CLI by refresh(), so no QML code ever opens the database.
   property var index: ({
-    version: 0, pendingCount: 0, failedCount: 0, memoryCount: 0, suggestions: [],
-    digest: { events: 0, todos: 0 },
-    events: [], todos: [], collections: []
+    version: 0, pendingCount: 0, failedCount: 0, memoryCount: 0, eventCount: 0,
+    todoCounts: { upcoming: 0, past: 0, completed: 0, suggested: 0 },
+    digest: { events: 0, todos: 0 }, collections: [], alarms: []
   })
 
   readonly property int enrichingCount: (index && index.pendingCount) || 0
   readonly property int failedCount: (index && index.failedCount) || 0
-  readonly property int openTodoCount: (index && index.todos ? index.todos.length : 0)
+  // Counted by the CLI over every item, never from a list; the lists
+  // themselves are paged by the views that show them.
+  readonly property int openTodoCount:
+    (index && index.todoCounts ? (index.todoCounts.upcoming || 0) + (index.todoCounts.past || 0) : 0)
 
   // Lit by what is owed today, not by what exists: open to-dos due before
-  // local midnight, overdue included. The cutoff is the end of the day rather
-  // than a window from now, so the answer holds from midnight to midnight.
-  property int dueTodayCount: 0
-
-  function refreshDueToday() {
-    var todos = (root.index && root.index.todos) || []
-    // The end of the local day: whoever is looking at the bar means their
-    // midnight, not UTC's.
-    var endOfDay = new Date()
-    endOfDay.setHours(23, 59, 59, 999)
-    var cutoff = endOfDay.getTime()
-    var owed = 0
-
-    for (var i = 0; i < todos.length; i++) {
-      var todo = todos[i]
-      if (todo.completedAt || todo.status !== "active") continue
-      var due = Date.parse(todo.dueAt)
-      // No due date is never today's business: that is a task, not a deadline.
-      if (isNaN(due) || due > cutoff) continue
-      owed++
-    }
-
-    root.dueTodayCount = owed
-  }
+  // local midnight, overdue included. The CLI counts it when the index is
+  // pulled, and the alarm tick pulls again once the local day changes.
+  readonly property int dueTodayCount: (index && index.digest && index.digest.todos) || 0
+  property string indexDay: ""
 
   // No `signal indexChanged()` here: `property var index` already generates
   // one, and declaring it again is a duplicate-signal error at load time.
@@ -269,6 +248,7 @@ Item {
   // exactly one more, so a burst of changes costs two pulls, not one each.
   property bool indexPulling: false
   property bool indexStale: false
+  property bool libraryTooNew: false
 
   function refresh() {
     if (root.indexPulling) {
@@ -278,8 +258,15 @@ Item {
     root.indexPulling = true
     root.call(["index"], function (code, parsed) {
       root.indexPulling = false
-      if (code === 0)
+      // Exit 3 is a library written by a newer build: nothing can be read
+      // until the plugin is updated, and the surfaces say so rather than show
+      // an empty library. Any other failure keeps the last index.
+      if (code === 0) {
+        root.libraryTooNew = false
         root.applyIndex(parsed)
+      } else if (code === 3) {
+        root.libraryTooNew = true
+      }
       if (root.indexStale) {
         root.indexStale = false
         root.refresh()
@@ -289,7 +276,7 @@ Item {
 
   // Must match INDEX_VERSION in cli/src/omoide.h. The CLI is built from this
   // checkout, so a mismatch means the two were changed apart.
-  readonly property int indexVersion: 5
+  readonly property int indexVersion: 6
 
   function applyIndex(parsed) {
     if (!parsed || typeof parsed !== "object")
@@ -468,8 +455,13 @@ Item {
 
     // Rides the alarm tick, which re-runs on every index change and at least
     // once a minute, so the roll-over into a new day lands within a minute of
-    // midnight without a timer of its own.
-    root.refreshDueToday()
+    // midnight without a timer of its own: a new day pulls a new index, whose
+    // counts are for that day.
+    var today = new Date().toDateString()
+    if (root.indexDay !== today) {
+      if (root.indexDay !== "") root.refresh()
+      root.indexDay = today
+    }
 
     alarmTimer.interval = soonest < 0 ? root.alarmTickMs
                                       : Math.min(soonest, root.alarmTickMs)

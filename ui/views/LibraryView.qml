@@ -22,10 +22,11 @@ Flickable {
 
   // The captures on screen, a page at a time. A chip and a search narrow the
   // query itself, so what is loaded is always what is shown.
-  PagedMemories {
+  PagedList {
     id: pages
     service: root.service
     args: root.searching ? ["search", "--q", root.appliedQuery] : ["list"]
+    listKey: root.searching ? "results" : "memories"
     facet: root.facet
     pageSize: root.pageSize
   }
@@ -91,7 +92,7 @@ Flickable {
 
   // Chips carry counts for what the view holds: `facets` counts within the
   // search, if there is one, and leaves out a chip with nothing in it.
-  readonly property var shownMemories: pages.memories
+  readonly property var shownMemories: pages.rows
   property var shownFacets: []
   property int facetsToken: 0
 
@@ -149,12 +150,36 @@ Flickable {
   }
 
   onRegionChanged: root.enterRegion(root.region)
+  onRegionNameChanged: if (root.regionName === "collections") root.reveal(collectionsSection)
+  onCollectionCursorChanged: if (root.collectionCursor >= 0) root.reveal(collectionsSection)
+  onFilterCursorChanged: if (root.filterCursor >= 0) root.reveal(strip)
 
   function focusFirst() {
     root.region = 0
     // Explicitly, not via the change handler: entering the page when region is
     // already 0 fires nothing at all.
     root.enterRegion(0)
+  }
+
+  // Coming back to the page: the item last touched keeps the cursor while it is
+  // still there, and the page scrolls to it. Only a cursor with nothing left to
+  // sit on starts over at the first item.
+  function focusResume() {
+    if (root.filterCursor >= 0 && root.filterCursor < root.filterChips.length) {
+      root.reveal(strip)
+      return
+    }
+    if (root.regionName === "collections" && root.collectionCursor >= 0
+        && root.collectionCursor < (root.index.collections || []).length) {
+      root.reveal(collectionsSection)
+      return
+    }
+    // The grid clears its cursor when that card leaves the list.
+    if (root.regionName === "captures" && grid.cursorId.length > 0) {
+      root.ensureVisible()
+      return
+    }
+    root.focusFirst()
   }
 
   function pageKey(event) {
@@ -269,11 +294,15 @@ Flickable {
 
   // Content coordinates, via the layout Column: a card sits inside a column
   // inside the grid, so its own y says nothing about where it is on the page.
-  function ensureVisible() {
-    var cell = grid.cursorCell
-    if (!cell) return
-    var top = cell.mapToItem(layout, 0, 0).y
-    var bottom = top + cell.height
+  function ensureVisible() { root.reveal(grid.cursorCell) }
+
+  // Scroll just enough to show `item`, whatever it is: a card, the collections
+  // row, the chips. Moving the keyboard into a section is what brings it on
+  // screen, so the cursor never sits somewhere the page does not show.
+  function reveal(item) {
+    if (!item || !item.visible) return
+    var top = item.mapToItem(layout, 0, 0).y
+    var bottom = top + item.height
     // The page's own edge inset, the same one contentHeight adds below the
     // last row: scrolling something into view should leave the gap the page
     // already keeps at its edges, not a second, smaller one of its own.
@@ -335,7 +364,7 @@ Flickable {
 
   Connections {
     target: pages
-    function onMemoriesChanged() { root.seedCursor() }
+    function onRowsChanged() { root.seedCursor() }
     function onLoadedChanged() {
       if (pages.loaded && root.searching && root.facet.length === 0)
         root.searchTotal = pages.total
@@ -385,11 +414,18 @@ Flickable {
     MemoryCard {
       // No modelData here: MasonryGrid assigns `memory` on the loaded item, so
       // a required modelData is never set and the card fails to create.
-      onActivated: root.openMemory(memory.id)
+      onActivated: {
+        // A click is a touch: coming back lands on this card, not the first.
+        root.filterCursor = -1
+        root.region = root.regionNames.indexOf("captures")
+        grid.cursorId = memory.id
+        root.openMemory(memory.id)
+      }
     }
   }
 
     Column {
+      id: collectionsSection
       width: parent.width
       spacing: Style.spacing.md
       // Collections are about browsing, so they step aside while searching.
@@ -513,7 +549,13 @@ Flickable {
                          && root.collectionCursor === index
               // Opens the collection as its own page, where it is renamed or
               // removed.
-              onActivated: root.openCollection(modelData.name)
+              onActivated: {
+                // A click is a touch: coming back lands here, not on the first tile.
+                root.filterCursor = -1
+                root.region = root.regionNames.indexOf("collections")
+                root.collectionCursor = index
+                root.openCollection(modelData.name)
+              }
             }
 
             // A sideways swipe scrolls the row; a vertical one passes to the page.
@@ -686,7 +728,7 @@ Flickable {
         id: grid
         width: parent.width
         items: root.shownMemories
-        cursorActive: root.regionName === "captures" && root.filterCursor < 0
+        cursorActive: root.hasKeyboard && root.regionName === "captures" && root.filterCursor < 0
         onCursorMoved: root.ensureVisible()
         columns: Math.max(2, Math.floor(width / Style.space(230)))
         delegate: cardDelegate

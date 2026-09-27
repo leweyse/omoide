@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "ask": [
+      "Edit(/cli/**)",
+      "Edit(/sql/**)",
+      "Edit(/manifest.json)",
+      "Edit(/ui/Service.qml)",
+      "Edit(/.github/**)",
+      "Edit(/.claude/**)",
+      "Edit(/dev/parity)",
+      "Edit(/dev/cli-surface)",
+      "Edit(/dev/cli-surface.lock)",
+      "Edit(/dev/capabilities)",
+      "Edit(/dev/capabilities.lock)",
+      "Bash(git commit*)",
+      "Bash(git push*)"
+    ]
+  }
+}

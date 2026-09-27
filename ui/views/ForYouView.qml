@@ -28,8 +28,43 @@ Flickable {
   // them, and so does Down in Events. The carousel is one row deep, so Down
   // there has nothing else to mean.
 
-  readonly property var events: root.index.events || []
-  readonly property var tasks: (root.index.todos || []).slice(0, 8)
+  // Both lists a page at a time. The index says how many there are, so the
+  // events section knows whether to show before any card has arrived.
+  PagedList {
+    id: eventPages
+    service: root.service
+    args: ["events"]
+    listKey: "events"
+    pageSize: 12
+  }
+  PagedList {
+    id: taskPages
+    service: root.service
+    args: ["archive", "--group", "open"]
+    listKey: "items"
+    pageSize: 24
+  }
+  readonly property var events: eventPages.rows
+  readonly property var tasks: taskPages.rows
+  readonly property int eventCount: root.index.eventCount || 0
+  readonly property int openTaskCount: root.service ? root.service.openTodoCount : 0
+
+  // An edit anywhere makes the service pull a new index; what is on screen is
+  // fetched again from the top, so the page keeps its place.
+  Connections {
+    target: root.service
+    function onIndexChanged() {
+      eventPages.refreshLoaded()
+      taskPages.refreshLoaded()
+    }
+  }
+
+  // The next page of tasks while a viewport of them is still below.
+  function maybeLoadMore() {
+    if (root.contentY + root.height * 2 >= root.contentHeight) taskPages.loadMore()
+  }
+  onContentYChanged: root.maybeLoadMore()
+  onContentHeightChanged: root.maybeLoadMore()
 
   readonly property int regionCount: 2
   property int region: 0
@@ -51,6 +86,31 @@ Flickable {
 
   // Called by the dialog when you enter this page, so the first row lights up
   // straight away rather than waiting for an arrow key.
+  // Coming back to the page: the row last touched keeps the cursor while it is
+  // still there, and the page scrolls to it; otherwise the first row takes it.
+  function focusResume() {
+    if (root.cursor >= 0 && root.cursor < root.rowsFor(root.region).length) {
+      root.revealCursor()
+      return
+    }
+    root.focusFirst()
+  }
+
+  // Scroll just enough to show the cursor's row, or the carousel it is in.
+  function revealCursor() {
+    var item = root.region === 1 ? taskRows.itemAt(root.cursor) : eventsSection
+    if (!item || !item.visible) return
+    var top = item.mapToItem(layout, 0, 0).y
+    var bottom = top + item.height
+    var pad = Style.spacing.panelPadding
+    var limit = Math.max(0, root.contentHeight - root.height)
+    if (top - pad < root.contentY)
+      root.contentY = Math.max(0, top - pad)
+    else if (bottom + pad > root.contentY + root.height)
+      root.contentY = Math.min(limit, bottom + pad - root.height)
+  }
+  onCursorChanged: if (root.cursor >= 0) root.revealCursor()
+
   function focusFirst() {
     // The first region with anything in it: a day can have tasks and no
     // events, and entering the empty carousel highlights nothing at all.
@@ -68,8 +128,11 @@ Flickable {
       var moved = Model.stepList(root.events.length, root.cursor,
                                  event.key === Qt.Key_Right ? 1 : -1)
       // Left at the first event is not consumed: the dialog takes it and
-      // returns to the sidebar. Right at the last one is simply swallowed.
-      if (moved === null) return event.key === Qt.Key_Right
+      // returns to the sidebar. Right at the last one asks for the next page.
+      if (moved === null) {
+        if (event.key === Qt.Key_Right) eventPages.loadMore()
+        return event.key === Qt.Key_Right
+      }
       root.cursor = moved
       return true
     }
@@ -86,6 +149,7 @@ Flickable {
 
       var next = Model.stepList(root.tasks.length, root.cursor, d)
       if (next !== null) { root.cursor = next; return true }
+      if (d > 0) { taskPages.loadMore(); return true }
       // Up off the first task goes back to the carousel. One continuous column,
       // which is how the page reads even though the halves differ in shape.
       if (d < 0 && root.events.length > 0) root.region = 0
@@ -132,9 +196,10 @@ Flickable {
     spacing: Style.spacing.xxxl
 
     Column {
+      id: eventsSection
       width: parent.width
       spacing: Style.spacing.lg
-      visible: (root.index.events || []).length > 0
+      visible: root.eventCount > 0
 
       Row {
         width: parent.width
@@ -170,6 +235,24 @@ Flickable {
           // them fits whatever width the dialog opens at and the rest scroll. A
           // fixed card width would end the carousel mid-card at most widths, which
           // reads as a clipping fault rather than as an overflow.
+          // Where the first cards will be while they load.
+          Row {
+            visible: !eventPages.loaded
+            x: eventsClip.bleed
+            y: eventsClip.bleed
+            spacing: eventsRow.spacing
+
+            Repeater {
+              model: eventPages.loaded ? 0 : Math.min(eventsRow.cardColumns, root.eventCount)
+
+              delegate: Skeleton {
+                width: eventsRow.cardWidth
+                height: eventsRow.height
+                radius: Style.cornerRadius
+              }
+            }
+          }
+
           ListView {
             id: eventsRow
             x: eventsClip.bleed
@@ -232,8 +315,17 @@ Flickable {
             }
 
             onWidthChanged: eventsRow.followCursor(true)
-            onCountChanged: eventsRow.followCursor(false)
+            onCountChanged: {
+              eventsRow.followCursor(false)
+              eventsRow.maybeLoadMore()
+            }
             onOriginXChanged: eventsRow.followCursor(false)
+
+            // The next page while less than a row of cards is left to the right.
+            function maybeLoadMore() {
+              if (eventsRow.maxX() - eventsRow.contentX < eventsRow.width) eventPages.loadMore()
+            }
+            onContentXChanged: eventsRow.maybeLoadMore()
 
             Connections {
               target: root
@@ -251,7 +343,12 @@ Flickable {
               // fields are on its memory page anyway, and tapping one here is for
               // seeing what was saved: the ticket, the poster, the page. Tasks below
               // open their editor, because a to-do is acted on rather than read.
-              onActivated: root.openMemory(modelData.memoryId)
+              onActivated: {
+                // A click is a touch: coming back lands on this event.
+                root.region = 0
+                root.cursor = index
+                root.openMemory(modelData.memoryId)
+              }
             }
 
             // A sideways swipe scrolls the carousel; a vertical one passes to the
@@ -300,7 +397,25 @@ Flickable {
         }
       }
 
+      // Where the tasks will be while the first page loads.
       Repeater {
+        model: taskPages.loaded ? 0 : Math.min(3, root.openTaskCount)
+
+        delegate: Item {
+          required property int index
+          width: parent.width
+          height: Style.space(34)
+
+          Skeleton {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width * [0.55, 0.4, 0.5][parent.index % 3]
+            height: Style.font.body
+          }
+        }
+      }
+
+      Repeater {
+        id: taskRows
         model: root.tasks
 
         delegate: TodoRow {
@@ -311,12 +426,30 @@ Flickable {
           hasCursor: root.hasKeyboard && root.region === 1 && root.cursor === index
           service: root.service
           onChanged: if (root.service) root.service.refresh()
-          onActivated: root.openItem(modelData.id)
+          onActivated: {
+            // A click is a touch: coming back lands on this task.
+            root.region = 1
+            root.cursor = index
+            root.openItem(modelData.id)
+          }
+        }
+      }
+
+      // The next page, while it loads.
+      Item {
+        visible: taskPages.appending
+        width: parent.width
+        height: Style.space(34)
+
+        Skeleton {
+          anchors.verticalCenter: parent.verticalCenter
+          width: parent.width * 0.45
+          height: Style.font.body
         }
       }
 
       Text {
-        visible: (root.index.todos || []).length === 0
+        visible: root.openTaskCount === 0
         text: "No open to-dos."
         color: Color.muted
         font.family: Style.font.resolvedFamily
