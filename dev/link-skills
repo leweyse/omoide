@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Link .claude/skills to .agents/skills, where Claude Code looks for project
+# skills. The link is gitignored: `omarchy plugin validate` refuses any symlink
+# in a plugin folder, so it must never reach a clone.
+#
+# Exit: 0 linked or already linked; 1 when .claude/skills is something else.
+set -uo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+link=$root/.claude/skills
+target=../.agents/skills
+
+if [[ -L $link && $(readlink "$link") == "$target" ]]; then
+  echo "skills already linked"
+  exit 0
+fi
+if [[ -e $link || -L $link ]]; then
+  echo "dev/link-skills: $link exists and is not a link to $target; remove it first" >&2
+  exit 1
+fi
+ln -s "$target" "$link" && echo "linked .claude/skills -> $target"

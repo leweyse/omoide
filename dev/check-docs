@@ -275,9 +275,6 @@ def check_reserved(report: Report):
 
 
 def check_skills(report: Report):
-    link = ROOT / ".claude" / "skills"
-    if not link.is_symlink() or os.readlink(link) != "../.agents/skills":
-        report.producer.append(".claude/skills  must be a symlink to ../.agents/skills")
     for skill in sorted(p for p in SKILLS.iterdir() if p.is_dir()):
         path = skill / "SKILL.md"
         if not path.exists():

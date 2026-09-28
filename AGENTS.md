@@ -33,6 +33,8 @@ Never create, amend, or push a commit unless asked for that exact action, in the
 
 ## Skills
 
+Claude Code finds these skills through `.claude/skills`, a gitignored link a fresh clone lacks. When it is missing, run `dev/link-skills` before anything else; never commit the link, because `omarchy plugin validate` refuses a plugin that contains one. Other harnesses read `.agents/skills` directly.
+
 Load the skill that matches the task before starting it:
 
 - `cli-command` to add or change a subcommand, and `parity-case` for the `dev/parity` case every CLI behavior change needs.

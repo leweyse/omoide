@@ -9,9 +9,10 @@ Read this before changing a check, or before trusting one as evidence. Each scri
 | `parity --sanitize` | the same cases run clean under ASan and UBSan | paths no case exercises |
 | `fuzz` | the untrusted-text parsers do not crash or trip a sanitizer on mutated input | that their output is correct, or anything past the fuzz input size |
 | `check-types` | every QML type name resolves against its file's own imports | properties, signals, or behavior |
-| `check-docs` | the knowledge bundle is well formed, its links and paths resolve, mirrored skills match the lock, every `AGENTS.md` has its `CLAUDE.md` | that a claim in a document is true |
+| `check-docs` | the knowledge bundle is well formed, its links and paths resolve, skills copied from the user's own match the lock, every `AGENTS.md` has its `CLAUDE.md` | that a claim in a document is true |
 | `sync-docs --check` | every reference concept's `source_digest` matches the files its `sources` name | that the document still describes those files; only a reader can tell |
 | `changeset` | every pending changeset has a `type(scope): what changed` title and a bump that suits its type, and `--since <ref>` finds a changeset added wherever a user-facing file changed since the merge base; `selftest` runs both in throwaway repositories | that the bump is the right one or the title true; writing and applying changesets is the changesets CLI's |
+| `check-plugin` | `omarchy plugin validate` passes on the tracked and unignored files, exported as a user's clone would hold them | that the shell loads the plugin, or anything the validator does not inspect |
 | `sync-version` | `manifest.json`'s version equals `package.json`'s (`--check`), or makes it so | that the version is the one the changesets justify |
 | `cli-surface` | the CLI's subcommands, aliases, flags (hidden ones too), the verbs parity runs, their output keys and exit codes match `cli-surface.lock` | that a change to the surface was approved; the lock diff is what the owner reviews |
 | `capabilities` | every call in `cli/src` that deletes, runs a program, writes outside the database or reaches the network matches `capabilities.lock`, by file and function | a harmful call through a wrapper whose name the tool does not list, or what the call does with its arguments |

@@ -6,9 +6,10 @@
 #   dev/check --no-cli     skip the C builds and parity, for a QML or docs change
 #   dev/check --no-docs    skip the docs and digest checks, which CI runs as a
 #                          job of their own
-#   dev/check --no-shell   skip the QML checks, which need the Omarchy shell
-#                          installed; CI passes this and says so, because a QML
-#                          check that silently skipped would read as a pass
+#   dev/check --no-shell   skip the QML checks and `omarchy plugin validate`,
+#                          which need Omarchy installed; CI passes this and says
+#                          so, because a check that silently skipped would read
+#                          as a pass
 #
 # Exit: 0 when every check that ran passed, 1 otherwise.
 set -uo pipefail
@@ -88,8 +89,9 @@ if [[ $run_shell == 1 ]]; then
     step qml-types dev/check-types
     step qml-lint qml_lint
   fi
+  step plugin dev/check-plugin
 else
-  printf '\n== qml: skipped (--no-shell)\n'
+  printf '\n== qml, plugin: skipped (--no-shell)\n'
 fi
 
 if [[ $run_cli == 1 ]]; then

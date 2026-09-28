@@ -26,7 +26,8 @@ __pycache__/
 # out again. Local only; every other script in dev/ is tracked.
 dev/seed-demo
 
-# Claude Code per-machine settings. .claude/skills is tracked: it is the
-# symlink that makes .agents/skills visible to Claude Code.
+# Claude Code per-machine settings, and the .claude/skills link dev/link-skills
+# makes, which omarchy plugin validate would refuse in a clone.
+.claude/skills
 .claude/settings.local.json
 .claude/worktrees/
