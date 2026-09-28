@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Patch Changes
+
+- [#10](https://github.com/leweyse/omoide/pull/10) [`4f8fc25`](https://github.com/leweyse/omoide/commit/4f8fc2598d775053852446ff2861b93014b45cf5) Thanks [@leweyse](https://github.com/leweyse)! - fix: a fresh install of Omoide fails `omarchy plugin validate`
+
 ## 0.5.0
 
 ### Minor Changes
