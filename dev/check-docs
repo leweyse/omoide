@@ -45,6 +45,10 @@ EXTERNAL_PREFIXES = ("~/", "$", "/", "./", "qs.", "Ui/", "Commons/", "services/"
 RUNTIME = {"index.json", "config.json", "shell.json", "memories.db", "omoide.log", "bindings.lua",
            "shell.qml", "blobs/", "omoide/"}
 
+# Gitignored paths a developer's checkout creates, so a fresh clone and CI lack
+# them.
+LOCAL = {".claude/skills"}
+
 # The bundle ships inside every clone of the plugin.
 MACHINE_SPECIFIC = re.compile(r"/home/[a-z_][\w-]*|/run/user/\d+|/Users/\w+|/tmp/claude-\d+")
 
@@ -147,7 +151,7 @@ def resolves(token: str, directory: pathlib.Path) -> bool:
 
 
 def classify(token: str) -> str:
-    if token in RUNTIME:
+    if token in RUNTIME or token in LOCAL:
         return "skip"
     if re.search(r"[\s<>*{}…+()'\"=|]", token) or "..." in token:
         return "skip"
@@ -275,9 +279,6 @@ def check_reserved(report: Report):
 
 
 def check_skills(report: Report):
-    link = ROOT / ".claude" / "skills"
-    if not link.is_symlink() or os.readlink(link) != "../.agents/skills":
-        report.producer.append(".claude/skills  must be a symlink to ../.agents/skills")
     for skill in sorted(p for p in SKILLS.iterdir() if p.is_dir()):
         path = skill / "SKILL.md"
         if not path.exists():

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Run `omarchy plugin validate` on the plugin a user would clone: the files git
+# tracks, plus untracked files not ignored, exported into a folder named after
+# the manifest id. The working tree itself cannot pass, because node_modules
+# holds pnpm's symlinks.
+#
+# Exit: the validator's status; 1 when omarchy is not installed.
+set -uo pipefail
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root" || exit 1
+
+if ! command -v omarchy >/dev/null; then
+  echo "dev/check-plugin: needs the omarchy command; pass --no-shell to dev/check to skip it" >&2
+  exit 1
+fi
+
+id=$(python3 -c 'import json; print(json.load(open("manifest.json"))["id"])') || exit 1
+work=$(mktemp -d) || exit 1
+trap 'rm -rf "$work"' EXIT
+
+git ls-files -z --cached --others --exclude-standard |
+  while IFS= read -r -d '' path; do
+    [[ -e $path || -L $path ]] && printf '%s\0' "$path"
+  done |
+  tar -C "$root" --null -T - -cf - | tar -C "$work" --one-top-level="$id" -xf - || exit 1
+
+omarchy plugin validate "$work/$id" && echo "omarchy plugin validate: ok"

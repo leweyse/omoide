@@ -42,7 +42,7 @@ A directory's `AGENTS.md` holds the invariants that bind any edit in that direct
 
 ## Skills
 
-A skill lives at `.agents/skills/<name>/SKILL.md` and reaches Claude Code through the committed `.claude/skills` symlink. Its `description` decides whether it loads, so draft that first: trigger nouns, then explicit negative scope. Add `agents/openai.yaml` with a display name, a short description and a default prompt, so Codex lists it too. The root `AGENTS.md` routes to every skill; `dev/check-docs` fails on one it never names.
+A skill lives at `.agents/skills/<name>/SKILL.md` and reaches Claude Code through `.claude/skills`, a gitignored link `dev/link-skills` makes. Its `description` decides whether it loads, so draft that first: trigger nouns, then explicit negative scope. Add `agents/openai.yaml` with a display name, a short description and a default prompt, so Codex lists it too. The root `AGENTS.md` routes to every skill; `dev/check-docs` fails on one it never names.
 
 A skill owns a procedure. It points at the standard or contract that owns the rules it applies instead of restating them.
 

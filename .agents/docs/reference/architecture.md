@@ -40,7 +40,7 @@ Read this before a change that crosses from QML into the CLI or back. Every othe
 | `cli/` | the C sources in `cli/src/`, the build argv in `cli/build.rsp`, the agent prompt in `cli/prompts/`, the fuzzer in `cli/fuzz/` |
 | `sql/migrations/` | the schema, one file per version, embedded into the CLI |
 | `dev/` | the checks, the parity harness and its fixtures in `dev/parity-cases/` |
-| `.agents/` | this bundle and the skills; `.claude/skills` links to them |
+| `.agents/` | this bundle and the skills; `.claude/skills` is a gitignored link to them (D-023) |
 | `.github/workflows/` | CI |
 | `assets/` | the README's images |
 

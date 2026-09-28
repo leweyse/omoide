@@ -1,5 +1,9 @@
 # Omoide knowledge log
 
+## 2026-09-28
+
+- **Stopped committing the `.claude/skills` link** — `omarchy plugin add` and `update` run `omarchy plugin validate`, which refuses any symlink in a plugin folder, so every clone since the bundle landed failed to install. The link is now gitignored and made by `dev/link-skills`, which the root `AGENTS.md` tells an agent to run when it is missing (D-023). `dev/check-plugin` runs the validator on an export of the tracked and unignored files, since the working tree always fails it on pnpm's links in `node_modules`.
+
 ## 2026-09-27
 
 - **Moved changesets onto the changesets CLI** — `pnpm changeset` and `pnpm version-packages` replace the hand-written `add` and `version`, `changesets/action` opens the release pull request, and `pnpm release` copies `package.json`'s version into `manifest.json` (D-022). The first release run had failed on the repository setting that lets Actions open pull requests, not on the tooling. The checks run on pull requests only, as in twintag-admin: every change reaches `main` through one, and `main` runs only the release workflow.
