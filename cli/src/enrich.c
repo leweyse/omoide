@@ -372,20 +372,26 @@ GStrv harden(
   const bool attach = vision && image_path;
 
   if (g_strcmp0(provider, "claude") == 0) {
-    // --tools controls which tools EXIST, where --allowed-tools only
-    // pre-approves ones that still do. "" is documented as none at all. Read
-    // alone is not enough in an empty working directory, because claude
-    // refuses to read outside its workspace, so the capture's own folder is
+    // --tools controls which built-in tools EXIST, where --allowed-tools only
+    // pre-approves ones that still do. "" is documented as none at all.
+    // MCP servers are not built in, so --strict-mcp-config drops them, and
+    // --restricted ignores the user's settings files, whose permission mode
+    // can otherwise approve a Read anywhere on disk. It also confines Read to
+    // the working directory and --add-dir, so the capture's own folder is
     // granted.
-    g_strv_builder_add_many(argv, "--tools", vision ? "Read" : "", NULL);
+    g_strv_builder_add_many(
+        argv, "--tools", vision ? "Read" : "", "--restricted", "--strict-mcp-config", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--add-dir", folder, NULL);
   } else if (g_strcmp0(provider, "codex") == 0) {
     // read-only restricts what a command may WRITE, not what it may read, so
     // the shell tool is switched off outright; the sandbox stays as the
     // backstop. --ephemeral keeps a picture of the screen out of codex's
-    // session files on disk.
-    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", NULL);
+    // session files on disk. Web search would send captured text out as a
+    // query, and view_image reads any image on disk; the capture arrives with
+    // -i instead.
+    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", "-c",
+        "web_search=\"disabled\"", "--disable", "view_image", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "-i", image_path, NULL);
   } else if (g_strcmp0(provider, "gemini") == 0) {
@@ -406,17 +412,23 @@ GStrv harden(
   } else if (g_strcmp0(provider, "opencode") == 0) {
     // OPENCODE_CONFIG_CONTENT merges over the user's opencode.json rather than
     // replacing it, so their providers survive and only permissions change.
+    // "*" covers every tool, MCP ones included. An agent's own permission is
+    // merged after the global one, so the agent is pinned to build and build
+    // is denied everything too, whatever the user's config says for it.
     if (env) {
       g_autoptr(json_object) deny = json_object_new_object();
-      const char *tools[] = { "bash", "edit", "read", "glob", "grep", "list", "task", "webfetch" };
-      for (size_t i = 0; i < G_N_ELEMENTS(tools); i++)
-        json_object_object_add(deny, tools[i], json_object_new_string("deny"));
+      json_object_object_add(deny, "*", json_object_new_string("deny"));
+      g_autoptr(json_object) build = json_object_new_object();
+      json_object_object_add(build, "permission", json_object_get(deny));
+      g_autoptr(json_object) agents = json_object_new_object();
+      json_object_object_add(agents, "build", json_object_get(build));
       g_autoptr(json_object) config = json_object_new_object();
       json_object_object_add(config, "permission", json_object_get(deny));
+      json_object_object_add(config, "agent", json_object_get(agents));
       g_hash_table_insert(env, g_strdup("OPENCODE_CONFIG_CONTENT"),
           g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
     }
-    g_strv_builder_add(argv, "--pure");
+    g_strv_builder_add_many(argv, "--pure", "--agent", "build", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--file", image_path, NULL);
   }

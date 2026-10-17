@@ -16,7 +16,16 @@ char *notify_text(const char *value, long limit) {
     if (*read != '<' && *read != '>')
       *write++ = *read;
   *write = '\0';
-  return one_line(stripped, limit);
+  char *line = one_line(stripped, limit);
+  // omarchy-notification-send reads a headline or body that starts with a dash
+  // as one of its options, such as --image=<url>. U+2010 looks the same and is
+  // not a dash to it.
+  if (line[0] == '-') {
+    char *text = g_strconcat("\u2010", line + 1, NULL);
+    g_free(line);
+    return text;
+  }
+  return line;
 }
 
 static char *notification_binary(void) {

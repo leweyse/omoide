@@ -245,8 +245,9 @@ int cmd_uninstall(int argc, char **argv) {
 static const struct {
   const char *name, *ocr, *image;
 } RESTRICTIONS[] = {
-  { "claude", "tools disabled", "no tools but reading the screenshot" },
-  { "codex", "shell tool off, read-only sandbox behind it", "shell tool off, read-only sandbox behind it" },
+  { "claude", "tools and MCP servers disabled", "no tools but reading the screenshot, no MCP servers" },
+  { "codex", "shell, web search and image viewer off, read-only sandbox behind it",
+      "shell, web search and image viewer off, read-only sandbox behind it" },
   { "gemini", "every tool denied by policy, plan mode behind it",
       "every tool denied by policy, plan mode behind it" },
   { "opencode", "every tool permission denied", "every tool permission denied" },

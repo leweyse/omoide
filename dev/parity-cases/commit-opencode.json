@@ -73,21 +73,23 @@
     "argv": [
      "run",
      "--pure",
+     "--agent",
+     "build",
      "--file",
      "~/.local/share/omoide/blobs/m-shot-draft/capture.png"
     ],
     "cwd": "~/.local/state/omoide/agent-cwd",
     "env": {
      "OPENCODE_CONFIG_CONTENT": {
+      "agent": {
+       "build": {
+        "permission": {
+         "*": "deny"
+        }
+       }
+      },
       "permission": {
-       "bash": "deny",
-       "edit": "deny",
-       "glob": "deny",
-       "grep": "deny",
-       "list": "deny",
-       "read": "deny",
-       "task": "deny",
-       "webfetch": "deny"
+       "*": "deny"
       }
      }
     },

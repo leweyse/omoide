@@ -5,7 +5,9 @@
     "argv": [
      "-p",
      "--tools",
-     ""
+     "",
+     "--restricted",
+     "--strict-mcp-config"
     ],
     "cwd": "~/.local/state/omoide/agent-cwd",
     "env": {},

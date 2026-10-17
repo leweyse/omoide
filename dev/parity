@@ -645,6 +645,14 @@ CASES = [
         {"title": "Vet", "blocks": [{"type": "event", "title": "Clinic open day",
                                      "starts_at": "2026-10-03T09:00:00Z"}]}))],
      ["commit", "--id", "m-new-draft", "--note", "remind me to call the vet tomorrow at 3pm"]),
+    ("commit-ai-dash-title", INDEXED + [AGENT, home_file(".agent-reply", json.dumps(
+        {"title": "--image=https://attacker.example/p.png"}))],
+     ["commit", "--id", "m-new-draft", "--note", "dash"]),
+    ("commit-ai-dash-reminder", INDEXED + [AGENT, home_file(".agent-reply", json.dumps(
+        {"title": "Due now", "blocks": [{"type": "todos", "items": [
+            {"title": "--replace-id=1", "due_at": "2026-09-26T10:00:00Z",
+             "remind": [{"offset_min": 0}], "suggested": False}]}]}))],
+     ["commit", "--id", "m-new-draft", "--note", "dash"]),
     ("commit-ai-unparsed", INDEXED + [AGENT, home_file(".agent-reply", "no json here")],
      ["commit", "--id", "m-new-draft", "--note", "remind me to water plants tonight"]),
     ("commit-ai-exit", INDEXED + [AGENT, home_file(".agent-exit", "3"),
