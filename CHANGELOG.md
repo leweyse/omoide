@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.2
+
+### Patch Changes
+
+- [#13](https://github.com/leweyse/omoide/pull/13) [`38bf685`](https://github.com/leweyse/omoide/commit/38bf6856bcc31d8029db524744380fc8eda1c55d) Thanks [@leweyse](https://github.com/leweyse)! - fix(security): a title starting with a dash can change what its notification shows or replaces
+
+- [#13](https://github.com/leweyse/omoide/pull/13) [`38bf685`](https://github.com/leweyse/omoide/commit/38bf6856bcc31d8029db524744380fc8eda1c55d) Thanks [@leweyse](https://github.com/leweyse)! - fix(security): text on a captured screen can get the gemini agent to run commands
+  
+  - Gemini now runs with every tool denied, web search included
+  - With "the screenshot itself" chosen, gemini sees the screenshot instead of describing something else
+
+- [#13](https://github.com/leweyse/omoide/pull/13) [`38bf685`](https://github.com/leweyse/omoide/commit/38bf6856bcc31d8029db524744380fc8eda1c55d) Thanks [@leweyse](https://github.com/leweyse)! - fix(security): claude, codex and opencode keep tools a captured page could steer them into using
+  
+  - Claude no longer gets your MCP servers, and in screenshot mode reads nothing but the screenshot
+  - Codex no longer has web search or an image viewer that can open any picture on disk
+  - Opencode denies every tool, including web search, skills and MCP tools, even when your own config allows them
+
 ## 0.5.1
 
 ### Patch Changes
