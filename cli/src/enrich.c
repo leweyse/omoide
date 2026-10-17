@@ -35,6 +35,15 @@ static const char prompt_template[] = {
   , 0
 };
 
+static const char gemini_policy[] = {
+#embed "../policies/gemini.toml"
+  , 0
+};
+
+static char *gemini_policy_path(void) {
+  return g_build_filename(paths()->state_dir, "agent-policy", "gemini.toml", NULL);
+}
+
 char *clean_text(json_object *value, long limit) {
   if (!truthy(value))
     return g_strdup("");
@@ -363,25 +372,36 @@ GStrv harden(
   const bool attach = vision && image_path;
 
   if (g_strcmp0(provider, "claude") == 0) {
-    // --tools controls which tools EXIST, where --allowed-tools only
-    // pre-approves ones that still do. "" is documented as none at all. Read
-    // alone is not enough in an empty working directory, because claude
-    // refuses to read outside its workspace, so the capture's own folder is
+    // --tools controls which built-in tools EXIST, where --allowed-tools only
+    // pre-approves ones that still do. "" is documented as none at all.
+    // MCP servers are not built in, so --strict-mcp-config drops them, and
+    // --restricted ignores the user's settings files, whose permission mode
+    // can otherwise approve a Read anywhere on disk. It also confines Read to
+    // the working directory and --add-dir, so the capture's own folder is
     // granted.
-    g_strv_builder_add_many(argv, "--tools", vision ? "Read" : "", NULL);
+    g_strv_builder_add_many(
+        argv, "--tools", vision ? "Read" : "", "--restricted", "--strict-mcp-config", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--add-dir", folder, NULL);
   } else if (g_strcmp0(provider, "codex") == 0) {
     // read-only restricts what a command may WRITE, not what it may read, so
     // the shell tool is switched off outright; the sandbox stays as the
     // backstop. --ephemeral keeps a picture of the screen out of codex's
-    // session files on disk.
-    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", NULL);
+    // session files on disk. Web search would send captured text out as a
+    // query, and view_image reads any image on disk; the capture arrives with
+    // -i instead.
+    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", "-c",
+        "web_search=\"disabled\"", "--disable", "view_image", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "-i", image_path, NULL);
   } else if (g_strcmp0(provider, "gemini") == 0) {
-    // plan is gemini's own read-only mode.
-    g_strv_builder_add_many(argv, "--approval-mode", "plan", NULL);
+    // Plan mode alone is not read-only: run headless, gemini approves its own
+    // exit_plan_mode and continues in yolo. The policy denies every tool
+    // whatever the mode, and plan stays behind it. run_ai writes the file.
+    g_autofree char *policy = gemini_policy_path();
+    g_strv_builder_add_many(argv, "--approval-mode", "plan", "--policy", policy, NULL);
+    // The image arrives as an @ reference in the prompt, which gemini inlines
+    // only from inside its workspace.
     if (attach)
       g_strv_builder_add_many(argv, "--include-directories", folder, NULL);
     // gemini refuses to run in a directory it does not trust, and the empty
@@ -392,24 +412,34 @@ GStrv harden(
   } else if (g_strcmp0(provider, "opencode") == 0) {
     // OPENCODE_CONFIG_CONTENT merges over the user's opencode.json rather than
     // replacing it, so their providers survive and only permissions change.
-    if (env) {
-      g_autoptr(json_object) deny = json_object_new_object();
-      const char *tools[] = { "bash", "edit", "read", "glob", "grep", "list", "task", "webfetch" };
-      for (size_t i = 0; i < G_N_ELEMENTS(tools); i++)
-        json_object_object_add(deny, tools[i], json_object_new_string("deny"));
-      g_autoptr(json_object) config = json_object_new_object();
-      json_object_object_add(config, "permission", json_object_get(deny));
+    // "*" covers every tool, MCP ones included. An agent's own permission is
+    // merged after the global one, so the agent is pinned to build and build
+    // is denied everything too, whatever the user's config says for it.
+    if (env)
       g_hash_table_insert(env, g_strdup("OPENCODE_CONFIG_CONTENT"),
-          g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
-    }
-    g_strv_builder_add(argv, "--pure");
+          g_strdup("{\"permission\": {\"*\": \"deny\"}, "
+                   "\"agent\": {\"build\": {\"permission\": {\"*\": \"deny\"}}}}"));
+    g_strv_builder_add_many(argv, "--pure", "--agent", "build", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--file", image_path, NULL);
   }
   return g_strv_builder_end(argv);
 }
 
-static char *build_prompt(const char *note, const char *ocr_text, const char *image_path, bool vision) {
+// gemini's @ reference, with the path escaped the way its own escapePath does,
+// so a space or a quote in the path cannot end the reference early.
+static char *gemini_attachment(const char *image_path) {
+  GString *line = g_string_new("\n\nThe screenshot: @");
+  for (const char *c = image_path; *c; c++) {
+    if (strchr(" \t()[]{};|*?$`'\"#&<>!~\\", *c))
+      g_string_append_c(line, '\\');
+    g_string_append_c(line, *c);
+  }
+  return g_string_free(line, FALSE);
+}
+
+static char *build_prompt(
+    const char *note, const char *ocr_text, const char *image_path, bool vision, const char *attachment) {
   g_autoptr(GDateTime) now = now_utc();
   g_autoptr(GDateTime) local = g_date_time_to_local(now);
   g_autofree char *note_capped = truncate_chars(note ? note : "", MAX_PROMPT_NOTE);
@@ -428,7 +458,7 @@ static char *build_prompt(const char *note, const char *ocr_text, const char *im
   json_object_object_add(context, "now_local", json_object_new_string(now_local));
   json_object_object_add(
       context, "timezone", json_object_new_string(g_date_time_get_timezone_abbreviation(local)));
-  return g_strconcat(prompt_template, "\n\nINPUT:\n",
+  return g_strconcat(prompt_template, attachment ? attachment : "", "\n\nINPUT:\n",
       json_object_to_json_string_ext(
           context, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE),
       NULL);
@@ -497,7 +527,23 @@ json_object *run_ai(
   log_event("ai.start", "program", program, "vision", vision ? "True" : "False", "timeout", timeout_text,
       "hardened", hardened ? "True" : "False", "note_len", note_len, "ocr_len", ocr_len, NULL);
 
-  g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision);
+  g_autofree char *attachment = NULL;
+  if (hardened && g_strcmp0(provider, "gemini") == 0) {
+    // Without the file gemini would run with only plan mode, so it does not
+    // run at all.
+    g_autofree char *policy = gemini_policy_path();
+    g_autofree char *policy_dir = g_path_get_dirname(policy);
+    if (g_mkdir_with_parents(policy_dir, 0755) != 0
+        || !g_file_set_contents(policy, gemini_policy, -1, NULL)) {
+      log_event("ai.exception", "kind", "policy", "detail", "could not write the gemini policy", NULL);
+      *reason = g_strdup("the gemini tool policy could not be written");
+      return NULL;
+    }
+    if (vision)
+      attachment = gemini_attachment(image_path);
+  }
+
+  g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision, attachment);
   g_auto(ProcResult) proc =
       proc_run_agent((const char *const *)argv, prompt, timeout, workdir, env, AGENT_OUTPUT_CAP);
   g_autofree char *seconds = seconds_since(started);

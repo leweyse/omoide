@@ -125,10 +125,13 @@ Presets run with their tools switched off, in an empty working directory: a
 capture is a transcription of whatever was on screen, which can include a
 paragraph written to be read by whatever handles it next, and these are coding
 agents with a shell. Omoide passes each CLI's own flag for this, so claude gets
-no tools, codex its shell tool switched off inside a read-only sandbox, gemini
-its read-only mode, and opencode a deny-all permission set merged over your
-config. `custom` is run exactly as you
-wrote it, by `sh -c`, so quotes and variables mean what they do in a terminal;
+no tools, no MCP servers and none of your claude settings files, codex its
+shell, web search and image viewer switched off inside a read-only sandbox,
+gemini a policy file that denies every tool with its plan mode behind it, and
+opencode a deny-all permission set merged over your config, for its build agent
+too. Web search is off everywhere: a memory holds what you captured, not what an
+agent found online. `custom` is run exactly as you wrote it, by `sh -c`, so
+quotes and variables mean what they do in a terminal;
 add your agent's own read-only flag to the command yourself. The prompt reaches
 it on stdin, never on the command line.
 

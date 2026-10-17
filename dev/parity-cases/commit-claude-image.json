@@ -8,6 +8,8 @@
      "opus",
      "--tools",
      "Read",
+     "--restricted",
+     "--strict-mcp-config",
      "--add-dir",
      "~/.local/share/omoide/blobs/m-shot-draft"
     ],
