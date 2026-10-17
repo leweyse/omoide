@@ -6,7 +6,9 @@
      "-p",
      "",
      "--approval-mode",
-     "plan"
+     "plan",
+     "--policy",
+     "~/.local/state/omoide/agent-policy/gemini.toml"
     ],
     "cwd": "~/.local/state/omoide/agent-cwd",
     "env": {
@@ -171,7 +173,8 @@
   ".local/share/omoide/blobs/m-shot-draft/capture.png",
   ".local/share/omoide/blobs/m-shot/capture.png",
   ".local/share/omoide/blobs/m-shot/thumb.png",
-  ".local/share/omoide/blobs/m-voice/frame.png"
+  ".local/share/omoide/blobs/m-voice/frame.png",
+  ".local/state/omoide/agent-policy/gemini.toml"
  ],
  "index": {
   "alarms": [

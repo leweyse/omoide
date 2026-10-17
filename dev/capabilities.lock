@@ -76,6 +76,7 @@ write    config.c       write_ai_settings            g_file_set_contents
 write    config.c       write_ai_settings            g_mkdir_with_parents
 write    db.c           backup                       SQL "VACUUM INTO"
 write    db.c           db_open                      g_mkdir_with_parents  x3
-write    enrich.c       run_ai                       g_mkdir_with_parents
+write    enrich.c       run_ai                       g_file_set_contents
+write    enrich.c       run_ai                       g_mkdir_with_parents  x2
 write    log.c          log_event                    g_mkdir_with_parents
 write    log.c          trim                         g_file_set_contents

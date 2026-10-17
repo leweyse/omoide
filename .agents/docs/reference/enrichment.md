@@ -2,7 +2,7 @@
 type: Reference
 title: Enrichment
 description: How a capture reaches an agent, how each agent CLI is sandboxed, and how its reply is trusted.
-source_digest: 'sha256:15e1b1f5be1e63dd70b6a3fe5417f68165852774cae9af2c9645861e288ba2c8'
+source_digest: 'sha256:9a6f500603573e72373026fdc65d86eb2ef4a08ce2b1f0fc4226ea3150283276'
 sources:
   - id: enrich
     resource: ../../../cli/src/enrich.c
@@ -16,6 +16,9 @@ sources:
   - id: prompt
     resource: ../../../cli/prompts/enrich.txt
     title: The prompt and the reply shape it asks for
+  - id: gemini-policy
+    resource: ../../../cli/policies/gemini.toml
+    title: The policy that denies gemini every tool
 generated:
   by: anthropic/claude-opus-5-5
   at: '2026-09-26T00:00:00Z'
@@ -38,7 +41,7 @@ The prompt is not the defense. It helps a well-behaved model; the sandbox and th
 
 ## Providers
 
-`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on. It is the authority on each preset's flags. One exception loosens a sandbox: with vision on, claude is given its file-reading tool, scoped to the capture's folder, because that is how it reads the image.
+`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on. It is the authority on each preset's flags. One exception loosens a sandbox: with vision on, claude is given its file-reading tool, scoped to the capture's folder, because that is how it reads the image. gemini's plan mode is not a sandbox on its own, because headless gemini approves its own exit from it, so gemini also gets a deny-all policy embedded from `cli/policies/gemini.toml` and written to `agent-policy` under the state directory before each run; if it cannot be written, gemini does not run. With every tool denied, gemini gets the image as an `@` reference appended to the prompt, which it inlines only from inside its workspace.
 
 Some presets have no such flag and run as plain models. A `custom` command is stored as `sh -c` with the user's text and run exactly as written; the settings card tells the user to add their agent's own read-only flag. Adding a preset, or changing a flag, is a change to what an untrusted page can make a user's agent do. The `agent-preset` skill covers it, and a flag may only become stricter without approval.
 

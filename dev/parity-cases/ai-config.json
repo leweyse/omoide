@@ -78,12 +78,12 @@
     },
     {
      "available": true,
-     "command": "gemini -p '' --approval-mode plan",
-     "commandImage": "gemini -p '' --approval-mode plan --include-directories <capture>",
+     "command": "gemini -p '' --approval-mode plan --policy ~/.local/state/omoide/agent-policy/gemini.toml",
+     "commandImage": "gemini -p '' --approval-mode plan --policy ~/.local/state/omoide/agent-policy/gemini.toml --include-directories <capture>",
      "id": "gemini",
      "needsModel": false,
-     "restriction": "read-only mode",
-     "restrictionImage": "read-only mode",
+     "restriction": "every tool denied by policy, plan mode behind it",
+     "restrictionImage": "every tool denied by policy, plan mode behind it",
      "vision": true
     },
     {

@@ -240,13 +240,15 @@ int cmd_uninstall(int argc, char **argv) {
 
 // What each provider's restriction actually is, for the settings dialog, in
 // ocr and image mode. The argv shows most of it, but opencode's lives in an
-// environment variable and so does gemini's workspace trust.
+// environment variable, gemini's workspace trust too, and gemini's policy in a
+// file.
 static const struct {
   const char *name, *ocr, *image;
 } RESTRICTIONS[] = {
   { "claude", "tools disabled", "no tools but reading the screenshot" },
   { "codex", "shell tool off, read-only sandbox behind it", "shell tool off, read-only sandbox behind it" },
-  { "gemini", "read-only mode", "read-only mode" },
+  { "gemini", "every tool denied by policy, plan mode behind it",
+      "every tool denied by policy, plan mode behind it" },
   { "opencode", "every tool permission denied", "every tool permission denied" },
 };
 

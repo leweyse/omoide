@@ -2,7 +2,7 @@
 type: Reference
 title: Storage
 description: Every path the plugin reads, writes or deletes, how each is derived, and what uninstall may remove.
-source_digest: 'sha256:63f9da9734af7e7ac7edbfbc4f2be189bc4ca70d5d4e44f34526e36ec6a39910'
+source_digest: 'sha256:488f4fe4246839197096a539790e0f62eb3f53af1529d82c1326f8dbb5c8ea4e'
 sources:
   - id: paths
     resource: ../../../cli/src/paths.c
@@ -30,7 +30,7 @@ Read this before adding a file, moving one, or changing anything that deletes. E
 | Directory | Holds | Owned by |
 | --------- | ----- | -------- |
 | `$XDG_DATA_HOME/omoide` | `memories.db`, and `blobs/<memory id>/` with each capture and its thumbnail | the CLI |
-| `$XDG_STATE_HOME/omoide` | the log, lock and pid files, the agent's empty working directory, a `VACUUM INTO` snapshot taken before a migration and deleted once it succeeds | the CLI; everything here is rebuildable |
+| `$XDG_STATE_HOME/omoide` | the log, lock and pid files, the agent's empty working directory, the tool policy gemini is run with, a `VACUUM INTO` snapshot taken before a migration and deleted once it succeeds | the CLI; everything here is rebuildable |
 | `$XDG_CONFIG_HOME/omoide/config.json` | the agent settings | the CLI writes only the `ai` key and keeps any other key it finds |
 | `$XDG_CACHE_HOME/omoide/bin` | the compiled CLI and its stable symlink | `Service.qml` |
 | `~/.local/bin/omoide` | a symlink to the cached CLI, created by `install` | the CLI, only when the path is absent or already its own link |

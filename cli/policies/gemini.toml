@@ -1,0 +1,8 @@
+# Loaded with --policy, in gemini's user tier, which outranks every rule gemini
+# ships, plan mode's and yolo's included. 999 is the highest priority a tier
+# allows.
+[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 999
+denyMessage = "Tools are disabled. Reply with the JSON object only."

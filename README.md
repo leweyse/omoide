@@ -126,9 +126,9 @@ capture is a transcription of whatever was on screen, which can include a
 paragraph written to be read by whatever handles it next, and these are coding
 agents with a shell. Omoide passes each CLI's own flag for this, so claude gets
 no tools, codex its shell tool switched off inside a read-only sandbox, gemini
-its read-only mode, and opencode a deny-all permission set merged over your
-config. `custom` is run exactly as you
-wrote it, by `sh -c`, so quotes and variables mean what they do in a terminal;
+a policy file that denies every tool with its plan mode behind it, and opencode
+a deny-all permission set merged over your config. `custom` is run exactly as
+you wrote it, by `sh -c`, so quotes and variables mean what they do in a terminal;
 add your agent's own read-only flag to the command yourself. The prompt reaches
 it on stdin, never on the command line.
 

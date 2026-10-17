@@ -35,6 +35,15 @@ static const char prompt_template[] = {
   , 0
 };
 
+static const char gemini_policy[] = {
+#embed "../policies/gemini.toml"
+  , 0
+};
+
+static char *gemini_policy_path(void) {
+  return g_build_filename(paths()->state_dir, "agent-policy", "gemini.toml", NULL);
+}
+
 char *clean_text(json_object *value, long limit) {
   if (!truthy(value))
     return g_strdup("");
@@ -380,8 +389,13 @@ GStrv harden(
     if (attach)
       g_strv_builder_add_many(argv, "-i", image_path, NULL);
   } else if (g_strcmp0(provider, "gemini") == 0) {
-    // plan is gemini's own read-only mode.
-    g_strv_builder_add_many(argv, "--approval-mode", "plan", NULL);
+    // Plan mode alone is not read-only: run headless, gemini approves its own
+    // exit_plan_mode and continues in yolo. The policy denies every tool
+    // whatever the mode, and plan stays behind it. run_ai writes the file.
+    g_autofree char *policy = gemini_policy_path();
+    g_strv_builder_add_many(argv, "--approval-mode", "plan", "--policy", policy, NULL);
+    // The image arrives as an @ reference in the prompt, which gemini inlines
+    // only from inside its workspace.
     if (attach)
       g_strv_builder_add_many(argv, "--include-directories", folder, NULL);
     // gemini refuses to run in a directory it does not trust, and the empty
@@ -409,7 +423,21 @@ GStrv harden(
   return g_strv_builder_end(argv);
 }
 
-static char *build_prompt(const char *note, const char *ocr_text, const char *image_path, bool vision) {
+// gemini's @ reference, with the path escaped the way its own escapePath does,
+// so a space or a quote in the path cannot end the reference early.
+static char *gemini_attachment(const char *image_path) {
+  g_autoptr(GString) line = g_string_new("\n\nThe screenshot: @");
+  for (const char *c = image_path; *c; c++) {
+    if (strchr(" \t()[]{};|*?$`'\"#&<>!~\\", *c))
+      g_string_append_c(line, '\\');
+    g_string_append_c(line, *c);
+  }
+  return g_string_free(g_steal_pointer(&line), FALSE);
+}
+
+// attachment goes between the template and INPUT, outside the JSON.
+static char *build_prompt(
+    const char *note, const char *ocr_text, const char *image_path, bool vision, const char *attachment) {
   g_autoptr(GDateTime) now = now_utc();
   g_autoptr(GDateTime) local = g_date_time_to_local(now);
   g_autofree char *note_capped = truncate_chars(note ? note : "", MAX_PROMPT_NOTE);
@@ -428,7 +456,7 @@ static char *build_prompt(const char *note, const char *ocr_text, const char *im
   json_object_object_add(context, "now_local", json_object_new_string(now_local));
   json_object_object_add(
       context, "timezone", json_object_new_string(g_date_time_get_timezone_abbreviation(local)));
-  return g_strconcat(prompt_template, "\n\nINPUT:\n",
+  return g_strconcat(prompt_template, attachment ? attachment : "", "\n\nINPUT:\n",
       json_object_to_json_string_ext(
           context, JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE),
       NULL);
@@ -497,7 +525,22 @@ json_object *run_ai(
   log_event("ai.start", "program", program, "vision", vision ? "True" : "False", "timeout", timeout_text,
       "hardened", hardened ? "True" : "False", "note_len", note_len, "ocr_len", ocr_len, NULL);
 
-  g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision);
+  const bool gemini = hardened && g_strcmp0(provider, "gemini") == 0;
+  if (gemini) {
+    // Without the file gemini would run with only plan mode, so it does not
+    // run at all.
+    g_autofree char *policy = gemini_policy_path();
+    g_autofree char *policy_dir = g_path_get_dirname(policy);
+    if (g_mkdir_with_parents(policy_dir, 0755) != 0
+        || !g_file_set_contents(policy, gemini_policy, -1, NULL)) {
+      log_event("ai.exception", "kind", "policy", "detail", "could not write the gemini policy", NULL);
+      *reason = g_strdup("the gemini tool policy could not be written");
+      return NULL;
+    }
+  }
+
+  g_autofree char *attachment = gemini && vision ? gemini_attachment(image_path) : NULL;
+  g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision, attachment);
   g_auto(ProcResult) proc =
       proc_run_agent((const char *const *)argv, prompt, timeout, workdir, env, AGENT_OUTPUT_CAP);
   g_autofree char *seconds = seconds_since(started);
