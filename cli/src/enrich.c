@@ -415,19 +415,10 @@ GStrv harden(
     // "*" covers every tool, MCP ones included. An agent's own permission is
     // merged after the global one, so the agent is pinned to build and build
     // is denied everything too, whatever the user's config says for it.
-    if (env) {
-      g_autoptr(json_object) deny = json_object_new_object();
-      json_object_object_add(deny, "*", json_object_new_string("deny"));
-      g_autoptr(json_object) build = json_object_new_object();
-      json_object_object_add(build, "permission", json_object_get(deny));
-      g_autoptr(json_object) agents = json_object_new_object();
-      json_object_object_add(agents, "build", json_object_get(build));
-      g_autoptr(json_object) config = json_object_new_object();
-      json_object_object_add(config, "permission", json_object_get(deny));
-      json_object_object_add(config, "agent", json_object_get(agents));
+    if (env)
       g_hash_table_insert(env, g_strdup("OPENCODE_CONFIG_CONTENT"),
-          g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
-    }
+          g_strdup("{\"permission\": {\"*\": \"deny\"}, "
+                   "\"agent\": {\"build\": {\"permission\": {\"*\": \"deny\"}}}}"));
     g_strv_builder_add_many(argv, "--pure", "--agent", "build", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--file", image_path, NULL);
@@ -438,16 +429,15 @@ GStrv harden(
 // gemini's @ reference, with the path escaped the way its own escapePath does,
 // so a space or a quote in the path cannot end the reference early.
 static char *gemini_attachment(const char *image_path) {
-  g_autoptr(GString) line = g_string_new("\n\nThe screenshot: @");
+  GString *line = g_string_new("\n\nThe screenshot: @");
   for (const char *c = image_path; *c; c++) {
     if (strchr(" \t()[]{};|*?$`'\"#&<>!~\\", *c))
       g_string_append_c(line, '\\');
     g_string_append_c(line, *c);
   }
-  return g_string_free(g_steal_pointer(&line), FALSE);
+  return g_string_free(line, FALSE);
 }
 
-// attachment goes between the template and INPUT, outside the JSON.
 static char *build_prompt(
     const char *note, const char *ocr_text, const char *image_path, bool vision, const char *attachment) {
   g_autoptr(GDateTime) now = now_utc();
@@ -537,8 +527,8 @@ json_object *run_ai(
   log_event("ai.start", "program", program, "vision", vision ? "True" : "False", "timeout", timeout_text,
       "hardened", hardened ? "True" : "False", "note_len", note_len, "ocr_len", ocr_len, NULL);
 
-  const bool gemini = hardened && g_strcmp0(provider, "gemini") == 0;
-  if (gemini) {
+  g_autofree char *attachment = NULL;
+  if (hardened && g_strcmp0(provider, "gemini") == 0) {
     // Without the file gemini would run with only plan mode, so it does not
     // run at all.
     g_autofree char *policy = gemini_policy_path();
@@ -549,9 +539,10 @@ json_object *run_ai(
       *reason = g_strdup("the gemini tool policy could not be written");
       return NULL;
     }
+    if (vision)
+      attachment = gemini_attachment(image_path);
   }
 
-  g_autofree char *attachment = gemini && vision ? gemini_attachment(image_path) : NULL;
   g_autofree char *prompt = build_prompt(note, ocr_text, image_path, vision, attachment);
   g_auto(ProcResult) proc =
       proc_run_agent((const char *const *)argv, prompt, timeout, workdir, env, AGENT_OUTPUT_CAP);

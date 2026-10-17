@@ -2,7 +2,7 @@
 type: Reference
 title: Enrichment
 description: How a capture reaches an agent, how each agent CLI is sandboxed, and how its reply is trusted.
-source_digest: 'sha256:27380b25cc36b4ee0b1559de9332fdd1fcea6cefec806817724d4d7a5342c42e'
+source_digest: 'sha256:2ac1834c134615a82d29754a19703cd6aed42fe20106adf4e04ef82a50041b6e'
 sources:
   - id: enrich
     resource: ../../../cli/src/enrich.c

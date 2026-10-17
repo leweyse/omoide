@@ -49,6 +49,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+PROMPT = (ROOT / "cli" / "prompts" / "enrich.txt").read_text()
 FIXTURES = ROOT / "dev" / "parity-cases"
 NOW = "2026-09-26T10:00:00Z"     # what the CLI sees as "now"
 TZ = "Europe/Madrid"             # DST ends 25 October, which is where dates break
@@ -195,9 +196,8 @@ def normalize_call(name: str, call: dict) -> dict:
         template, context = call["stdin"].split("\n\nINPUT:\n", 1)
         call["stdin"] = {"template_len": len(template), "input": json.loads(context)}
         # What a provider appends to the shared prompt, such as gemini's @ image.
-        base = (ROOT / "cli" / "prompts" / "enrich.txt").read_text()
-        if template.startswith(base) and template != base:
-            call["stdin"]["appended"] = template[len(base):]
+        if template.startswith(PROMPT) and template != PROMPT:
+            call["stdin"]["appended"] = template[len(PROMPT):]
     if "OPENCODE_CONFIG_CONTENT" in call.get("env", {}):
         call["env"]["OPENCODE_CONFIG_CONTENT"] = json.loads(call["env"]["OPENCODE_CONFIG_CONTENT"])
     return call
