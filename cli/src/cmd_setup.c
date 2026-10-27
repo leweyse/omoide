@@ -238,20 +238,21 @@ int cmd_uninstall(int argc, char **argv) {
 
 // --- the agent
 
-// What each provider's restriction actually is, for the settings dialog, in
-// ocr and image mode. The argv shows most of it, but opencode's lives in an
-// environment variable, gemini's workspace trust too, and gemini's policy in a
-// file.
-static const struct {
-  const char *name, *ocr, *image;
-} RESTRICTIONS[] = {
-  { "claude", "tools and MCP servers disabled", "no tools but reading the screenshot, no MCP servers" },
-  { "codex", "shell, web search and image viewer off, read-only sandbox behind it",
-      "shell, web search and image viewer off, read-only sandbox behind it" },
-  { "gemini", "every tool denied by policy, plan mode behind it",
-      "every tool denied by policy, plan mode behind it" },
-  { "opencode", "every tool permission denied", "every tool permission denied" },
-};
+// --allow values, each "web_search" or "mcp:<server>". An empty one is how
+// a caller says "none", so it is skipped.
+static GStrv parse_allow(const char *command, char **values) {
+  g_autoptr(GPtrArray) out = g_ptr_array_new_with_free_func(g_free);
+  for (size_t i = 0; values && values[i]; i++) {
+    if (!*values[i])
+      continue;
+    if (!valid_allow_entry(values[i]))
+      die(2, "%s: --allow takes web_search or mcp:<server>, not %s", command, values[i]);
+    if (!g_ptr_array_find_with_equal_func(out, values[i], g_str_equal, NULL))
+      g_ptr_array_add(out, g_strdup(values[i]));
+  }
+  g_ptr_array_add(out, NULL);
+  return (GStrv)g_ptr_array_free(g_steal_pointer(&out), FALSE);
+}
 
 // argv as a line someone can read, with empty arguments made visible.
 static char *display_argv(char **argv) {
@@ -278,6 +279,30 @@ static json_object *command_for_display(json_object *command) {
   return truthy(command) ? json_object_get(command) : json_object_new_array();
 }
 
+// The command a preset runs with, as the dialog shows it: hardened unless it
+// is a plain model, with codex's per-server step as a placeholder. The
+// capture's path is one too.
+static char *display_command(
+    const char *const *preset, const char *name, bool image, const char *const *allow) {
+  g_auto(GStrv) run = provider_is_plain_model(name)
+      ? g_strdupv((char **)preset)
+      : harden(preset, name, image, image ? "<capture>/screenshot.png" : NULL, allow, NULL, NULL);
+  return display_argv(run);
+}
+
+static json_object *strv_json(const char *const *values) {
+  json_object *out = json_object_new_array();
+  for (size_t i = 0; values && values[i]; i++)
+    json_object_array_add(out, json_object_new_string(values[i]));
+  return out;
+}
+
+// ai.allowTools as the config holds it, well-formed entries only.
+static json_object *allow_json(json_object *ai) {
+  g_auto(GStrv) allow = tools_from_config(ai);
+  return strv_json((const char *const *)allow);
+}
+
 // Everything the settings dialog needs to render itself.
 int cmd_ai_config(int argc, char **argv) {
   parse_options("ai-config", NULL, 0, &argc, &argv);
@@ -289,19 +314,10 @@ int cmd_ai_config(int argc, char **argv) {
     const char *const *preset = ai_preset_argv(i);
     // The command the dialog shows is the command that runs, hardening
     // included: both come from harden(), so they cannot disagree.
-    const bool plain = provider_is_plain_model(name);
-    g_auto(GStrv) ocr_argv = plain ? g_strdupv((char **)preset) : harden(preset, name, false, NULL, NULL);
-    g_auto(GStrv) image_argv =
-        plain ? g_strdupv((char **)preset) : harden(preset, name, true, "<capture>/screenshot.png", NULL);
-    const char *restriction = "", *restriction_image = "";
-    for (size_t r = 0; r < G_N_ELEMENTS(RESTRICTIONS); r++) {
-      if (g_str_equal(RESTRICTIONS[r].name, name)) {
-        restriction = RESTRICTIONS[r].ocr;
-        restriction_image = RESTRICTIONS[r].image;
-      }
-    }
-    g_autofree char *command = display_argv(ocr_argv);
-    g_autofree char *command_image = display_argv(image_argv);
+    g_autofree char *command = display_command(preset, name, false, NULL);
+    g_autofree char *command_image = display_command(preset, name, true, NULL);
+    g_autofree char *restriction = restriction_for(name, false, NULL);
+    g_autofree char *restriction_image = restriction_for(name, true, NULL);
     json_object *entry = json_object_new_object();
     json_object_object_add(entry, "id", json_object_new_string(name));
     json_object_object_add(entry, "command", json_object_new_string(command));
@@ -311,6 +327,8 @@ int cmd_ai_config(int argc, char **argv) {
     json_object_object_add(entry, "available", json_object_new_boolean(has(preset[0])));
     json_object_object_add(entry, "vision", json_object_new_boolean(provider_takes_image(name)));
     json_object_object_add(entry, "needsModel", json_object_new_boolean(g_str_equal(name, "ollama")));
+    json_object_object_add(
+        entry, "listsServers", json_object_new_boolean(g_strv_contains(MCP_LISTERS, name)));
     json_object_array_add(providers, entry);
   }
 
@@ -329,6 +347,7 @@ int cmd_ai_config(int argc, char **argv) {
   json_object_object_add(out, "model", truthy(model) ? json_object_get(model) : json_object_new_string(""));
   json_object_object_add(
       out, "visionMode", truthy(vision) ? json_object_get(vision) : json_object_new_string("ocr"));
+  json_object_object_add(out, "allowTools", allow_json(current));
   json_object_object_add(out, "timeoutMs", json_object_new_int64(timeout));
   json_object_object_add(out, "providers", providers);
   json_object_object_add(out, "resolved", json_object_new_boolean(resolved != NULL));
@@ -340,16 +359,20 @@ static const char *const VISION_MODES[] = { "ocr", "image", NULL };
 
 int cmd_setup_ai(int argc, char **argv) {
   g_autofree char *provider_arg = NULL, *command = NULL, *model = NULL, *vision = NULL;
+  g_auto(GStrv) allow_arg = NULL;
   gboolean disable = FALSE;
   const GOptionEntry entries[] = { { "provider", 0, 0, G_OPTION_ARG_STRING, &provider_arg, NULL, "NAME" },
     { "command", 0, 0, G_OPTION_ARG_STRING, &command, "the command for a custom provider, run with sh -c",
         "COMMAND" },
     { "model", 0, 0, G_OPTION_ARG_STRING, &model, NULL, "MODEL" },
     { "vision", 0, 0, G_OPTION_ARG_STRING, &vision, "ocr or image", "MODE" },
+    { "allow", 0, 0, G_OPTION_ARG_STRING_ARRAY, &allow_arg,
+        "web_search or mcp:<server>, once per tool; '' for none", "TOOL" },
     { "disable", 0, 0, G_OPTION_ARG_NONE, &disable, NULL, NULL }, G_OPTION_ENTRY_NULL };
   parse_options("setup-ai", entries, 0, &argc, &argv);
   if (vision)
     require_choice("setup-ai", "--vision", vision, VISION_MODES);
+  g_auto(GStrv) allow = allow_arg ? parse_allow("setup-ai", allow_arg) : NULL;
   g_autoptr(json_object) current = ai_settings();
 
   if (disable) {
@@ -411,10 +434,13 @@ int cmd_setup_ai(int argc, char **argv) {
     json_object_object_add(current, "command", json_object_new_array());
     if (!has(provider))
       die(1, "%s is not on PATH", provider);
+    g_auto(GStrv) stored = tools_from_config(current);
+    const bool any = allow ? allow[0] != NULL : stored[0] != NULL;
     if (!provider_is_plain_model(provider))
       fprintf(stderr,
-          "omoide: %s runs with its tools switched off and an empty working "
-          "directory.\n",
+          any ? "omoide: %s runs with its shell off and an empty working directory, but with\n"
+                "        the tools you allowed, which text on a captured screen can steer.\n"
+              : "omoide: %s runs with its tools switched off and an empty working directory.\n",
           provider);
   } else {
     die(1, "unknown provider: %s", provider);
@@ -424,6 +450,8 @@ int cmd_setup_ai(int argc, char **argv) {
     json_object_object_add(current, "model", json_object_new_string(model));
   if (vision)
     json_object_object_add(current, "visionMode", json_object_new_string(vision));
+  if (allow)
+    json_object_object_add(current, "allowTools", strv_json((const char *const *)allow));
   json_object_object_add(current, "enabled", json_object_new_boolean(true));
   write_ai_settings(current);
 
@@ -432,6 +460,56 @@ int cmd_setup_ai(int argc, char **argv) {
   json_object_object_add(out, "provider", json_object_get(json_get(current, "provider")));
   json_object_object_add(out, "command", json_object_get(json_get(current, "command")));
   json_object_object_add(out, "visionMode", json_object_get(json_get(current, "visionMode")));
+  json_object_object_add(out, "allowTools", allow_json(current));
+  emit(out);
+  return 0;
+}
+
+// The MCP servers an agent has configured, for the dialog to offer. Runs the
+// agent's own listing, which may start or health-check each server.
+int cmd_ai_servers(int argc, char **argv) {
+  g_autofree char *provider = NULL;
+  const GOptionEntry entries[] = { { "provider", 0, 0, G_OPTION_ARG_STRING, &provider, NULL, "NAME" },
+    G_OPTION_ENTRY_NULL };
+  parse_options("ai-servers", entries, 0, &argc, &argv);
+  require_choice("ai-servers", "--provider", provider, MCP_LISTERS);
+  if (!has(provider))
+    die(1, "%s is not on PATH", provider);
+  g_autofree char *workdir = agent_workdir();
+  g_auto(GStrv) servers = list_mcp_servers(provider, workdir);
+  if (!servers)
+    die(1, "could not list %s's MCP servers", provider);
+  json_object *out = json_object_new_object();
+  json_object_object_add(out, "provider", json_object_new_string(provider));
+  json_object_object_add(out, "servers", strv_json((const char *const *)servers));
+  emit(out);
+  return 0;
+}
+
+// The command and restriction one combination would run with, for the
+// dialog's "What runs" line, from the same harden() the run uses.
+int cmd_ai_preview(int argc, char **argv) {
+  g_autofree char *provider = NULL, *vision = NULL;
+  g_auto(GStrv) allow_arg = NULL;
+  const GOptionEntry entries[] = { { "provider", 0, 0, G_OPTION_ARG_STRING, &provider, NULL, "NAME" },
+    { "vision", 0, 0, G_OPTION_ARG_STRING, &vision, "ocr or image", "MODE" },
+    { "allow", 0, 0, G_OPTION_ARG_STRING_ARRAY, &allow_arg, "web_search or mcp:<server>, once per tool",
+        "TOOL" },
+    G_OPTION_ENTRY_NULL };
+  parse_options("ai-preview", entries, 0, &argc, &argv);
+  require_option("ai-preview", "--provider", provider);
+  const char *const *preset = ai_preset_by_name(provider);
+  if (!preset)
+    die(1, "unknown provider: %s", provider);
+  if (vision)
+    require_choice("ai-preview", "--vision", vision, VISION_MODES);
+  g_auto(GStrv) allow = parse_allow("ai-preview", allow_arg);
+  const bool image = g_strcmp0(vision, "image") == 0 && provider_takes_image(provider);
+  g_autofree char *command = display_command(preset, provider, image, (const char *const *)allow);
+  g_autofree char *restriction = restriction_for(provider, image, (const char *const *)allow);
+  json_object *out = json_object_new_object();
+  json_object_object_add(out, "command", json_object_new_string(command));
+  json_object_object_add(out, "restriction", json_object_new_string(restriction));
   emit(out);
   return 0;
 }

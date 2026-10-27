@@ -89,7 +89,11 @@ def record(**extra):
     with open(os.path.join(home, f".stub-{name}.log"), "a") as log:
         log.write(json.dumps({"argv": args, **extra}) + "\n")
 
-if name in ("agent", "claude", "codex", "opencode", "gemini"):
+if name in ("claude", "codex", "opencode", "gemini") and args[:2] == ["mcp", "list"]:
+    record(cwd=os.getcwd())
+    sys.stdout.write(option(f".{name}-mcp-list") or "")
+    sys.exit(int(option(f".{name}-mcp-exit") or 0))
+elif name in ("agent", "claude", "codex", "opencode", "gemini"):
     prompt = sys.stdin.read()
     env = {k: os.environ[k] for k in ("GEMINI_CLI_TRUST_WORKSPACE", "OPENCODE_CONFIG_CONTENT")
            if k in os.environ}
@@ -691,6 +695,38 @@ CASES = [
                                       home_file(".agent-reply", '{"title": "Codex"}')],
      ["commit", "--id", "m-shot-draft"]),
 
+    ("commit-claude-allowed", INDEXED + [write_config({"enabled": True, "provider": "claude",
+                                                       "allowTools": ["web_search", "mcp:claude.ai Gmail"]}),
+                                         home_file(".agent-reply", '{"title": "Read"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-claude-web-only", INDEXED + [write_config({"enabled": True, "provider": "claude",
+                                                        "allowTools": ["web_search"]}),
+                                          home_file(".agent-reply", '{"title": "Read"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-opencode-allowed", INDEXED + [write_config({"enabled": True, "provider": "opencode",
+                                                         "allowTools": ["web_search", "mcp:github"]}),
+                                           home_file(".agent-reply", '{"title": "Open"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-gemini-allowed", INDEXED + [write_config({"enabled": True, "provider": "gemini",
+                                                       "allowTools": ["mcp:github", "mcp:linear"]}),
+                                         home_file(".agent-reply", '{"title": "Gem"}')],
+     ["commit", "--id", "m-new-draft", "--note", "gemini"]),
+    ("commit-codex-allowed", INDEXED + [write_config({"enabled": True, "provider": "codex",
+                                                      "allowTools": ["mcp:github"]}),
+                                        home_file(".codex-mcp-list",
+                                                  '[{"name": "github"}, {"name": "files"}, {"name": "my server"}]'),
+                                        home_file(".agent-reply", '{"title": "Codex"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-codex-list-fails", INDEXED + [write_config({"enabled": True, "provider": "codex",
+                                                         "allowTools": ["web_search", "mcp:github"]}),
+                                           home_file(".codex-mcp-exit", "1"),
+                                           home_file(".agent-reply", '{"title": "Codex"}')],
+     ["commit", "--id", "m-shot-draft"]),
+    ("commit-allow-junk", INDEXED + [write_config({"enabled": True, "provider": "opencode",
+                                                   "allowTools": ["shell", "mcp:", "mcp:a,b", 3, "mcp:ok"]}),
+                                     home_file(".agent-reply", '{"title": "Open"}')],
+     ["commit", "--id", "m-shot-draft"]),
+
     ("enrich", INDEXED + [AGENT, home_file(".agent-reply", RICH_REPLY)], ["enrich", "--id", "m-shot"]),
     ("enrich-fails", INDEXED + [AGENT, home_file(".agent-reply", "nothing")], ["enrich", "--id", "m-shot"]),
     ("enrich-without-agent", INDEXED, ["enrich", "--id", "m-shot"]),
@@ -712,6 +748,34 @@ CASES = [
     ("setup-ai-unknown", [["migrate"]], ["setup-ai", "--provider", "hal"]),
     ("setup-ai-bad-vision", [["migrate"]], ["setup-ai", "--provider", "claude", "--vision", "x-ray"]),
     ("setup-ai-picker", [["migrate"]], ["setup-ai"]),
+    ("setup-ai-allow", [["migrate"]], ["setup-ai", "--provider", "codex", "--allow", "web_search",
+                                       "--allow", "mcp:github", "--allow", "web_search"]),
+    ("setup-ai-allow-none", [["migrate"], write_config({"enabled": True, "provider": "claude",
+                                                       "allowTools": ["web_search"]})],
+     ["setup-ai", "--provider", "claude", "--allow", ""]),
+    ("ai-servers-claude", [["migrate"], home_file(".claude-mcp-list",
+        "Checking MCP server health\u2026\n\nclaude.ai Gmail: https://gmail.example/mcp - \u2714 Connected\n"
+        "plugin:posthog:posthog: https://posthog.example/mcp (HTTP) - \u2714 Connected\n"
+        "bad\"name: x - ! Needs authentication\n")],
+     ["ai-servers", "--provider", "claude"]),
+    ("ai-servers-gemini", [["migrate"], home_file(".gemini-mcp-list",
+        "Configured MCP servers:\n\n\u25cb files: true  (stdio) - Disabled\n"
+        "\u2713 weather: http://127.0.0.1:9/mcp (http) - Connected\n")],
+     ["ai-servers", "--provider", "gemini"]),
+    ("ai-servers-opencode", [["migrate"], home_file(".opencode-mcp-list",
+        "\x1b[0m\n\u250c  MCP Servers\n\u2502\n\u25cf  \u2717 files \x1b[90mfailed\n\u2502      true\n"
+        "\u25cf  \u2713 weather \x1b[90mconnected\n\u2514  2 server(s)\n")],
+     ["ai-servers", "--provider", "opencode"]),
+    ("ai-servers-codex", [["migrate"], home_file(".codex-mcp-list", '[{"name": "files"}, {"name": 4}]')],
+     ["ai-servers", "--provider", "codex"]),
+    ("ai-servers-fails", [["migrate"], home_file(".codex-mcp-exit", "2")], ["ai-servers", "--provider", "codex"]),
+    ("ai-servers-unknown", [["migrate"]], ["ai-servers", "--provider", "ollama"]),
+    ("ai-preview", [["migrate"]], ["ai-preview", "--provider", "codex", "--vision", "image",
+                                   "--allow", "web_search", "--allow", "mcp:github"]),
+    ("ai-preview-sealed", [["migrate"]], ["ai-preview", "--provider", "claude"]),
+    ("ai-preview-bad-allow", [["migrate"]], ["ai-preview", "--provider", "claude", "--allow", "shell"]),
+    ("ai-preview-unknown", [["migrate"]], ["ai-preview", "--provider", "hal"]),
+    ("setup-ai-bad-allow", [["migrate"]], ["setup-ai", "--provider", "claude", "--allow", "mcp:a\"b"]),
 
     ("keybind", [], ["keybind"]),
     ("keybind-json", [], ["keybind", "--json", "--accel", "SUPER + ALT + K"]),

@@ -2,7 +2,7 @@
 type: Reference
 title: CLI contract
 description: What every subcommand accepts, touches and returns, the exit codes, and what enforces each promise.
-source_digest: 'sha256:b3f70d7eb7dd3817d15d596f5e6bf7f8e126a9bc0f87ce678058adbb3a46628e'
+source_digest: 'sha256:599ff0da1b8981a26ce429bbe949e6d8229930a275c149cc3f7defe7013e7871'
 sources:
   - id: dispatch
     resource: ../../../cli/src/main.c

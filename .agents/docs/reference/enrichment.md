@@ -2,7 +2,7 @@
 type: Reference
 title: Enrichment
 description: How a capture reaches an agent, how each agent CLI is sandboxed, and how its reply is trusted.
-source_digest: 'sha256:2ac1834c134615a82d29754a19703cd6aed42fe20106adf4e04ef82a50041b6e'
+source_digest: 'sha256:ffcac3e03eb9bb2314e6661a62b3b8e44e5405077a657fde3668fff90bafc194'
 sources:
   - id: enrich
     resource: ../../../cli/src/enrich.c
@@ -19,6 +19,9 @@ sources:
   - id: gemini-policy
     resource: ../../../cli/policies/gemini.toml
     title: The policy that denies gemini every tool
+  - id: setup
+    resource: ../../../cli/src/cmd_setup.c
+    title: The settings commands, the server listing and the preview
 generated:
   by: anthropic/claude-opus-5-5
   at: '2026-09-26T00:00:00Z'
@@ -33,7 +36,7 @@ Read this before changing a provider preset, a sandbox flag, the prompt, or how 
 A capture is a transcription of whatever was on screen. That can include a paragraph written to be read by whatever processes it next. The plugin assumes it will, and therefore:
 
 - the prompt tells the model that OCR text and the image are data, not instructions;
-- every preset runs with its tools off or read-only, in the empty `agent-cwd` under the state directory, or in the caller's directory if that one cannot be created;
+- every preset runs with its tools and MCP servers off unless the user lets their own in, in the empty `agent-cwd` under the state directory, or in the caller's directory if that one cannot be created;
 - the reply is parsed as data, bounded, and validated before anything is stored;
 - no model-written text reaches a notification or a shell command unescaped.
 
@@ -41,7 +44,16 @@ The prompt is not the defense. It helps a well-behaved model; the sandbox and th
 
 ## Providers
 
-`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on. It is the authority on each preset's flags. One exception loosens a sandbox: with vision on, claude is given its file-reading tool, scoped to the capture's folder, because that is how it reads the image. The scope holds only under `--restricted`, which also keeps the user's settings files, and the permission mode in them, from approving a read anywhere else; `--strict-mcp-config` drops the MCP servers that `--tools` does not cover. Every preset runs without web search, which would send captured text out as a query. opencode's deny-all is set for the build agent as well as globally, because an agent's own permission is merged after the global one, and `--agent build` pins that agent. gemini's plan mode is not a sandbox on its own, because headless gemini approves its own exit from it, so gemini also gets a deny-all policy embedded from `cli/policies/gemini.toml` and written to `agent-policy` under the state directory before each run; if it cannot be written, gemini does not run. With every tool denied, gemini gets the image as an `@` reference appended to the prompt, which it inlines only from inside its workspace.
+`config.c` holds the presets and `resolve_provider` picks the configured one, only if its binary is on `PATH`. It never guesses a provider. `harden()` in `cli/src/enrich.c` adds each preset's own flag for no tools, a read-only sandbox, or deny-all permissions, and attaches the image with that CLI's own option when vision is on. It is the authority on each preset's flags. One exception loosens a sandbox: with vision on, claude is given its file-reading tool, scoped to the capture's folder, because that is how it reads the image. The scope holds under `--restricted`, which also keeps the user's settings files, and the permission mode in them, from approving a read anywhere else, and under `--permission-mode dontAsk`, which claude runs with instead once an MCP server is allowed; `--strict-mcp-config` drops the MCP servers that `--tools` does not cover. Every preset runs without web search, which would send captured text out as a query. opencode's deny-all is set for the build agent as well as globally, because an agent's own permission is merged after the global one, and `--agent build` pins that agent. gemini's plan mode is not a sandbox on its own, because headless gemini approves its own exit from it, so gemini also gets a deny-all policy embedded from `cli/policies/gemini.toml` and written to `agent-policy` under the state directory before each run; if it cannot be written, gemini does not run. With every tool denied, gemini gets the image as an `@` reference appended to the prompt, which it inlines only from inside its workspace.
+
+`allowTools` is what the user lets in, by name: `web_search`, and `mcp:<server>` for each MCP server. It is empty by default, and every preset then runs sealed as above. The dialog offers only servers the agent itself reports, from `omoide ai-servers`, which runs the agent's own listing in `agent-cwd`; that listing may start or health-check each server. Each preset enforces the list with its own mechanism:
+
+- **claude** gets `WebSearch` in `--tools` when search is chosen. With a server chosen it drops `--restricted` and `--strict-mcp-config`, which would also hide claude.ai connectors and plugin servers, and runs with `--permission-mode dontAsk` and `--allowed-tools` naming each chosen server, so every other tool is refused whatever the user's own permission mode would approve.
+- **codex** has no allow-list. With no server chosen it skips its config file as above. With some chosen it loads the file and switches every other server off by name, from `codex mcp list --json` run just before; if that listing fails, the run continues with no server. Apps, plugins and image generation stay off either way.
+- **gemini** passes the chosen names to `--allowed-mcp-server-names`, or `omoide-none` when there are none, since an empty name is refused. Its policy is written per run: every tool denied, then web search and the read-only tools of the allowed servers, each only if chosen.
+- **opencode** denies `*` and then allows `<server>_*` for each chosen server and `websearch` if chosen. A later key wins, so the order matters.
+
+The shell, file tools, writes, the read-only sandbox, codex's image viewer, and its browser and computer use stay off whatever is allowed. A tool that only reads is still a way out, since a captured page can ask it to fetch private text into the reply that goes to the model provider. That is why nothing is allowed by default, and the settings dialog warns as soon as anything is.
 
 Some presets have no such flag and run as plain models. A `custom` command is stored as `sh -c` with the user's text and run exactly as written; the settings card tells the user to add their agent's own read-only flag. Adding a preset, or changing a flag, is a change to what an untrusted page can make a user's agent do. The `agent-preset` skill covers it, and a flag may only become stricter without approval.
 

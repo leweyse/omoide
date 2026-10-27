@@ -1,5 +1,9 @@
 # Omoide knowledge log
 
+## 2026-10-27
+
+- **Let the user allow agent tools by name** — A review found that codex still loaded the MCP servers in its own config while reading a capture, so a captured page could ask a read-only filesystem server for a private file. Every preset now starts with no server and no web search, and `allowTools` lets the user add web search and individual servers back, each enforced with that agent's own mechanism; the enrichment reference lists them. The dialog offers only the servers the agent itself reports, through `omoide ai-servers`, and shows the exact command each choice runs through `omoide ai-preview`.
+
 ## 2026-09-28
 
 - **Stopped committing the `.claude/skills` link** — `omarchy plugin add` and `update` run `omarchy plugin validate`, which refuses any symlink in a plugin folder, so every clone since the bundle landed failed to install. The link is now gitignored and made by `dev/link-skills`, which the root `AGENTS.md` tells an agent to run when it is missing (D-023). `dev/check-plugin` runs the validator on an export of the tracked and unignored files, since the working tree always fails it on pnpm's links in `node_modules`.

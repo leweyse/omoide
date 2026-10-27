@@ -54,6 +54,7 @@ run      cmd_write.c    cmd_item                     shell_ipc
 run      cmd_write.c    cmd_link                     shell_ipc
 run      cmd_write.c    cmd_memory                   shell_ipc
 run      cmd_write.c    cmd_reminder                 shell_ipc  x2
+run      enrich.c       list_mcp_servers             proc_run_agent
 run      enrich.c       run_ai                       proc_run_agent
 run      index.c        image_size                   proc_run
 run      notify.c       notify                       g_spawn_async
@@ -76,7 +77,8 @@ write    config.c       write_ai_settings            g_file_set_contents
 write    config.c       write_ai_settings            g_mkdir_with_parents
 write    db.c           backup                       SQL "VACUUM INTO"
 write    db.c           db_open                      g_mkdir_with_parents  x3
+write    enrich.c       agent_workdir                g_mkdir_with_parents
 write    enrich.c       run_ai                       g_file_set_contents
-write    enrich.c       run_ai                       g_mkdir_with_parents  x2
+write    enrich.c       run_ai                       g_mkdir_with_parents
 write    log.c          log_event                    g_mkdir_with_parents
 write    log.c          trim                         g_file_set_contents

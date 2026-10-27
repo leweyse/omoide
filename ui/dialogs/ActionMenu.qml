@@ -79,7 +79,7 @@ Item {
       enabled: false, reason: "Not available yet" },
     { id: "separator", kind: "separator" },
     { id: "space", glyph: "", label: "Open library", kind: "action" },
-    { id: "settings", glyph: "", label: "Choose an agent…", kind: "action" }
+    { id: "settings", glyph: "", label: "Settings…", kind: "action" }
   ]
 
   function activate(entry) {

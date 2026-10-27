@@ -23,6 +23,8 @@
      "plan",
      "--policy",
      "~/.local/state/omoide/agent-policy/gemini.toml",
+     "--allowed-mcp-server-names",
+     "omoide-none",
      "--include-directories",
      "~/.local/share/omoide/blobs/m-shot-draft"
     ],
