@@ -2,7 +2,7 @@
 type: Reference
 title: Storage
 description: Every path the plugin reads, writes or deletes, how each is derived, and what uninstall may remove.
-source_digest: 'sha256:065cca3a51a884813dd5432ebebc164d91beaca5a7ecb9857642529128db6eed'
+source_digest: 'sha256:7b84f45a87530a5d423c07afe4735d4c47dacc0514d539af1d1a5625d863e90f'
 sources:
   - id: paths
     resource: ../../../cli/src/paths.c

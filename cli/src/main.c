@@ -40,6 +40,8 @@ static const Command COMMANDS[] = {
   { "migrate", NULL, "apply pending schema migrations", cmd_migrate },
   { "ai-config", NULL, "the configured agent, and which agents are installed", cmd_ai_config },
   { "setup-ai", NULL, "choose the agent that enriches captures", cmd_setup_ai },
+  { "ai-servers", NULL, "the MCP servers an agent has, to allow by name", cmd_ai_servers },
+  { "ai-preview", NULL, "the command an agent would run with, for given choices", cmd_ai_preview },
   { "install", NULL, "enable the plugin and place the bar widget", cmd_install },
   { "keybind", NULL, "print a keybinding to paste into hypr/bindings.lua", cmd_keybind },
   { "uninstall", NULL, "remove everything this plugin added", cmd_uninstall },

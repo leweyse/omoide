@@ -17,6 +17,7 @@
  },
  "config": {
   "ai": {
+   "allowTools": [],
    "command": [],
    "enabled": true,
    "model": "",
@@ -65,6 +66,7 @@
  "log": [],
  "stdout": [
   {
+   "allowTools": [],
    "command": [],
    "enabled": true,
    "provider": "claude",

@@ -8,7 +8,9 @@
      "--approval-mode",
      "plan",
      "--policy",
-     "~/.local/state/omoide/agent-policy/gemini.toml"
+     "~/.local/state/omoide/agent-policy/gemini.toml",
+     "--allowed-mcp-server-names",
+     "omoide-none"
     ],
     "cwd": "~/.local/state/omoide/agent-cwd",
     "env": {

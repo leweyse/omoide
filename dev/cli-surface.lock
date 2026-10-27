@@ -416,6 +416,7 @@ command migrate
     exits migrate extra: 2
 command ai-config
     exits ai-config: 0
+    key ai-config: allowTools
     key ai-config: command
     key ai-config: enabled
     key ai-config: model
@@ -425,6 +426,7 @@ command ai-config
     key ai-config: providers[].command
     key ai-config: providers[].commandImage
     key ai-config: providers[].id
+    key ai-config: providers[].listsServers
     key ai-config: providers[].needsModel
     key ai-config: providers[].restriction
     key ai-config: providers[].restrictionImage
@@ -433,16 +435,30 @@ command ai-config
     key ai-config: timeoutMs
     key ai-config: visionMode
 command setup-ai
+  flag --allow string_array
   flag --command string
   flag --disable none
   flag --model string
   flag --provider string
   flag --vision string
     exits setup-ai: 0,1,2
+    key setup-ai: allowTools
     key setup-ai: command
     key setup-ai: enabled
     key setup-ai: provider
     key setup-ai: visionMode
+command ai-servers
+  flag --provider string
+    exits ai-servers: 0,1,2
+    key ai-servers: provider
+    key ai-servers: servers
+command ai-preview
+  flag --allow string_array
+  flag --provider string
+  flag --vision string
+    exits ai-preview: 0,1,2
+    key ai-preview: command
+    key ai-preview: restriction
 command install
   flag --accel string
     exits install: 0,1

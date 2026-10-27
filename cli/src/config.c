@@ -25,6 +25,7 @@ static json_object *default_ai(void) {
   json_object_object_add(ai, "command", json_object_new_array());
   json_object_object_add(ai, "model", json_object_new_string(""));
   json_object_object_add(ai, "visionMode", json_object_new_string("ocr"));
+  json_object_object_add(ai, "allowTools", json_object_new_array());
   json_object_object_add(ai, "timeoutMs", json_object_new_int(45000));
   return ai;
 }
@@ -94,11 +95,15 @@ const char *const *ai_preset_argv(size_t i) {
   return AI_PRESETS[i].argv;
 }
 
-bool is_ai_preset(const char *name) {
+const char *const *ai_preset_by_name(const char *name) {
   for (size_t i = 0; name && i < G_N_ELEMENTS(AI_PRESETS); i++)
     if (g_str_equal(name, AI_PRESETS[i].name))
-      return true;
-  return false;
+      return AI_PRESETS[i].argv;
+  return NULL;
+}
+
+bool is_ai_preset(const char *name) {
+  return ai_preset_by_name(name) != NULL;
 }
 
 // Replace the agent block. Atomic, and with only one writer, safe. Anything

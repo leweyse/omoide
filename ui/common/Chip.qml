@@ -10,6 +10,9 @@ BorderSurface {
   id: root
 
   property string label: ""
+  // An icon-font glyph before the label, such as a checkbox. Kept apart from
+  // `label`, which is plain text a user or a model wrote.
+  property string glyph: ""
   property color tint: Color.popups.text
   property bool outlined: false
   property bool interactive: false
@@ -39,7 +42,7 @@ BorderSurface {
   property real verticalPadding: Style.spacing.controlPaddingY
 
   height: chipLabel.implicitHeight + root.verticalPadding * 2
-  width: chipLabel.implicitWidth + root.horizontalPadding * 2
+  width: chipContent.implicitWidth + root.horizontalPadding * 2
   radius: Style.cornerRadius
 
   // Hover only, never focus. A focus fill lowers contrast against the label,
@@ -73,16 +76,29 @@ BorderSurface {
     hot: false
   }
 
-  Text {
-    id: chipLabel
+  Row {
+    id: chipContent
     anchors.centerIn: parent
-    // A chip's label is a tag or a collection name, so it is model output or
-    // something the user typed. Neither ever wants markup.
-    textFormat: Text.PlainText
-    text: root.label
-    color: root.tint
-    font.family: Style.font.resolvedFamily
-    font.pixelSize: Style.font.body
+    spacing: Style.spacing.md
+
+    Text {
+      visible: root.glyph.length > 0
+      text: root.glyph
+      color: root.tint
+      font.family: Style.font.resolvedFamily
+      font.pixelSize: Style.font.body
+    }
+
+    Text {
+      id: chipLabel
+      // A chip's label is a tag or a collection name, so it is model output or
+      // something the user typed. Neither ever wants markup.
+      textFormat: Text.PlainText
+      text: root.label
+      color: root.tint
+      font.family: Style.font.resolvedFamily
+      font.pixelSize: Style.font.body
+    }
   }
 
   MouseArea {

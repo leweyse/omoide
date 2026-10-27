@@ -210,9 +210,22 @@ json_object *run_ai(
 // Returns how many to-dos it created, which decides whether the note fallback runs.
 int64_t apply_enrichment(sqlite3 *db, const char *memory_id, json_object *enriched);
 // The command line each preset runs with, hardening included; `env` gets the
-// variables it adds. For the settings dialog as well as for run_ai.
-GStrv harden(
-    const char *const *argv, const char *provider, bool vision, const char *image_path, GHashTable *env);
+// variables it adds. For the settings dialog as well as for run_ai. `allow`
+// holds "web_search" and "mcp:<name>" entries; `known` is every server the
+// agent has, or NULL to show codex's per-server step as a placeholder.
+GStrv harden(const char *const *argv, const char *provider, bool vision, const char *image_path,
+    const char *const *allow, const char *const *known, GHashTable *env);
+bool tools_allow(const char *const *allow, const char *entry);
+GStrv tools_servers(const char *const *allow);   // the "mcp:" entries, unprefixed
+GStrv tools_from_config(json_object *ai);   // ai.allowTools, well-formed entries only
+bool valid_allow_entry(const char *entry);   // "web_search", or "mcp:" and a usable name
+// The restriction line the settings dialog shows for one combination.
+char *restriction_for(const char *name, bool vision, const char *const *allow);
+char *agent_workdir(void);   // the empty agent-cwd, created; NULL if it cannot be
+// The agents whose own listing `list_mcp_servers` reads.
+extern const char *const MCP_LISTERS[];
+// The agent's configured MCP servers from its own listing; NULL on failure.
+GStrv list_mcp_servers(const char *provider, const char *cwd);
 
 // --- dates.c
 GDateTime *parse_when(const char *text);   // "tomorrow at 3pm"; NULL, never a guess
@@ -247,6 +260,7 @@ size_t ai_preset_count(void);
 const char *ai_preset_name(size_t i);
 const char *const *ai_preset_argv(size_t i);
 bool is_ai_preset(const char *name);
+const char *const *ai_preset_by_name(const char *name);   // its argv, or NULL
 bool provider_takes_image(const char *name);   // attaches a local screenshot itself
 bool provider_is_plain_model(const char *name);   // has no tools to switch off
 void write_ai_settings(json_object *ai);   // borrowed; atomic
@@ -286,4 +300,6 @@ int cmd_keybind(int argc, char **argv);
 int cmd_install(int argc, char **argv);
 int cmd_uninstall(int argc, char **argv);
 int cmd_ai_config(int argc, char **argv);
+int cmd_ai_servers(int argc, char **argv);
+int cmd_ai_preview(int argc, char **argv);
 int cmd_setup_ai(int argc, char **argv);

@@ -3,7 +3,9 @@
 // An agent's reply is whatever a model wrote after reading someone else's
 // screen, and a note is whatever was typed or dictated. Both reach JSON
 // extraction, block validation, the date grammar and the flattening done for
-// logs and toasts. Built by dev/fuzz, never shipped.
+// logs and toasts. An agent's MCP server listing is another program's output
+// too, and its names reach argv, a TOML key and JSON. Built by dev/fuzz, never
+// shipped.
 //
 // enrich.c is included rather than linked so its static helpers, the
 // extractor and the validator, are reachable from here.
@@ -22,5 +24,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   json_object_put(todo_from_note(text));
   g_free(one_line(text, 300));
   g_free(notify_text(text, 200));
+  for (size_t i = 0; MCP_LISTERS[i]; i++)
+    g_strfreev(parse_mcp_list(MCP_LISTERS[i], text));
   return 0;
 }

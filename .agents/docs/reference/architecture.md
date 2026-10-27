@@ -2,7 +2,7 @@
 type: Reference
 title: Architecture
 description: The two halves of the plugin, what each may do, and the four channels between them.
-source_digest: 'sha256:e8ca9806b7e61550bd8d8969cb9fca2aa7c05542883d7c68179264dc33c3bf50'
+source_digest: 'sha256:fab4343bf56b2003e087c2ca793c8b58a02dfa2d766052d9e2ee1548f8a47da4'
 sources:
   - id: service
     resource: ../../../ui/Service.qml

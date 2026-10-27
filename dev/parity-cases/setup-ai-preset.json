@@ -2,6 +2,7 @@
  "calls": {},
  "config": {
   "ai": {
+   "allowTools": [],
    "command": [],
    "enabled": true,
    "model": "sonnet",
@@ -50,6 +51,7 @@
  "log": [],
  "stdout": [
   {
+   "allowTools": [],
    "command": [],
    "enabled": true,
    "provider": "claude",

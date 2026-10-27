@@ -24,6 +24,9 @@ enum {
   MAX_PROMPT_NOTE = 4000,   // the user's note, as the prompt quotes it
   MAX_PROMPT_OCR = 8000,   // OCR text, as the prompt quotes it
   AGENT_OUTPUT_CAP = 1024 * 1024,   // a JSON answer that needs a megabyte is not one
+  MAX_SERVERS = 64,   // MCP servers read from one listing, or kept from the config
+  MAX_SERVER_NAME = 100,
+  LIST_TIMEOUT_S = 20,   // claude health-checks every server before it prints
 };
 
 // Renderer-owned labels. If a model sends one as a list heading it is dropped,
@@ -40,6 +43,8 @@ static const char gemini_policy[] = {
   , 0
 };
 
+// One file, rewritten before every run with whatever the current choices
+// allow, so a run never reads a policy written for other ones.
 static char *gemini_policy_path(void) {
   return g_build_filename(paths()->state_dir, "agent-policy", "gemini.toml", NULL);
 }
@@ -357,6 +362,177 @@ static void add_args(GStrvBuilder *argv, const char *const *more) {
     g_strv_builder_add(argv, more[i]);
 }
 
+// A server name as it reaches argv, a TOML key and a JSON key: bounded, and
+// free of what would end or split any of them.
+static bool valid_server_name(const char *name) {
+  if (!name || !*name || strlen(name) > MAX_SERVER_NAME || !g_utf8_validate(name, -1, NULL))
+    return false;
+  for (const char *c = name; *c; c++)
+    if ((unsigned char)*c < 0x20 || *c == 0x7f || *c == '"' || *c == '\\' || *c == ',')
+      return false;
+  return true;
+}
+
+bool valid_allow_entry(const char *entry) {
+  return g_strcmp0(entry, "web_search") == 0
+      || (g_str_has_prefix(entry, "mcp:") && valid_server_name(entry + 4));
+}
+
+// The allow-list stored as ai.allowTools, keeping only well-formed entries.
+GStrv tools_from_config(json_object *ai) {
+  g_autoptr(GStrvBuilder) out = g_strv_builder_new();
+  json_object *list = json_get(ai, "allowTools");
+  size_t kept = 0;
+  for (size_t i = 0; json_object_is_type(list, json_type_array) && i < json_object_array_length(list); i++) {
+    json_object *item = json_object_array_get_idx(list, i);
+    if (!json_object_is_type(item, json_type_string) || kept >= MAX_SERVERS)
+      continue;
+    const char *entry = json_object_get_string(item);
+    if (valid_allow_entry(entry)) {
+      g_strv_builder_add(out, entry);
+      kept++;
+    }
+  }
+  return g_strv_builder_end(out);
+}
+
+// The empty directory an agent, and its server listing, runs in. Every
+// provider scopes part of what it can touch to its working directory. NULL if
+// it cannot be created, and the caller's own directory is used instead.
+char *agent_workdir(void) {
+  char *dir = g_build_filename(paths()->state_dir, "agent-cwd", NULL);
+  if (g_mkdir_with_parents(dir, 0777) != 0)
+    g_clear_pointer(&dir, g_free);
+  return dir;
+}
+
+const char *const MCP_LISTERS[] = { "claude", "codex", "gemini", "opencode", NULL };
+
+static void keep_server(GStrvBuilder *names, size_t *count, const char *name) {
+  g_autofree char *trimmed = g_strstrip(g_strdup(name));
+  if (*count < MAX_SERVERS && valid_server_name(trimmed)) {
+    g_strv_builder_add(names, trimmed);
+    (*count)++;
+  }
+}
+
+// The server names in what `provider`'s listing printed, or NULL when it is
+// not the shape that agent prints. Each CLI has its own: codex JSON, the
+// others a line per server.
+static GStrv parse_mcp_list(const char *provider, const char *text) {
+  g_autoptr(GStrvBuilder) names = g_strv_builder_new();
+  size_t count = 0;
+  if (g_strcmp0(provider, "codex") == 0) {
+    g_autoptr(json_object) list = json_tokener_parse(text ? text : "");
+    if (!json_object_is_type(list, json_type_array))
+      return NULL;
+    for (size_t i = 0; i < json_object_array_length(list); i++) {
+      const char *name = json_get_str(json_object_array_get_idx(list, i), "name");
+      if (name)
+        keep_server(names, &count, name);
+    }
+    return g_strv_builder_end(names);
+  }
+
+  // opencode colours its output even into a pipe; drop the escapes first.
+  g_autoptr(GRegex) ansi = g_regex_new("\\x1b\\[[0-9;]*[A-Za-z]", 0, 0, NULL);
+  g_autofree char *plain = g_regex_replace_literal(ansi, text ? text : "", -1, 0, "", 0, NULL);
+  g_auto(GStrv) lines = g_strsplit(plain ? plain : "", "\n", -1);
+  for (size_t i = 0; lines[i]; i++) {
+    const char *line = lines[i];
+    if (g_strcmp0(provider, "claude") == 0) {
+      // "<name>: <command or url> - <status>"; a plugin's name has colons
+      // but never ": ".
+      const char *colon = strstr(line, ": ");
+      if (colon && strstr(colon, " - ")) {
+        g_autofree char *name = g_strndup(line, (gsize)(colon - line));
+        keep_server(names, &count, name);
+      }
+    } else if (g_strcmp0(provider, "gemini") == 0) {
+      // "<status symbol> <name>: <command or url> (<transport>) - <state>"
+      const char *space = strchr(line, ' ');
+      const char *colon = space ? strstr(space, ": ") : NULL;
+      if (space && colon && space != line && (unsigned char)line[0] >= 0x80) {
+        g_autofree char *name = g_strndup(space + 1, (gsize)(colon - space - 1));
+        keep_server(names, &count, name);
+      }
+    } else {
+      // "●  <status symbol> <name> <state>"
+      if (!g_str_has_prefix(line, "●"))
+        continue;
+      g_auto(GStrv) words = g_strsplit_set(line + strlen("●"), " \t", -1);
+      size_t seen = 0;
+      for (size_t w = 0; words[w]; w++) {
+        if (!*words[w])
+          continue;
+        if (++seen == 2) {
+          keep_server(names, &count, words[w]);
+          break;
+        }
+      }
+    }
+  }
+  return g_strv_builder_end(names);
+}
+
+// The MCP servers `provider` has configured, from its own listing, run in
+// `cwd` so no project's servers join in. NULL when the listing failed.
+GStrv list_mcp_servers(const char *provider, const char *cwd) {
+  if (!provider || !g_strv_contains(MCP_LISTERS, provider))
+    return NULL;
+  const char *argv[] = { provider, "mcp", "list", NULL, NULL };
+  if (g_strcmp0(provider, "codex") == 0)
+    argv[3] = "--json";
+  g_auto(ProcResult) proc = proc_run_agent(argv, "", LIST_TIMEOUT_S, cwd, NULL, AGENT_OUTPUT_CAP);
+  if (!proc.started || proc.timed_out || proc.capped || proc.status != 0)
+    return NULL;
+  return parse_mcp_list(provider, proc.out);
+}
+
+bool tools_allow(const char *const *allow, const char *entry) {
+  return allow && g_strv_contains(allow, entry);
+}
+
+// The server names in `allow`, without their "mcp:" prefix.
+GStrv tools_servers(const char *const *allow) {
+  g_autoptr(GStrvBuilder) names = g_strv_builder_new();
+  for (size_t i = 0; allow && allow[i]; i++)
+    if (g_str_has_prefix(allow[i], "mcp:"))
+      g_strv_builder_add(names, allow[i] + 4);
+  return g_strv_builder_end(names);
+}
+
+// How claude and opencode spell a server inside a tool's name: anything but
+// a letter, digit, '_' or '-' becomes '_'.
+static char *tool_prefix(const char *server) {
+  char *out = g_strdup(server);
+  for (char *c = out; *c; c++)
+    if (!g_ascii_isalnum(*c) && *c != '_' && *c != '-')
+      *c = '_';
+  return out;
+}
+
+// gemini's policy: the embedded deny-all when nothing is allowed; otherwise
+// every tool denied, then web search and the read-only tools of the servers
+// --allowed-mcp-server-names lets load, each only if chosen. User tier, like
+// the deny-all one.
+static char *gemini_policy_text(const char *const *allow) {
+  if (!allow || !allow[0])
+    return g_strdup(gemini_policy);
+  g_autoptr(GString) text = g_string_new("[[rule]]\ntoolName = \"*\"\ndecision = \"deny\"\npriority = 998\n"
+                                         "denyMessage = \"Only the tools the user chose are enabled. "
+                                         "Reply with the JSON object only.\"\n");
+  if (tools_allow(allow, "web_search"))
+    g_string_append(
+        text, "\n[[rule]]\ntoolName = \"google_web_search\"\ndecision = \"allow\"\npriority = 999\n");
+  g_auto(GStrv) servers = tools_servers(allow);
+  if (servers[0])
+    g_string_append(text,
+        "\n[[rule]]\ntoolName = \"*\"\nmcpName = \"*\"\n"
+        "toolAnnotations = { readOnlyHint = true }\ndecision = \"allow\"\npriority = 999\n");
+  return g_string_free(g_steal_pointer(&text), FALSE);
+}
+
 // Add each CLI's own way of saying "answer, do not act".
 //
 // A capture is OCR of whatever was on screen, so its text is untrusted in the
@@ -364,12 +540,21 @@ static void add_args(GStrvBuilder *argv, const char *const *more) {
 // it next. These are general coding agents with a shell, so the prompt has to
 // arrive with their tools already shut off rather than relying on the model
 // to decline.
-GStrv harden(
-    const char *const *base, const char *provider, bool vision, const char *image_path, GHashTable *env) {
+//
+// `allow` is what the user chose to let in: "web_search", and "mcp:<name>"
+// per MCP server. Nothing else is ever turned back on: no shell, file tool or
+// write, and a tool that only reads is still off unless chosen, because it can
+// read a private file into the reply. `known` is every server the agent has
+// configured; codex has no allow-list, so it switches off the others one by
+// one. NULL shows that step as a placeholder, for the settings dialog.
+GStrv harden(const char *const *base, const char *provider, bool vision, const char *image_path,
+    const char *const *allow, const char *const *known, GHashTable *env) {
   g_autoptr(GStrvBuilder) argv = g_strv_builder_new();
   add_args(argv, base);
   g_autofree char *folder = image_path ? g_path_get_dirname(image_path) : NULL;
   const bool attach = vision && image_path;
+  const bool web = tools_allow(allow, "web_search");
+  g_auto(GStrv) servers = tools_servers(allow);
 
   if (g_strcmp0(provider, "claude") == 0) {
     // --tools controls which built-in tools EXIST, where --allowed-tools only
@@ -379,27 +564,75 @@ GStrv harden(
     // can otherwise approve a Read anywhere on disk. It also confines Read to
     // the working directory and --add-dir, so the capture's own folder is
     // granted.
-    g_strv_builder_add_many(
-        argv, "--tools", vision ? "Read" : "", "--restricted", "--strict-mcp-config", NULL);
+    g_autoptr(GStrvBuilder) builtin = g_strv_builder_new();
+    if (vision)
+      g_strv_builder_add(builtin, "Read");
+    if (web)
+      g_strv_builder_add(builtin, "WebSearch");
+    g_auto(GStrv) builtins = g_strv_builder_end(builtin);
+    g_autofree char *tools = g_strjoinv(",", builtins);
+    g_strv_builder_add_many(argv, "--tools", tools, NULL);
+    if (servers[0]) {
+      // --restricted would hide the servers too, connectors included, so the
+      // user's settings load; dontAsk refuses every tool not listed here,
+      // whatever their permission mode would approve.
+      g_autoptr(GStrvBuilder) approved = g_strv_builder_new();
+      if (web)
+        g_strv_builder_add(approved, "WebSearch");
+      for (size_t i = 0; servers[i]; i++) {
+        g_autofree char *prefix = tool_prefix(servers[i]);
+        g_strv_builder_take(approved, g_strconcat("mcp__", prefix, NULL));
+      }
+      g_auto(GStrv) list = g_strv_builder_end(approved);
+      g_autofree char *joined = g_strjoinv(",", list);
+      g_strv_builder_add_many(argv, "--permission-mode", "dontAsk", "--allowed-tools", joined, NULL);
+    } else {
+      g_strv_builder_add_many(argv, "--restricted", "--strict-mcp-config", NULL);
+      if (web)
+        g_strv_builder_add_many(argv, "--allowed-tools", "WebSearch", NULL);
+    }
     if (attach)
       g_strv_builder_add_many(argv, "--add-dir", folder, NULL);
   } else if (g_strcmp0(provider, "codex") == 0) {
     // read-only restricts what a command may WRITE, not what it may read, so
     // the shell tool is switched off outright; the sandbox stays as the
     // backstop. --ephemeral keeps a picture of the screen out of codex's
-    // session files on disk. Web search would send captured text out as a
-    // query, and view_image reads any image on disk; the capture arrives with
-    // -i instead.
-    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false", "-c",
-        "web_search=\"disabled\"", "--disable", "view_image", NULL);
+    // session files on disk. view_image reads any image on disk; the capture
+    // arrives with -i instead. Browser and computer use act on the desktop,
+    // and apps and plugins come from the account rather than a server list.
+    g_strv_builder_add_many(argv, "-s", "read-only", "--ephemeral", "-c", "features.shell_tool=false",
+        "--disable", "view_image", "--disable", "browser_use", "--disable", "computer_use", "--disable",
+        "apps", "--disable", "plugins", "--disable", "image_generation", NULL);
+    if (!web)
+      g_strv_builder_add_many(argv, "-c", "web_search=\"disabled\"", NULL);
+    // `-c mcp_servers={}` merges into config.toml rather than replacing it, so
+    // with no server chosen the file is skipped. With some chosen it loads,
+    // and every other server it declares is switched off by name.
+    if (!servers[0]) {
+      g_strv_builder_add(argv, "--ignore-user-config");
+    } else if (!known) {
+      g_strv_builder_add_many(argv, "-c", "mcp_servers.<each other server>.enabled=false", NULL);
+    } else {
+      for (size_t i = 0; known[i]; i++) {
+        if (g_strv_contains((const char *const *)servers, known[i]))
+          continue;
+        g_strv_builder_add(argv, "-c");
+        g_strv_builder_take(argv, g_strdup_printf("mcp_servers.\"%s\".enabled=false", known[i]));
+      }
+    }
     if (attach)
       g_strv_builder_add_many(argv, "-i", image_path, NULL);
   } else if (g_strcmp0(provider, "gemini") == 0) {
     // Plan mode alone is not read-only: run headless, gemini approves its own
     // exit_plan_mode and continues in yolo. The policy denies every tool
-    // whatever the mode, and plan stays behind it. run_ai writes the file.
+    // whatever the mode, and plan stays behind it; with something chosen it
+    // lets that through. run_ai writes the file.
     g_autofree char *policy = gemini_policy_path();
     g_strv_builder_add_many(argv, "--approval-mode", "plan", "--policy", policy, NULL);
+    // A name no server has loads none, extensions' included. It has to be a
+    // name: an empty one is refused when the config loads.
+    g_autofree char *names = servers[0] ? g_strjoinv(",", servers) : g_strdup("omoide-none");
+    g_strv_builder_add_many(argv, "--allowed-mcp-server-names", names, NULL);
     // The image arrives as an @ reference in the prompt, which gemini inlines
     // only from inside its workspace.
     if (attach)
@@ -412,18 +645,75 @@ GStrv harden(
   } else if (g_strcmp0(provider, "opencode") == 0) {
     // OPENCODE_CONFIG_CONTENT merges over the user's opencode.json rather than
     // replacing it, so their providers survive and only permissions change.
-    // "*" covers every tool, MCP ones included. An agent's own permission is
-    // merged after the global one, so the agent is pinned to build and build
-    // is denied everything too, whatever the user's config says for it.
-    if (env)
+    // "*" covers every tool, MCP ones included, and a later key wins, so a
+    // chosen server's tools, named after it, are allowed after it. An agent's
+    // own permission is merged after the global one, so the agent is pinned
+    // to build and build gets the same rules, whatever the user's config says.
+    if (env) {
+      g_autoptr(json_object) rules = json_object_new_object();
+      json_object_object_add(rules, "*", json_object_new_string("deny"));
+      if (web)
+        json_object_object_add(rules, "websearch", json_object_new_string("allow"));
+      for (size_t i = 0; servers[i]; i++) {
+        g_autofree char *prefix = tool_prefix(servers[i]);
+        g_autofree char *pattern = g_strconcat(prefix, "_*", NULL);
+        json_object_object_add(rules, pattern, json_object_new_string("allow"));
+      }
+      g_autoptr(json_object) config = json_object_new_object();
+      json_object_object_add(config, "permission", json_object_get(rules));
+      json_object *build = json_object_new_object();
+      json_object_object_add(build, "permission", json_object_get(rules));
+      json_object *agent = json_object_new_object();
+      json_object_object_add(agent, "build", build);
+      json_object_object_add(config, "agent", agent);
       g_hash_table_insert(env, g_strdup("OPENCODE_CONFIG_CONTENT"),
-          g_strdup("{\"permission\": {\"*\": \"deny\"}, "
-                   "\"agent\": {\"build\": {\"permission\": {\"*\": \"deny\"}}}}"));
+          g_strdup(json_object_to_json_string_ext(config, JSON_C_TO_STRING_SPACED)));
+    }
     g_strv_builder_add_many(argv, "--pure", "--agent", "build", NULL);
     if (attach)
       g_strv_builder_add_many(argv, "--file", image_path, NULL);
   }
   return g_strv_builder_end(argv);
+}
+
+// What each provider's restriction actually is, for the settings dialog, in
+// ocr and image mode, and what still holds once the user lets tools in. The
+// argv shows most of it, but opencode's lives in an environment variable,
+// gemini's workspace trust too, and gemini's policy in a file.
+static const struct {
+  const char *name, *ocr, *image, *rest;
+} RESTRICTIONS[] = {
+  { "claude", "tools and MCP servers disabled", "no tools but reading the screenshot, no MCP servers",
+      "every other tool refused" },
+  { "codex", "shell, web search, MCP, apps and image viewer off, read-only sandbox behind it",
+      "shell, web search, MCP, apps and image viewer off, read-only sandbox behind it",
+      "every other server, the shell, apps and image viewer off, read-only sandbox behind it" },
+  { "gemini", "every tool denied by policy, plan mode behind it",
+      "every tool denied by policy, plan mode behind it",
+      "every other tool denied by policy, and only read-only server tools, plan mode behind it" },
+  { "opencode", "every tool permission denied", "every tool permission denied",
+      "every other tool permission denied" },
+};
+
+// The restriction line for one combination: the sealed one, or what was let
+// in followed by what still holds.
+char *restriction_for(const char *name, bool vision, const char *const *allow) {
+  for (size_t r = 0; r < G_N_ELEMENTS(RESTRICTIONS); r++) {
+    if (!g_str_equal(RESTRICTIONS[r].name, name))
+      continue;
+    if (!allow || !allow[0])
+      return g_strdup(vision ? RESTRICTIONS[r].image : RESTRICTIONS[r].ocr);
+    g_autoptr(GStrvBuilder) labels = g_strv_builder_new();
+    if (tools_allow(allow, "web_search"))
+      g_strv_builder_add(labels, "web search");
+    g_auto(GStrv) servers = tools_servers(allow);
+    for (size_t i = 0; servers[i]; i++)
+      g_strv_builder_add(labels, servers[i]);
+    g_auto(GStrv) list = g_strv_builder_end(labels);
+    g_autofree char *joined = g_strjoinv(", ", list);
+    return g_strdup_printf("allowed: %s; %s", joined, RESTRICTIONS[r].rest);
+  }
+  return g_strdup("");
 }
 
 // gemini's @ reference, with the path escaped the way its own escapePath does,
@@ -504,17 +794,33 @@ json_object *run_ai(
       && (provider_takes_image(provider) || custom);
   const bool hardened = !custom && !provider_is_plain_model(provider);
 
-  g_autoptr(GHashTable) env = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-  g_auto(GStrv) argv = hardened ? harden((const char *const *)resolved, provider, vision, image_path, env)
-                                : g_strdupv(resolved);
+  // Not whatever the shell happened to be started in. This is the only
+  // restriction that also covers a custom command, where there are no flags
+  // of ours to add.
+  g_autofree char *workdir = agent_workdir();
 
-  // An empty directory of our own, not whatever the shell happened to be
-  // started in. Every provider scopes part of what it can touch to its working
-  // directory, and this is the only restriction that also covers a custom
-  // command, where there are no flags of ours to add.
-  g_autofree char *workdir = g_build_filename(paths()->state_dir, "agent-cwd", NULL);
-  if (g_mkdir_with_parents(workdir, 0777) != 0)
-    g_clear_pointer(&workdir, g_free);
+  g_auto(GStrv) allow = tools_from_config(ai);
+  g_auto(GStrv) chosen = tools_servers((const char *const *)allow);
+  g_auto(GStrv) known = NULL;
+  if (hardened && g_strcmp0(provider, "codex") == 0 && chosen[0]) {
+    // codex switches off every server not chosen, so it needs them all. If
+    // they cannot be listed, none of them load: the run continues sealed.
+    known = list_mcp_servers("codex", workdir);
+    if (!known) {
+      log_event("ai.exception", "kind", "mcp-list", "detail", "could not list codex's servers", NULL);
+      g_autoptr(GStrvBuilder) web_only = g_strv_builder_new();
+      if (tools_allow((const char *const *)allow, "web_search"))
+        g_strv_builder_add(web_only, "web_search");
+      g_strfreev(allow);
+      allow = g_strv_builder_end(web_only);
+      known = g_new0(char *, 1);
+    }
+  }
+
+  g_autoptr(GHashTable) env = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  g_auto(GStrv) argv = hardened ? harden((const char *const *)resolved, provider, vision, image_path,
+                                      (const char *const *)allow, (const char *const *)known, env)
+                                : g_strdupv(resolved);
 
   json_object *timeout_ms = json_get(ai, "timeoutMs");
   const double timeout =
@@ -532,9 +838,9 @@ json_object *run_ai(
     // Without the file gemini would run with only plan mode, so it does not
     // run at all.
     g_autofree char *policy = gemini_policy_path();
+    g_autofree char *text = gemini_policy_text((const char *const *)allow);
     g_autofree char *policy_dir = g_path_get_dirname(policy);
-    if (g_mkdir_with_parents(policy_dir, 0755) != 0
-        || !g_file_set_contents(policy, gemini_policy, -1, NULL)) {
+    if (g_mkdir_with_parents(policy_dir, 0755) != 0 || !g_file_set_contents(policy, text, -1, NULL)) {
       log_event("ai.exception", "kind", "policy", "detail", "could not write the gemini policy", NULL);
       *reason = g_strdup("the gemini tool policy could not be written");
       return NULL;
