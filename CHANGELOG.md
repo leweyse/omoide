@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0
+
+### Minor Changes
+
+- [#15](https://github.com/leweyse/omoide/pull/15) [`f60bc8b`](https://github.com/leweyse/omoide/commit/f60bc8b8ec2ec75c8e1f95e032d7f43128434cb8) Thanks [@leweyse](https://github.com/leweyse)! - feat(cli,menu): Settings lets you allow web search and individual MCP servers for your agent
+  
+  "Choose an agent…" is now "Settings…". It lists the MCP servers your agent already has, and nothing is allowed until you tick it; each agent then runs with only what you ticked. The shell stays off and the sandbox read-only either way. From a terminal, `omoide ai-servers --provider <agent>` lists the servers and `omoide setup-ai --allow web_search --allow mcp:<server>` saves the choice.
+
+### Patch Changes
+
+- [#15](https://github.com/leweyse/omoide/pull/15) [`f60bc8b`](https://github.com/leweyse/omoide/commit/f60bc8b8ec2ec75c8e1f95e032d7f43128434cb8) Thanks [@leweyse](https://github.com/leweyse)! - fix(security): codex reading a capture could still use the MCP servers in its config, and its apps and plugins
+  
+  Text on a captured screen could ask a read-only MCP tool, such as a filesystem server, to read a private file into the agent's reply. Codex now starts with none of these, and with browser and computer use off. It also skips its own config file in this mode; if you set its model or provider there, allow one of its MCP servers in Settings and the file is read again.
+
 ## 0.5.2
 
 ### Patch Changes
