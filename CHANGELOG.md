@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+### Patch Changes
+
+- [#17](https://github.com/leweyse/omoide/pull/17) [`9fa33e1`](https://github.com/leweyse/omoide/commit/9fa33e1ba8d2b8ebb83c82fd02867a92d94dea83) Thanks [@leweyse](https://github.com/leweyse)! - fix(space): an event card on For you loses its bottom border when its title wraps
+
 ## 0.6.0
 
 ### Minor Changes
