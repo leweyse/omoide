@@ -220,7 +220,24 @@ Flickable {
       // position.
       Item {
         width: parent.width
-        height: Style.space(96)
+        // The tallest card any event can make: a two-line title, the time
+        // range, the place, and EventCard's padding, from the fonts it draws
+        // with, so a larger font or a fractional scale cannot outgrow the clip.
+        height: Math.max(Style.space(96),
+                         2 * Math.ceil(titleMetrics.height) + 2 * Math.ceil(bodyMetrics.height)
+                         + 2 * Style.spacing.sm + 2 * Style.spacing.xxxl)
+
+        FontMetrics {
+          id: titleMetrics
+          font.family: Style.font.resolvedFamily
+          font.pixelSize: Style.font.title
+        }
+
+        FontMetrics {
+          id: bodyMetrics
+          font.family: Style.font.resolvedFamily
+          font.pixelSize: Style.font.body
+        }
 
         Item {
           id: eventsClip
@@ -258,14 +275,8 @@ Flickable {
             x: eventsClip.bleed
             y: eventsClip.bleed
             width: eventsClip.width - eventsClip.bleed * 2
-            // A ListView sizes its delegates across the scroll axis, so THIS is the
-            // card height. EventCard's own content-driven height never applies in
-            // here.
-            //
-            // The clip's 96 is the worst case a card needs: a two-line title, the
-            // time range, the place, and the card's padding. Cards in a carousel
-            // want to be uniform anyway, and each one centres its own content
-            // vertically.
+            // The card height: each delegate is given it, so the cards are
+            // uniform and each one centres its own content vertically.
             height: parent.height - eventsClip.bleed * 2
             orientation: ListView.Horizontal
             spacing: Style.spacing.lg
@@ -337,6 +348,7 @@ Flickable {
               required property var modelData
               required property int index
               width: eventsRow.cardWidth
+              height: eventsRow.height
               event: modelData
               hasCursor: root.hasKeyboard && root.region === 0 && root.cursor === index
               // Straight to the capture, not to the item editor. An event's own
